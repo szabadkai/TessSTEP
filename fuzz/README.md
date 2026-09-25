@@ -64,3 +64,9 @@ exact arithmetic oracle or an industrial numerical-hardening claim.
 its 128-byte, bounded-work exercise with the stable curve smoke test. Run
 `cargo fuzz run analytic_curves -- -max_total_time=120 -max_len=128` for instrumentation.
 Successful outputs must be finite and repeatable; this is not an exact numerical oracle.
+
+`nurbs_curves` and `surface_evaluators` share the new stable bounded spline/geometry
+harnesses. Run each with `-max_len=128`; nightly CI configures 120 seconds per target.
+Inputs cover malformed knots/degrees, arbitrary finite/non-finite coordinates, weights,
+parameters, evaluation and refinement. Small logical limits bound allocations. Seeded
+stable mutation tests supplement arbitrary-bit inputs; none is an exact arithmetic oracle.

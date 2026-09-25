@@ -142,3 +142,19 @@ The stable arbitrary-bit harness uses 10,000 random inputs plus 774 boundary/pre
 inputs and is shared with the `analytic_curves` nightly libFuzzer target. Its maximum
 consumed input is 128 bytes and work is fixed. The benchmark measures 10,000 checked
 ellipse evaluations (position and both derivatives), with curve setup outside timing.
+
+## Milestones 8–10 surfaces and NURBS
+
+Run `cargo test -p tessstep-curves -p tessstep-surfaces` in debug/release and
+`cargo bench -p tessstep-surfaces --bench evaluators`. Analytic tests check known
+positions, all five partials by finite differences, domains, periodic seams and
+pole/apex singularities. Spline tests cover rational circles/cylinders, known weighted
+bilinear derivatives, repeated knots and one-sided limits, nonclamped/periodic nets,
+affine/weight-scale invariance, degree 16, invalid structure/ranges and resource limits.
+Both curve and surface refinement must preserve positions and derivatives.
+
+Two stable harnesses each run 5,000 arbitrary-bit, 512 mutation and 129 prefix inputs.
+They are shared with `nurbs_curves` and `surface_evaluators` libFuzzer targets; each
+consumes at most 128 bytes and uses small finite construction limits. The benchmark
+reports separate 1,000-evaluation batches for analytic torus, rational curve and
+rational surface jets. Setup is outside timing; checked evaluation is inside.

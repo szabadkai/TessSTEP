@@ -71,3 +71,14 @@ both derivative chain-rule factors and checks exact endpoints/range. Trigonometr
 hyperbolic functions use standard f64 routines, not certified interval evaluation;
 intermediate overflow can be rejected and underflow can erase small contributions.
 See [CURVES.md](CURVES.md) for formulas, parameterization and remaining limitations.
+
+## Surface and rational spline extension
+
+Analytic surfaces return five partial vectors and diagnose a singular normal separately.
+Exact sphere poles and cone apex preserve their zero azimuth derivative. NURBS uses
+bounded iterative basis recurrence and homogeneous quotient derivatives with positive
+weights. Active-support scaling reduces common weight magnitudes; zero relative scales
+are rejected during construction. Finite checks do not certify conditioning, continuity
+at a repeated knot or a global error bound. One-sided knot behavior and conservative
+intermediate-overflow failures are part of the contract. See [NURBS.md](NURBS.md) for
+published algorithm sources and [SURFACES.md](SURFACES.md) for surface parameterizations.

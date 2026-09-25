@@ -122,6 +122,7 @@ dependencies = [
  "tessstep-model",
  "tessstep-part21",
  "tessstep-schema",
+ "tessstep-surfaces",
 ]
 
 [[package]]
@@ -147,3 +148,11 @@ version = "0.1.0"
 [[package]]
 name = "tessstep-schema"
 version = "0.1.0"
+
+[[package]]
+name = "tessstep-surfaces"
+version = "0.1.0"
+dependencies = [
+ "tessstep-curves",
+ "tessstep-math",
+]

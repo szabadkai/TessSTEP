@@ -7,7 +7,8 @@
 //! owned model in `product`. No AP conformance, STEP geometry adaptation or
 //! tessellation is implemented. Placements remain ordered descriptions. Independent
 //! coordinates, units, tolerances and affine transforms are available in `math`;
-//! analytic lines/conics, derivatives and parameter spans are available in `curves`.
+//! analytic lines/conics, derivatives, parameter spans and NURBS are in `curves`.
+//! Analytic and tensor-product NURBS evaluators are available in `surfaces`.
 //!
 //! ```
 //! use tessstep::{parse, ParseLimits};
@@ -35,3 +36,5 @@ pub use tessstep_part21 as part21;
 pub use tessstep_part21::{Diagnostic, ParseLimits};
 pub use tessstep_product as product;
 pub use tessstep_schema as schema;
+
+pub use tessstep_surfaces as surfaces;

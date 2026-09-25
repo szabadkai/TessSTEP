@@ -8,6 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+tessstep-surfaces = { path = "../crates/tessstep-surfaces" }
 tessstep-curves = { path = "../crates/tessstep-curves" }
 tessstep-math = { path = "../crates/tessstep-math" }
 tessstep-ap242 = { path = "../crates/tessstep-ap242" }
@@ -77,6 +78,20 @@ bench = false
 [[bin]]
 name = "analytic_curves"
 path = "fuzz_targets/analytic_curves.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nurbs_curves"
+path = "fuzz_targets/nurbs_curves.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "surface_evaluators"
+path = "fuzz_targets/surface_evaluators.rs"
 test = false
 doc = false
 bench = false

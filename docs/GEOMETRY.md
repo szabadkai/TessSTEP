@@ -1,8 +1,8 @@
 # Geometry foundation
 
-Status: Milestone 6 math foundation and Milestone 7 independent analytic curves
-implemented. Surface/NURBS evaluators, STEP geometry adaptation and external geometry
-corpus validation remain pending. See [CURVES.md](CURVES.md) for curve contracts.
+Status: Milestones 6–10 provide independent math, analytic curves/surfaces and NURBS
+curves/surfaces. STEP geometry adaptation and external geometry corpus validation remain
+pending. See [CURVES.md](CURVES.md), [SURFACES.md](SURFACES.md) and [NURBS.md](NURBS.md).
 
 `tessstep-math` (also `tessstep::math`) has no STEP or schema dependency. It provides
 immutable finite `Point2/3`, `Vector2/3`, normalized `Direction3`, `Length`, `Angle`,
@@ -43,9 +43,8 @@ let model_point = local_to_model.transform_point(Point3::new([1., 0., 0.])?)?;
 
 ## Next layers
 
-Analytic curves now expose evaluation, derivatives and domains without raw entity
-access. Surfaces and NURBS must follow the same independent testing boundary before
-schema adapters are added. The Milestone 5 product graph still retains ordered placement descriptions;
+Analytic and NURBS curves/surfaces expose evaluation and derivatives without raw
+entity access. Their tests are independent of the pending schema adapters. The Milestone 5 product graph still retains ordered placement descriptions;
 this math foundation does not evaluate them or expand an assembly into world coordinates.
 The external corpus therefore gains no geometry/tessellation acceptance claim.
 

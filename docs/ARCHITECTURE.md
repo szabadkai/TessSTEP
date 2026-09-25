@@ -2,7 +2,7 @@
 
 Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust generation
 and runtime reflection, plus a bounded product semantics slice, checked math and
-independent analytic curves. Architecture is a contract for later work, not a declaration that the geometry kernel already exists.
+independent analytic/NURBS curves and surfaces. Architecture is a contract for later work, not a declaration that the geometry kernel already exists.
 
 ## Implemented dependency graph
 
@@ -22,9 +22,10 @@ stepdump ──→ tessstep-model ──→ tessstep-part21
 tessstep-ap242 ──→ tessstep-model / tessstep-schema / tessstep-part21
        └────────→ tessstep-product (standard library only)
 
-tessstep-curves ──→ tessstep-math (standard library only)
+tessstep-surfaces ──→ tessstep-curves ──→ tessstep-math (standard library only)
+         └───────────────────────────→ tessstep-math
 
-tessstep ──→ tessstep-curves / tessstep-math / tessstep-ap242 / tessstep-product
+tessstep ──→ tessstep-surfaces / tessstep-curves / tessstep-math / tessstep-ap242 / tessstep-product
     ├──────→ tessstep-codegen
     ├──────→ tessstep-schema
     ├──────→ tessstep-express
@@ -102,8 +103,8 @@ crate when its first tested vertical slice is implemented.
 | tessstep-ap242 (active) | schema-decoded product adapters now; geometry adapters later |
 | tessstep-product (active) | independent owned products, representations and assembly graphs |
 | tessstep-math (active) | STEP-independent units, spaces, transforms and tolerances |
-| tessstep-curves (active) | independent analytic curve positions, derivatives and domains |
-| tessstep-surfaces | independent mathematical surface evaluators |
+| tessstep-curves (active) | analytic/NURBS curves, bounded spline basis and insertion |
+| tessstep-surfaces (active) | analytic and tensor-product NURBS surface evaluation/refinement |
 | tessstep-topology | typed handles, builders and immutable validity states |
 | tessstep-trim | UV boundaries, periodic seams and trim reconstruction |
 | tessstep-mesh | mesh assets and mesh invariants |
@@ -270,3 +271,25 @@ The geometry corpus stage remains unimplemented because there is no schema-to-cu
 adapter/checker. Independent constructed-geometry tests are not reported as successful
 STEP geometry validation. No C symbols, ABI layouts or ownership contracts changed;
 public C/C++ curve operations remain pending under the existing interface requirement.
+
+## Milestones 8–10 geometry architecture review
+
+The new surface crate depends only on math and curves. Shared knot validation and
+iterative basis evaluation belong to the curve crate; surfaces add tensor products,
+quotient differentiation and net refinement without duplicating basis algorithms.
+No physical/parser/schema/product edge enters these evaluators. Analytic constructors
+use explicit frames; private spline storage preserves degree, knot, count and positive
+weight invariants. Derivative regularity is separate from successful finite evaluation.
+
+Analytic evaluation uses fixed stack data. Splines own bounded knot/control/weight vectors;
+evaluation uses fixed degree-limited stack tables and no heap allocation or recursion.
+Single knot insertion allocates a bounded replacement, with original storage immutable.
+The surface weight normalization is global to the net, never independent per row/column.
+Limits are logical bounds, not an exact RSS contract. No unsafe code, external numerical
+library, mutable global state or C ABI layout/symbol was added.
+
+Curve/surface derivatives carry frame types, while one-sided knot selection and singular
+normal results remain explicit. No finite result certifies topology, continuity at a
+repeated knot, or industrial numerical robustness. External corpus stages stay unchanged
+until a schema adapter and real geometry checker exist. C/C++ geometry operations remain
+pending and must follow the existing public interface and release-testing contract.

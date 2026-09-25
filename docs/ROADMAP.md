@@ -5,8 +5,8 @@ vertical slice, Milestone 2 EXPRESS frontend, Milestone 3 Rust bindings/reflecti
 Milestone 4 structural schema decoding, each with explicit conformance limits.
 Milestone 5 now includes the initial structural product/representation/units/assembly slice.
 Milestone 6 now provides the independent checked math foundation.
-Milestone 7 adds independent analytic curves. Surface evaluation and industrial
-hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
+Milestones 7–10 add independent analytic curves/surfaces and NURBS curves/surfaces.
+STEP geometry adaptation and industrial hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
 and architecture review before declaring work done.
 
@@ -68,7 +68,28 @@ Plane frames, seam crossing, reversed spans and affine derivative transformation
 checked independently of STEP. Regression/finite-difference tests, arbitrary-bit smoke,
 a fuzz target and a benchmark cover the scope. See [CURVES.md](CURVES.md). Curve/schema
 adapters, STEP trim selection and pcurve units remain pending. The next independent
-geometry milestone is analytic surfaces; NURBS follows in later milestones.
+geometry milestones 8–10 now provide analytic surfaces and NURBS.
+
+**Milestone 8 delivered — independent analytic surfaces.**
+
+`tessstep-surfaces` evaluates planes, cylinders, cones, spheres and ring tori with
+first/second partials, parameter domains, oriented normals and explicit singularities.
+See [SURFACES.md](SURFACES.md). STEP surface adapters and UV trimming are pending.
+
+**Milestone 9 delivered — bounded NURBS curves.**
+
+The curve crate adds expanded-knot validation, iterative basis derivatives, positive-weight
+homogeneous evaluation and single interior knot insertion. Degrees 1–16, repeated knots,
+one-sided derivatives, nonclamped/periodic representations and resource limits are tested.
+See [NURBS.md](NURBS.md) for published algorithms and exact supported limits.
+
+**Milestone 10 delivered — bounded tensor-product NURBS surfaces.**
+
+The surface crate reuses the same knot basis, evaluates all first/second partials and
+inserts knots in either axis while retaining the common control-net weight scale.
+Rational patches, seams, mixed derivatives, refinement invariance and singular normals
+are covered. Topology validity states (Milestone 11) are next. STEP geometry adapters,
+NURBS editing beyond single insertion and the remaining Milestone 5 semantics are open.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

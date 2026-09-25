@@ -15,8 +15,9 @@ Milestone 5 now adds a [structural product graph](docs/PRODUCT_MODEL.md), explic
 assembly occurrences and preserved placement/mapping descriptions over supplied decoded metadata.
 Milestone 6 adds [independent checked math](docs/GEOMETRY.md): typed coordinates, units,
 tolerances and affine transforms. Milestone 7 adds [analytic curves](docs/CURVES.md)
-with derivatives, domains and oriented spans. STEP geometry adaptation, surfaces and
-meshes remain pending; no AP242 conformance is claimed.
+with derivatives, domains and oriented spans. Milestones 8–10 add [analytic surfaces](docs/SURFACES.md)
+and [NURBS curves/surfaces](docs/NURBS.md), including bounded knot refinement. STEP geometry
+adaptation, topology and meshes remain pending; no AP242 conformance is claimed.
 General EXPRESS expression semantics remain explicitly unsupported.
 A file parsing successfully is not evidence of schema or CAD conformance.
 

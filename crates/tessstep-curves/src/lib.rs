@@ -87,3 +87,5 @@ pub(crate) fn dimension<const N: usize>() -> Result<(), Error> {
         Err(Error::UnsupportedDimension)
     }
 }
+
+pub mod spline;

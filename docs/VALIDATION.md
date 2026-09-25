@@ -1,3 +1,87 @@
+# Milestones 8–10 surface/NURBS validation — 2026-09-25
+
+The verified analytic-curve milestone was committed as `7758269`. This work implements
+independent analytic surfaces (8), bounded positive-weight NURBS curves (9), and
+bounded tensor-product NURBS surfaces (10). See [SURFACES.md](SURFACES.md) and
+[NURBS.md](NURBS.md) for parameterizations, published algorithms and supported limits.
+STEP geometry adapters, topology, trimming and tessellation remain pending.
+
+Observed locally on macOS arm64 with Rust 1.95.0:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace debug tests | passed, 123 tests including doctests |
+| Curve/surface release tests | passed, 27 tests including doctests |
+| Workspace/fuzz formatting and Clippy, warnings denied | passed |
+| Workspace rustdoc, warnings denied | passed |
+| Architecture/conformance/authored fixture provenance | passed; 14 packages, 40 fixtures |
+| Python corpus/CI tests | 21 passed |
+| Relocated C/C++ package consumers | passed; Debug/Release, ABI layout/exports, ownership and concurrency |
+| Two new stable bounded geometry/spline smoke harnesses | 5,641 cases each: 5,000 arbitrary-bit, 512 mutations, 129 prefixes |
+| Two new libFuzzer driver smoke runs | 1,000 runs each, no crashes |
+
+Analytic tests independently compare all first/second partials with finite differences,
+check known points/loci, parameter domains, periodic seams and exact pole/apex singularities.
+NURBS tests include a rational quarter circle and cylinder, hand-calculated weighted
+bilinear partials, mixed-derivative checks, one-sided repeated knots, nonclamped/periodic
+representations, degree 16, affine/weight-scale invariance and refinement preservation.
+Invalid shapes, knots, counts, weights, domains and logical resource budgets are tested.
+Surface refinement with unequal weights across rows verifies that normalization remains
+common to the whole net. A checked rectangular layout prevents dimension-product overflow.
+
+Both libFuzzer drivers were compiled with stable Rust and each loaded one 128-byte
+seed. They completed but reported missing coverage/sanitizer instrumentation and no
+interesting coverage. These are driver smoke checks only; full-size mutation/random
+inputs are exercised independently by the stable harnesses. Nightly CI adds instrumented
+targets and increases its budget to 35 minutes for the longer target list. Hosted CI,
+Rust 1.85, long instrumented campaigns and cross-platform numerical behavior were not
+observed locally. No unsafe code, external production dependency or C ABI layout was added.
+
+## External corpus checks
+
+Ran `python3 scripts/corpus.py --check` after the analytic surface and rational curve
+steps and after the combined implementation. Each run examined **6,438 paths / 3,227
+unique contents** and passed without refreshing `corpus/baseline.json`:
+
+| Stage checkpoint | Run | Seconds |
+| --- | --- | ---: |
+| Analytic surfaces | 2026-09-25T18-07-55-526622Z | 32.137 |
+| Rational curve implementation | 2026-09-25T18-12-44-870866Z | 33.819 |
+| Combined surfaces/NURBS | 2026-09-25T18-21-38-235130Z | 34.324 |
+
+Per-file stage counts and comparison lists were inspected for all three runs; representative
+clean/reference-error/rejected entries were also inspected in the final report. All runs
+retain **2,821 clean**, **38 reference-error**, **368 rejected**, with **zero outcome or
+diagnostic changes** versus the previous run and reviewed baseline. There were no crashes,
+timeouts or runner errors. See [the final per-file report](../reports/corpus/index.html).
+
+All external inputs still show schema/product/geometry/tessellation as `not_implemented`.
+No AP schema/product checker is configured, and no STEP-to-geometry adapter/checker exists.
+Independent NURBS tests are not relabeled as STEP geometry acceptance. Real geometry stage
+checks must be added with those adapters. Physical acceptance alone establishes none of
+the later stages.
+
+## Benchmarks and architecture
+
+`cargo bench -p tessstep-surfaces --bench evaluators --locked` uses one warmup and
+one-second samples of 1,000 checked evaluations per batch. Geometry construction is
+outside timing; position and all implemented derivative calculations are inside:
+
+| Evaluator | Batches | Microseconds/batch |
+| --- | ---: | ---: |
+| Analytic torus, position and five partials | 16,797 | 59.536 |
+| Rational curve, position and two derivatives | 9,623 | 103.925 |
+| Rational surface, position and five partials | 5,736 | 174.347 |
+
+These are local throughput observations, not statistical comparisons, whole-model
+benchmarks or numerical-accuracy certificates. The architecture review records shared
+iterative basis evaluation, bounded immutable spline storage/refinement, fixed stack
+scratch and no raw STEP dependency. Public C/C++ geometry operations remain pending
+under the existing ownership/ABI/release-testing contract. Milestone 11 topology validity
+states are next; documented Milestone 5 semantic gaps also remain open.
+
+---
+
 # Milestone 7 analytic curve validation — 2026-09-25
 
 Milestone 6 was committed as `cd28385` before this work. The next milestone adds

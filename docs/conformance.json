@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20134, the initial Milestone 5 product slice, Milestone 6 math and Milestone 7 analytic curves; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20134, the initial Milestone 5 product slice and independent geometry Milestones 6\u201310; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -186,7 +186,7 @@
       "feature": "STEP geometry / topology / meshes",
       "status": "not implemented",
       "test": null,
-      "limitations": "independent analytic curves available; no STEP geometry adapter, topology or tessellation"
+      "limitations": "independent analytic/NURBS curves and surfaces available; no STEP geometry adapter, topology or tessellation"
     },
     {
       "feature": "public C ABI",
@@ -270,7 +270,7 @@
       "feature": "Independent 2D/3D analytic lines and conics",
       "status": "implemented",
       "test": "analytic_curves_have_known_positions_derivatives_and_domains",
-      "limitations": "positions and two derivatives; floating-point evaluation; no STEP adapter, surfaces, NURBS, projection or intersection"
+      "limitations": "positions and two derivatives; floating-point evaluation; no STEP adapter, projection or intersection; NURBS tracked separately"
     },
     {
       "feature": "Oriented analytic parameter spans",
@@ -283,6 +283,42 @@
       "status": "implemented",
       "test": "analytic_curve_arbitrary_float_smoke",
       "limitations": "10,774 deterministic inputs; no exact predicate, certified error bounds or extended instrumented fuzz claim"
+    },
+    {
+      "feature": "Independent analytic surface jets and singular normals",
+      "status": "implemented",
+      "test": "analytic_surfaces_known_values_and_singularities",
+      "limitations": "plane/cylinder/cone/sphere/ring torus; explicit frame/domain conventions; no STEP surface adapter"
+    },
+    {
+      "feature": "Bounded positive-weight NURBS curves",
+      "status": "implemented",
+      "test": "nurbs_curve_rational_circle_and_derivatives",
+      "limitations": "degrees 1\u201316; expanded knots, two derivatives, one-sided breaks; no zero/negative weights or automatic periodic wrapping"
+    },
+    {
+      "feature": "Homogeneous curve knot insertion",
+      "status": "implemented",
+      "test": "nurbs_knot_insertion_preserves_rational_geometry_and_derivatives",
+      "limitations": "one strictly interior insertion at a time; no removal, elevation or certified error bound"
+    },
+    {
+      "feature": "Tensor-product NURBS surface jets",
+      "status": "implemented",
+      "test": "nurbs_surface_known_rational_partials_and_tensor_order",
+      "limitations": "positive weights, bounded rectangular net; mixed/second derivatives; no STEP adaptation or trimming"
+    },
+    {
+      "feature": "Surface knot insertion with shared weight scale",
+      "status": "implemented",
+      "test": "nurbs_surface_refinement_preserves_global_weights",
+      "limitations": "one interior insertion in either axis; bounded immutable replacement"
+    },
+    {
+      "feature": "Bounded spline and surface smoke",
+      "status": "implemented",
+      "test": "surface_bounded_arbitrary_float_smoke",
+      "limitations": "two 5,641-case stable harnesses; no extended instrumented numerical-hardening claim"
     }
   ]
 }

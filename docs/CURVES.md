@@ -1,8 +1,10 @@
 # Analytic curves
 
 Status: Milestone 7 independent analytic curve evaluation implemented in
-`tessstep-curves`, reexported as `tessstep::curves`. No STEP curve adapter, surface
-or NURBS evaluator, projection, intersection, arc-length solver or tessellator is included.
+`tessstep-curves`, reexported as `tessstep::curves`. The same crate now provides
+[NURBS curves](NURBS.md), and the surface crate supplies
+[surface evaluators](SURFACES.md). STEP adapters, projection, intersection, arc-length
+solvers and tessellation remain pending.
 
 ## Values, frames and evaluation
 
