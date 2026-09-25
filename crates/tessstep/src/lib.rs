@@ -5,7 +5,8 @@
 //! A bounded structural instance decoder is available in `model::decode`.
 //! A bounded product graph adapter is available in `ap242`, with an independent
 //! owned model in `product`. No AP conformance, geometry evaluation or tessellation
-//! is implemented. Placements remain ordered descriptions.
+//! is implemented. Placements remain ordered descriptions. Independent checked
+//! coordinates, units, tolerances and affine transforms are available in `math`.
 //!
 //! ```
 //! use tessstep::{parse, ParseLimits};
@@ -25,6 +26,7 @@
 pub use tessstep_ap242 as ap242;
 pub use tessstep_codegen as codegen;
 pub use tessstep_express as express;
+pub use tessstep_math as math;
 pub use tessstep_model as model;
 pub use tessstep_model::{Document, parse};
 pub use tessstep_part21 as part21;

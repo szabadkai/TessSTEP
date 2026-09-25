@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20134 plus the initial Milestone 5 product graph slice; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20134, the initial Milestone 5 product graph slice and Milestone 6 math foundation; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -186,7 +186,7 @@
       "feature": "geometry / topology / meshes",
       "status": "not implemented",
       "test": null,
-      "limitations": "no geometry evaluation or tessellation code started"
+      "limitations": "independent math only; no curve/surface evaluation, topology or tessellation"
     },
     {
       "feature": "public C ABI",
@@ -241,6 +241,30 @@
       "status": "implemented",
       "test": "product_adapter_fuzz_smoke",
       "limitations": "1,500 bounded deterministic mutations; no extended instrumented fuzz result claimed"
+    },
+    {
+      "feature": "Independent typed coordinates, units and tolerances",
+      "status": "implemented",
+      "test": "math_coordinates_units_and_tolerances_are_explicit",
+      "limitations": "finite f64 values; scalar coordinate units follow space convention; no complete dimensional algebra or exact predicates"
+    },
+    {
+      "feature": "Typed affine maps, inversion and normals",
+      "status": "implemented",
+      "test": "math_affine_composition_inversion_and_normal_contract",
+      "limitations": "explicit matrices/frames; finite and pivot checks; no certified error/condition bounds or STEP placement adapter"
+    },
+    {
+      "feature": "Extreme-scale normalization and explicit frames",
+      "status": "implemented",
+      "test": "math_normalization_handles_extreme_scales_and_near_angles",
+      "limitations": "floating-point accuracy; near-parallel frame rejection uses explicit numerical tolerance"
+    },
+    {
+      "feature": "Math arbitrary-float smoke",
+      "status": "implemented",
+      "test": "math_arbitrary_float_fuzz_smoke",
+      "limitations": "10,870 deterministic inputs; extended instrumented numerical fuzzing not observed"
     }
   ]
 }

@@ -13,7 +13,9 @@ reflection, plus [structural instance decoding](docs/DECODING.md) against suppli
 Complex entities, SELECTs, aggregate uniqueness and bounded width/bound expressions are checked. The CLIs are `stepdump` and `expressc`.
 Milestone 5 now adds a [structural product graph](docs/PRODUCT_MODEL.md), explicit unit scales,
 assembly occurrences and preserved placement/mapping descriptions over supplied decoded metadata.
-It does **not** yet evaluate placements, geometry or meshes, or claim AP242 conformance.
+Milestone 6 adds [independent checked math](docs/GEOMETRY.md): typed coordinates, units,
+tolerances and affine transforms. STEP placements, curve/surface geometry and meshes
+remain unevaluated; no AP242 conformance is claimed.
 General EXPRESS expression semantics remain explicitly unsupported.
 A file parsing successfully is not evidence of schema or CAD conformance.
 

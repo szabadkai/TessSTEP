@@ -110,10 +110,15 @@ dependencies = [
  "tessstep-ap242",
  "tessstep-codegen",
  "tessstep-express",
+ "tessstep-math",
  "tessstep-model",
  "tessstep-part21",
  "tessstep-schema",
 ]
+
+[[package]]
+name = "tessstep-math"
+version = "0.1.0"
 
 [[package]]
 name = "tessstep-model"

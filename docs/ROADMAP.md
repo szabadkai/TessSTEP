@@ -4,7 +4,8 @@ This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
 vertical slice, Milestone 2 EXPRESS frontend, Milestone 3 Rust bindings/reflection and
 Milestone 4 structural schema decoding, each with explicit conformance limits.
 Milestone 5 now includes the initial structural product/representation/units/assembly slice.
-It does not start geometry or claim industrial hardening. Read ARCHITECTURE.md,
+Milestone 6 now provides the independent checked math foundation.
+Curve/surface evaluation and industrial hardening are not claimed. Read ARCHITECTURE.md,
 CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
 and architecture review before declaring work done.
@@ -45,7 +46,19 @@ no world transforms are evaluated. Separate authored schema/product corpus stage
 cycle/resource tests, mutation smoke and an assembly benchmark cover this scope.
 See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for exact restrictions. Indirect context/shape
 association paths, uncertainty measures, additional assembly/transform forms and
-geometric placement interpretation remain. Math work must precede placement evaluation.
+geometric placement interpretation remain. The math foundation is available; schema-specific placement evaluation remains pending.
+
+**Milestone 6 delivered — independent checked math foundation.**
+
+`tessstep-math` provides finite space-tagged points/vectors, normalized directions,
+explicit lengths/angles/unit conversion, separate model/tessellation tolerances and
+typed affine transforms. Composition, inversion, normal transformation, axis-angle
+rotation and explicit right-handed frames have independent regression, property,
+compile-fail and arbitrary-bit tests plus fuzz/benchmark harnesses. Numerical limits
+are explicit in [NUMERICAL_ROBUSTNESS.md](NUMERICAL_ROBUSTNESS.md). This foundation does
+not implement exact predicates, STEP placement defaults/adapters or curve/surface
+geometry. The next geometry work is independent analytic curve evaluation, followed
+by schema adapters; Milestone 5's documented semantic gaps remain open.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

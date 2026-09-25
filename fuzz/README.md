@@ -51,3 +51,10 @@ The `product_adapter` target parses, structurally decodes with the original prod
 test schema and adapts bounded graphs twice to check determinism. Seed with
 `corpus/product`. Generated metadata is shared with adapter consumer tests and
 verified by `scripts/check_product.py`. It does not fuzz a complete AP schema.
+
+`math_primitives` uses the same arbitrary IEEE-754 bit-pattern harness as the independent
+math crate's stable smoke test. Each input consumes at most 144 bytes, with fixed-size
+inversion, frame and coordinate operations. Run
+`cargo fuzz run math_primitives -- -max_total_time=120 -max_len=144` for instrumentation.
+Successful finite results and repeatable inverse failures are checked; this is not an
+exact arithmetic oracle or an industrial numerical-hardening claim.

@@ -1,3 +1,68 @@
+# Milestone 6 math foundation validation — 2026-09-25
+
+The verified Milestone 5 product/assembly slice was committed as `d84e5f3`.
+The next milestone adds `tessstep-math`, an independent checked coordinate, unit,
+tolerance and affine-transform layer, reexported as `tessstep::math`. Its scope and
+numerical limitations are in [GEOMETRY.md](GEOMETRY.md) and
+[NUMERICAL_ROBUSTNESS.md](NUMERICAL_ROBUSTNESS.md). STEP placement evaluation,
+analytic curves/surfaces, NURBS, topology and tessellation remain future work.
+
+Observed locally on macOS arm64, Rust 1.95.0:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace debug tests | passed, 96 tests including doctests |
+| Math debug and release tests | passed, 8 integration tests and 3 doctests |
+| Space separation and transform composition compile-fail examples | passed (2 of the doctests) |
+| Workspace/fuzz formatting and Clippy, warnings denied | passed |
+| Workspace rustdoc, warnings denied | passed |
+| Architecture, conformance and authored-fixture provenance | passed; 12 packages, 40 fixtures |
+| Relocated C/C++ installed-package consumers | passed, Debug/Release, layouts, exports, ownership and concurrency |
+| Math seeded affine round trips | 2,000 diagonally dominant matrices, both inverse application orders |
+| Deterministic arbitrary-float smoke | 10,000 arbitrary-bit cases plus 870 boundary/prefix cases |
+| Math libFuzzer driver smoke | 1,000 runs completed without crashes |
+
+The local libFuzzer driver used stable Rust without coverage/sanitizer instrumentation
+and started from an empty corpus. Its warnings explicitly report missing instrumentation;
+it is only a driver smoke check. The deterministic harness exercises full-size arbitrary
+float inputs independently. Nightly CI configures the new instrumented target; its job
+budget was increased to accommodate the added two-minute run. No hosted CI, Rust 1.85,
+extended instrumented fuzzing or cross-platform numerical results were observed here.
+
+## External corpus
+
+`python3 scripts/corpus.py --check` passed. Run `2026-09-25T17-37-32-443182Z` checked
+**6,438 paths / 3,227 unique contents** in **34.107 seconds**. The generated per-file
+JSON report, stage counts and representative accepted/reference-error/rejected entries
+were inspected: **2,821 clean**, **38 reference-error**, **368 rejected**, and no crashes,
+timeouts or runner errors. Both previous-run and baseline comparisons contain **zero
+outcome or diagnostic changes**. `corpus/baseline.json` was not modified.
+
+All external inputs still report schema/product/geometry/tessellation as
+`not_implemented`: no AP schema/product checker is configured, and math primitives do
+not supply a STEP geometry validator. Existing authored product outcomes were rechecked
+before the commit: three accepted, two rejected and one unsupported, all schema-accepted.
+See [the external per-file report](../reports/corpus/index.html).
+
+## Math benchmark
+
+`cargo bench -p tessstep-math --bench transforms --locked` measured a known affine
+inverse plus 10,000 checked point transformations per batch. Point allocation/construction
+is outside timing; inverse calculation, result checks and point transformation are inside.
+One warmup and a two-second sample yielded **47,964 batches / 2.000 seconds /
+41.698 microseconds per batch**. This is a local observation, not a statistical performance
+comparison, whole-model benchmark or certified numerical-accuracy measurement.
+
+## Architecture review
+
+The new crate has no dependencies, unsafe code, heap allocation or global mutable state.
+Its types preserve finite storage and explicit frame/tolerance contracts; numerical
+inversion failure remains separate from finite transform construction. Existing parser,
+model, product and C ABI dependencies/layouts are unchanged. Geometry C/C++ operations
+remain pending and must follow the existing public-interface contract.
+
+---
+
 # Milestone 5 initial product graph validation — 2026-09-25
 
 Existing Milestone 4 work was committed as `4c4bdc6` after workspace tests, formatting,

@@ -1,7 +1,7 @@
 # Architecture
 
 Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust generation
-and runtime reflection, plus a bounded product semantics slice. Architecture is a
+and runtime reflection, plus a bounded product semantics slice and independent checked math. Architecture is a
 contract for later work, not a declaration that the geometry kernel already exists.
 
 ## Implemented dependency graph
@@ -22,7 +22,9 @@ stepdump ──→ tessstep-model ──→ tessstep-part21
 tessstep-ap242 ──→ tessstep-model / tessstep-schema / tessstep-part21
        └────────→ tessstep-product (standard library only)
 
-tessstep ──→ tessstep-ap242 / tessstep-product
+tessstep-math (standard library only)
+
+tessstep ──→ tessstep-math / tessstep-ap242 / tessstep-product
     ├──────→ tessstep-codegen
     ├──────→ tessstep-schema
     ├──────→ tessstep-express
@@ -99,7 +101,7 @@ crate when its first tested vertical slice is implemented.
 |---|---|
 | tessstep-ap242 (active) | schema-decoded product adapters now; geometry adapters later |
 | tessstep-product (active) | independent owned products, representations and assembly graphs |
-| tessstep-math | STEP-independent units, spaces, transforms and tolerances |
+| tessstep-math (active) | STEP-independent units, spaces, transforms and tolerances |
 | tessstep-curves / tessstep-surfaces | exact mathematical evaluators |
 | tessstep-topology | typed handles, builders and immutable validity states |
 | tessstep-trim | UV boundaries, periodic seams and trim reconstruction |
@@ -226,3 +228,23 @@ timeout and protocol check. Older baselines without this stage normalize to
 `not_implemented`; this does not rewrite the baseline or claim product acceptance.
 See PRODUCT_MODEL.md for direct context/shape membership restrictions and unevaluated
 placement semantics.
+
+## Milestone 6 math architecture review
+
+`tessstep-math` has no dependencies and is reexported by the umbrella crate. The
+existing architecture checker already reserves this boundary. No edge is added from
+the physical parser, schema runtime, product model or adapter to the math crate yet.
+Product unit interpretation stays in the semantic layer; math receives explicit scales.
+
+Private finite value storage and frame type parameters separate coordinate validity
+from transform invertibility. Construction permits finite singular affine maps;
+inversion and normal operations check numerical pivots and fail explicitly. Model,
+tessellation and numerical tolerances are separate value types. Normalized direction
+storage is distinct from general vectors. All 3D operations use fixed stack arrays;
+coordinates use caller-selected compile-time dimensions. There are no heap allocations,
+recursion, mutable global state, unsafe blocks or new third-party production dependencies.
+
+The crate has no raw STEP entity access, topology validity claims or mesh layout. Its
+Rust representations are not exposed across the C ABI. Physical C/C++ operations,
+layouts and package ownership are unchanged; public geometry bindings remain pending.
+The corpus stages remain honest: math tests provide no STEP geometry acceptance evidence.

@@ -118,3 +118,15 @@ membership and assembly/map reuse, and run 1,500 deterministic mutations. A
 after parsing/decoding, including output allocations and destruction. `product_adapter`
 is the corresponding libFuzzer target; nightly CI configures an instrumented run.
 Observed checks are recorded separately in VALIDATION.md.
+
+## Milestone 6 independent math
+
+Run `cargo test -p tessstep-math` (debug and release) and
+`cargo bench -p tessstep-math --bench transforms`. Tests cover known affine inverses,
+composition order, inverse-transpose normals, scale/shear/reflection, frame handedness,
+pivot swaps, singular/near-singular inputs, non-finite/overflow/subnormal handling and
+2,000 seeded affine round trips. Compile-fail doctests enforce frame separation and
+composition order. The deterministic fuzz smoke exercises 10,000 arbitrary-bit inputs
+and 870 boundary/prefix inputs through the same fixed-work harness as `math_primitives`.
+Nightly CI configures its instrumented run. The benchmark measures one inverse and
+10,000 checked point transforms per batch; point construction is outside timing.
