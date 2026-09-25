@@ -102,5 +102,17 @@ fn c_abi_budget_and_failure_states() {
             TS_INVALID_ARGUMENT
         );
         assert!(report.is_null());
+        doc = ptr::dangling();
+        assert_eq!(
+            ts_document_parse(ptr::null(), 0, ptr::null(), &mut doc, ptr::null_mut()),
+            TS_INVALID_ARGUMENT
+        );
+        assert!(doc.is_null());
+        report = ptr::dangling_mut();
+        assert_eq!(
+            ts_document_diagnostics(ptr::null(), &mut report),
+            TS_INVALID_ARGUMENT
+        );
+        assert!(report.is_null());
     }
 }

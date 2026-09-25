@@ -421,7 +421,7 @@ fn schema_decode_fuzz_smoke() {
     };
     let mut accepted = 0;
     for position in 0..seed.len() {
-        for byte in [b'0', b'\'', b'$', b'*', b'(', b')', b';', b'X'] {
+        for byte in *b"0'$*();X" {
             let mut bytes = seed.as_bytes().to_vec();
             bytes[position] = byte;
             if let Ok(doc) = tessstep_model::parse(bytes.as_slice(), ParseLimits::default()) {

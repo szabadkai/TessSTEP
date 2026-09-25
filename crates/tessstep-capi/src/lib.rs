@@ -142,10 +142,18 @@ fn boundary(f: impl FnOnce() -> u32 + std::panic::UnwindSafe) -> u32 {
 // SAFETY: the caller provides either NULL or writable, aligned, disjoint output
 // storage. Initialize by writing, never read/drop uninitialized caller memory.
 unsafe fn clear<T: Default>(out: *mut T) -> bool {
+    // SAFETY: the caller provides the same output storage contract.
+    unsafe { initialize(out, T::default()) }
+}
+
+// Pointer outputs use explicit null values: raw pointers do not implement
+// Default on the minimum supported Rust 1.85 toolchain.
+// SAFETY: same output storage contract as clear.
+unsafe fn initialize<T>(out: *mut T, value: T) -> bool {
     if out.is_null() {
         return false;
     }
-    unsafe { out.write(T::default()) };
+    unsafe { out.write(value) };
     true
 }
 
@@ -179,7 +187,8 @@ pub unsafe extern "C" fn ts_document_parse(
     error_report: *mut *mut TsDiagnostics,
 ) -> u32 {
     // SAFETY: both outputs, when non-NULL, are valid independent pointer slots.
-    let outputs_valid = unsafe { clear(out) } & unsafe { clear(error_report) };
+    let outputs_valid = unsafe { initialize(out, ptr::null()) }
+        & unsafe { initialize(error_report, ptr::null_mut()) };
     if !outputs_valid {
         return TS_INVALID_ARGUMENT;
     }
@@ -344,7 +353,7 @@ pub unsafe extern "C" fn ts_document_diagnostics(
     out: *mut *mut TsDiagnostics,
 ) -> u32 {
     // SAFETY: caller provides valid output storage when non-NULL.
-    if !unsafe { clear(out) } || document.is_null() {
+    if !unsafe { initialize(out, ptr::null_mut()) } || document.is_null() {
         return TS_INVALID_ARGUMENT;
     }
     boundary(|| {
