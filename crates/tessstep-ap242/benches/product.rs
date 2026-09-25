@@ -13,6 +13,7 @@ fn main() {
         extra.push_str(&format!(
             "#{id}=NEXT_ASSEMBLY_USAGE_OCCURRENCE('repeat',#5,#6);\n"
         ));
+        extra.push_str(&format!("#{}=PRODUCT_DEFINITION_SHAPE(#{id});#{}=CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#42,#{});\n",id+20_000,id+40_000,id+20_000));
     }
     let input = base.replace("ENDSEC;\nEND-ISO", &(extra + "ENDSEC;\nEND-ISO"));
     let document = tessstep_model::parse(input.as_bytes(), Default::default()).unwrap();
@@ -42,5 +43,26 @@ fn main() {
         document.entities().len(),
         input.len(),
         seconds * 1000.0 / f64::from(iterations)
+    );
+    let model = tessstep_ap242::adapt(&decoded, "product_test", Default::default()).unwrap();
+    let start = Instant::now();
+    let mut iterations = 0;
+    while start.elapsed() < Duration::from_secs(2) {
+        let instances = model
+            .expand(
+                tessstep_product::DefinitionId(5),
+                tessstep_product::RepresentationId(34),
+                &Default::default(),
+                Default::default(),
+            )
+            .unwrap();
+        assert_eq!(instances.len(), 10_003);
+        black_box(instances);
+        iterations += 1;
+    }
+    let seconds = start.elapsed().as_secs_f64();
+    println!(
+        "product expansion: {iterations} iterations, {seconds:.3} s, {:.3} ms/input",
+        seconds * 1000. / f64::from(iterations)
     );
 }

@@ -9,6 +9,7 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+tessstep-mesh.workspace = true
 tessstep-model.workspace = true
 tessstep-part21.workspace = true
 

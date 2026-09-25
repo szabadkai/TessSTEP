@@ -110,3 +110,109 @@ fn product_graph_is_iterative_and_budgeted() {
         &[DefinitionId(0)]
     );
 }
+
+#[test]
+fn product_expansion_is_iterative_bounded_and_does_not_invent_placements() {
+    use std::collections::BTreeMap;
+    let mut p = parts();
+    p.definitions.clear();
+    p.occurrences.clear();
+    let length = Unit::new(Dimension::Length, 1.).unwrap();
+    p.contexts.push(Context {
+        id: ContextId(1),
+        units: Units {
+            length,
+            plane_angle: Unit::new(Dimension::PlaneAngle, 1.).unwrap(),
+            solid_angle: Unit::new(Dimension::SolidAngle, 1.).unwrap(),
+        },
+    });
+    for i in 0..2000_u64 {
+        p.definitions.push(Definition {
+            id: DefinitionId(i),
+            formation: FormationId(2),
+            identifier: String::new(),
+        });
+        p.representations.push(Representation {
+            id: RepresentationId(i),
+            name: String::new(),
+            context: ContextId(1),
+            items: vec![],
+        });
+        p.shapes.push(Shape {
+            id: ShapeId(i),
+            target: ShapeTarget::Definition(DefinitionId(i)),
+        });
+        p.shape_bindings.push(ShapeBinding {
+            shape: ShapeId(i),
+            representation: RepresentationId(i),
+        });
+        if i > 0 {
+            p.occurrences.push(Occurrence {
+                id: OccurrenceId(i),
+                identifier: String::new(),
+                parent: DefinitionId(i - 1),
+                child: DefinitionId(i),
+            });
+            p.relationships.push(Relationship {
+                id: RelationshipId(i),
+                rep_1: RepresentationId(i),
+                rep_2: RepresentationId(i - 1),
+                transform: None,
+                operator: Some(ItemId(i)),
+            });
+            p.placements.push(OccurrencePlacement {
+                occurrence: OccurrenceId(i),
+                relationship: RelationshipId(i),
+            });
+            p.relationship_transforms.push(ResolvedRelationship {
+                relationship: RelationshipId(i),
+                rep_1_to_rep_2: Transform::new(
+                    [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]],
+                    [1., 0., 0.],
+                )
+                .unwrap(),
+            });
+        }
+    }
+    let model = Model::new(p.clone(), 1_000_000).unwrap();
+    let limits = ExpansionLimits {
+        max_depth: 2000,
+        ..Default::default()
+    };
+    let instances = model
+        .expand(
+            DefinitionId(0),
+            RepresentationId(0),
+            &BTreeMap::new(),
+            limits,
+        )
+        .unwrap();
+    assert_eq!(instances.len(), 2000);
+    assert_eq!(instances[1999].parent, Some(1998));
+    assert_eq!(
+        instances[1999].local_to_world.translation(),
+        [1999., 0., 0.]
+    );
+    assert_eq!(
+        model.expand(
+            DefinitionId(0),
+            RepresentationId(0),
+            &BTreeMap::new(),
+            ExpansionLimits {
+                max_instances: 100,
+                ..limits
+            }
+        ),
+        Err(Error::ResourceLimit)
+    );
+    p.relationship_transforms.clear();
+    assert_eq!(
+        Model::new(p, 1_000_000).unwrap().expand(
+            DefinitionId(0),
+            RepresentationId(0),
+            &BTreeMap::new(),
+            limits
+        ),
+        Err(Error::MissingPlacement)
+    );
+}

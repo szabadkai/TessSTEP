@@ -16,7 +16,7 @@ namespace tessstep {
 enum class ErrorCode : uint32_t {
     invalid_argument = TS_INVALID_ARGUMENT, parse_error = TS_PARSE_ERROR,
     unsupported = TS_UNSUPPORTED, resource_limit = TS_RESOURCE_LIMIT,
-    not_found = TS_NOT_FOUND, internal_error = TS_INTERNAL_ERROR
+    not_found = TS_NOT_FOUND, internal_error = TS_INTERNAL_ERROR, invalid_mesh = TS_INVALID_MESH, invalid_scene = TS_INVALID_SCENE, invalid_appearance = TS_INVALID_APPEARANCE
 };
 enum class Severity : uint32_t { error = TS_SEVERITY_ERROR, warning = TS_SEVERITY_WARNING };
 struct Diagnostic {
@@ -134,5 +134,188 @@ public:
         return detail::copy_report(report);
     }
 };
+using MeshOptions = ts_mesh_options;
+inline MeshOptions default_mesh_options() noexcept {
+    MeshOptions options{};
+    ts_mesh_options_init(&options);
+    return options;
+}
+namespace detail {
+struct MeshDeleter { void operator()(ts_mesh* p) const noexcept { ts_mesh_release(p); } };
+}
+// Each view owns an independent retained reference, so it survives destruction or
+// movement of the originating Mesh. Buffers themselves are never copied by view().
+class MeshView {
+    std::unique_ptr<ts_mesh, detail::MeshDeleter> owner_;
+    ts_mesh_view data_{};
+    friend class Mesh;
+    MeshView(ts_mesh* owner, ts_mesh_view data) noexcept : owner_(owner), data_(data) {}
+public:
+    MeshView(const MeshView&) = delete;
+    MeshView& operator=(const MeshView&) = delete;
+    MeshView(MeshView&& other) noexcept
+        : owner_(std::move(other.owner_)), data_(std::exchange(other.data_, ts_mesh_view{})) {}
+    MeshView& operator=(MeshView&& other) noexcept {
+        if (this != &other) { owner_ = std::move(other.owner_); data_ = std::exchange(other.data_, ts_mesh_view{}); }
+        return *this;
+    }
+    ~MeshView() noexcept = default;
+    const ts_mesh_view& data() const noexcept { return data_; }
+};
+class Mesh {
+    friend class Scene;
+    std::unique_ptr<ts_mesh, detail::MeshDeleter> handle_;
+    explicit Mesh(ts_mesh* raw) noexcept : handle_(raw) {}
+public:
+    Mesh(const Mesh&) = delete;
+    Mesh& operator=(const Mesh&) = delete;
+    Mesh(Mesh&&) noexcept = default;
+    Mesh& operator=(Mesh&&) noexcept = default;
+    ~Mesh() noexcept = default;
+    // Flat XYZ and index arrays are copied during creation; counts are records.
+    static Result<Mesh> from_triangles(const double* xyz, size_t vertices,
+        const uint32_t* indices, size_t triangles, const MeshOptions* options = nullptr) {
+        ts_mesh* raw = nullptr;
+        const auto status = ts_mesh_create(xyz, vertices, indices, triangles, options, &raw);
+        Mesh mesh(raw);
+        if (status != TS_OK) return detail::error(status);
+        return mesh;
+    }
+    Result<MeshView> view() const {
+        ts_mesh_view data{};
+        auto status = ts_mesh_get_view(handle_.get(), &data);
+        if (status != TS_OK) return detail::error(status);
+        status = ts_mesh_retain(handle_.get());
+        if (status != TS_OK) return detail::error(status);
+        return MeshView(handle_.get(), data);
+    }
+};
+
+using SceneOptions = ts_scene_options;
+using SceneInstance = ts_scene_instance;
+using SceneInstanceInfo = ts_scene_instance_info;
+using SceneInfo = ts_scene_info;
+inline SceneOptions default_scene_options() noexcept {
+    SceneOptions options{}; ts_scene_options_init(&options); return options;
+}
+inline SceneInstance scene_instance(uint64_t id, uint64_t parent = 0, uint64_t asset = 0) noexcept {
+    SceneInstance instance{}; instance.id=id; instance.parent_id=parent; instance.asset_id=asset;
+    instance.linear[0]=instance.linear[4]=instance.linear[8]=1; return instance;
+}
+namespace detail {
+struct SceneDeleter { void operator()(ts_scene* p) const noexcept { ts_scene_release(p); } };
+}
+class Scene {
+    friend class Appearance;
+    std::unique_ptr<ts_scene, detail::SceneDeleter> handle_;
+    explicit Scene(ts_scene* raw) noexcept : handle_(raw) {}
+public:
+    // Borrowed only during create(); the scene retains each asset independently.
+    struct Asset { uint64_t id; const Mesh* mesh; };
+    Scene(const Scene&) = delete;
+    Scene& operator=(const Scene&) = delete;
+    Scene(Scene&&) noexcept = default;
+    Scene& operator=(Scene&&) noexcept = default;
+    ~Scene() noexcept = default;
+    static Result<Scene> create(const std::vector<Asset>& assets,
+        const std::vector<SceneInstance>& instances, const SceneOptions* options = nullptr) {
+        std::vector<ts_scene_asset> inputs; inputs.reserve(assets.size());
+        for (const auto& asset : assets) inputs.push_back({asset.id, asset.mesh ? asset.mesh->handle_.get() : nullptr});
+        ts_scene* raw=nullptr;
+        auto status=ts_scene_create(inputs.data(),inputs.size(),instances.data(),instances.size(),options,&raw);
+        Scene scene(raw);
+        if (status!=TS_OK) return detail::error(status);
+        return scene;
+    }
+    Result<SceneInfo> info() const {
+        SceneInfo info{}; auto status=ts_scene_get_info(handle_.get(),&info);
+        if (status!=TS_OK) return detail::error(status);
+        return info;
+    }
+    Result<SceneInstanceInfo> instance_at(size_t index) const {
+        SceneInstanceInfo info{}; auto status=ts_scene_instance_at(handle_.get(),index,&info);
+        if (status!=TS_OK) return detail::error(status);
+        return info;
+    }
+    Result<Mesh> asset_mesh(uint64_t id) const {
+        ts_mesh* raw=nullptr; auto status=ts_scene_asset_mesh(handle_.get(),id,&raw);
+        Mesh mesh(raw);
+        if (status!=TS_OK) return detail::error(status);
+        return mesh;
+    }
+    Result<Mesh> bake(uint64_t instance, const MeshOptions* options = nullptr) const {
+        ts_mesh* raw=nullptr; auto status=ts_scene_bake_instance(handle_.get(),instance,options,&raw);
+        Mesh mesh(raw);
+        if (status!=TS_OK) return detail::error(status);
+        return mesh;
+    }
+};
+
+using AppearanceOptions = ts_appearance_options;
+using Material = ts_material;
+using StyleBinding = ts_style_binding;
+using ResolvedMaterial = ts_resolved_material; // material.id == 0 means unstyled.
+using AppearanceInfo = ts_appearance_info;
+enum class StyleScope : uint32_t {
+    asset=TS_STYLE_ASSET, asset_face=TS_STYLE_ASSET_FACE,
+    instance=TS_STYLE_INSTANCE, instance_face=TS_STYLE_INSTANCE_FACE
+};
+inline StyleBinding style_binding(StyleScope scope, uint64_t id, uint64_t material, uint64_t face=0) noexcept {
+    return {{static_cast<uint32_t>(scope),0,id,face},material};
+}
+inline AppearanceOptions default_appearance_options() noexcept {
+    AppearanceOptions options{}; ts_appearance_options_init(&options); return options;
+}
+namespace detail {
+struct AppearanceDeleter { void operator()(ts_appearance* p) const noexcept { ts_appearance_release(p); } };
+}
+class Appearance {
+    std::unique_ptr<ts_appearance,detail::AppearanceDeleter> handle_;
+    explicit Appearance(ts_appearance* raw) noexcept : handle_(raw) {}
+public:
+    Appearance(const Appearance&) = delete;
+    Appearance& operator=(const Appearance&) = delete;
+    Appearance(Appearance&&) noexcept = default;
+    Appearance& operator=(Appearance&&) noexcept = default;
+    ~Appearance() noexcept = default;
+    // Records are copied; the original Scene and its mesh buffers are retained.
+    static Result<Appearance> create(const Scene& scene, const std::vector<Material>& materials,
+        const std::vector<StyleBinding>& bindings, const AppearanceOptions* options=nullptr) {
+        ts_appearance* raw=nullptr;
+        auto status=ts_appearance_create(scene.handle_.get(),materials.data(),materials.size(),
+            bindings.data(),bindings.size(),options,&raw);
+        Appearance appearance(raw);
+        if (status!=TS_OK) return detail::error(status);
+        return appearance;
+    }
+    Result<AppearanceInfo> info() const {
+        AppearanceInfo info{}; auto status=ts_appearance_get_info(handle_.get(),&info);
+        if (status!=TS_OK) return detail::error(status);
+        return info;
+    }
+    Result<Material> material_at(size_t index) const {
+        Material material{}; auto status=ts_appearance_material_at(handle_.get(),index,&material);
+        if (status!=TS_OK) return detail::error(status);
+        return material;
+    }
+    Result<StyleBinding> binding_at(size_t index) const {
+        StyleBinding binding{}; auto status=ts_appearance_binding_at(handle_.get(),index,&binding);
+        if (status!=TS_OK) return detail::error(status);
+        return binding;
+    }
+    Result<ResolvedMaterial> resolve_triangle(uint64_t instance, size_t triangle) const {
+        ResolvedMaterial material{};
+        auto status=ts_appearance_resolve_triangle(handle_.get(),instance,triangle,&material);
+        if (status!=TS_OK) return detail::error(status);
+        return material;
+    }
+    Result<Scene> scene() const {
+        ts_scene* raw=nullptr; auto status=ts_appearance_get_scene(handle_.get(),&raw);
+        Scene scene(raw);
+        if (status!=TS_OK) return detail::error(status);
+        return scene;
+    }
+};
+
 }
 #endif

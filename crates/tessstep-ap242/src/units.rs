@@ -51,7 +51,7 @@ impl<'d, 'a> Context<'d, 'a> {
         }
         result.ok_or_else(|| self.error(ErrorKind::Unsupported, "unit dimension not supported"))
     }
-    fn unit(&mut self, mut view: &'d EntityView<'a>) -> Result<Unit, Error> {
+    pub(super) fn unit(&mut self, mut view: &'d EntityView<'a>) -> Result<Unit, Error> {
         self.set_entity(view.id);
         let dimension = self.dimension(view)?;
         let mut seen = BTreeSet::new();

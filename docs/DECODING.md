@@ -123,5 +123,6 @@ DERIVE/INVERSE evaluation, attribute redeclaration, WHERE/entity UNIQUE rules, s
 expressions, algorithms, constants, value references, precision semantics and general
 EXPRESS evaluation remain unsupported. This milestone does not bundle AP schemas, fetch
 external references, select populations automatically, construct owned generated records,
-or expose schema decoding through C/C++. Geometry and tessellation remain future stages.
+or expose schema decoding through C/C++. STEP geometry adaptation remains a future stage; independent constructed geometry
+and tessellation do not imply schema-to-mesh support.
 See [VALIDATION.md](VALIDATION.md) for actual checks and corpus observations.

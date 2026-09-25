@@ -56,3 +56,7 @@ it does not imply surface/volume validation. Compile-fail examples protect handl
 and the raw-to-normalized boundary. A shared bounded mutation harness exercises all
 three new layers. Public C/C++ geometry/topology operations remain pending under
 [C_API.md](C_API.md); no Rust layout is part of that ABI.
+
+Vertex links distinguish the two endpoint incidences of a closed edge, even when
+both refer to the same vertex. This permits closed circular boundaries with cap/seam
+uses and doubly periodic faces while retaining pinched-vertex rejection.

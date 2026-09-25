@@ -7,11 +7,13 @@
 TessSTEP is building toward a STEP geometry kernel and adaptive tessellator.
 Today it provides physical-file parsing, structural schema decoding, product and
 assembly graphs, independent analytic and NURBS geometry, structural B-rep validation,
-UV reconstruction, and shared-edge boundary sampling.
+UV reconstruction, shared-edge sampling, adaptive planar/curved-face tessellation,
+owned manifold shell/solid meshes, and shared assembly assets with nested placements.
 
 **STEP-to-mesh conversion is not implemented.** The geometry evaluators operate on
 explicitly constructed geometry; they are not yet connected to STEP records.
-Face triangulation and solid tessellation remain under development. No AP203, AP214, or AP242
+Constructed regular faces and single-shell solids can be tessellated; singular
+trims and general CAD validity remain outside the implemented scope. No AP203, AP214, or AP242
 conformance is claimed, and successful parsing does not establish schema or CAD
 validity.
 
@@ -22,10 +24,13 @@ validity.
 | STEP Part 21 | Streaming parser, generic entity storage, source spans, resource limits, and reference diagnostics | A documented clear-text subset; external references and signatures are retained but not fetched or verified |
 | EXPRESS | Declaration parsing, import resolution, structural checks, deterministic Rust bindings, and static schema reflection | Schemas and their dependencies must be supplied explicitly; general expression and algorithm evaluation is unsupported |
 | Schema decoding | Structural validation of simple and complex instances, SELECTs, bounds, widths, aggregate uniqueness, and local references | Requires supplied schema metadata; does not implement full EXPRESS rules or application-protocol semantics |
-| Products and assemblies | Product/representation graphs, assembly occurrences, mapped reuse, and explicit unit scales | A structural subset; placement descriptions are preserved without evaluating geometric transforms |
-| Geometry | Typed coordinates, tolerances, affine transforms, analytic curves and surfaces, and NURBS evaluation with derivatives and knot insertion | Independent Rust APIs; no STEP geometry adapter or meshes |
-| B-rep boundaries | Typed topology validity states, supplied-pcurve UV loops, and canonical shared-edge samples | Constructed geometry only; sampled error checks, no triangle meshes or volume validity proof |
-| C and C++ | Shared C ABI library, C++17 RAII wrapper, typed errors, and an installable CMake package | Physical buffer parsing, immutable document inspection, and reference diagnostics only |
+| Products and assemblies | Product/representation graphs, explicit units/uncertainty, evaluated STEP placements, mapped reuse and bounded nested expansion | Local 3D immediate usages; supplied decoded metadata, explicit alternative choices, no full AP conformance |
+| Geometry | Typed coordinates, tolerances, affine transforms, analytic curves and surfaces, and NURBS evaluation with derivatives and knot insertion | Independent Rust APIs; no STEP geometry adapter |
+| B-rep boundaries | Typed topology validity states, supplied-pcurve UV loops, and canonical shared-edge samples | Constructed geometry only; sampled error checks and no volume validity proof |
+| Tessellation and meshes | Constrained planar/regular curved faces, adaptive analytic/NURBS refinement, canonical position assembly and manifold closure checks | Constructed B-reps with supplied pcurves; sampled errors, no singularity repair or self-intersection proof |
+| Assembly mesh assets | Shared immutable meshes, nested affine instances and explicit baking | Explicit SI placements, including Milestone 5 output; mesh asset binding remains caller-controlled, no world-space tolerance guarantee |
+| Appearance | Linear RGBA palettes, asset/face assignments and inherited instance overrides | Shared scene geometry and explicit precedence; no STEP style adapter, textures or rendering |
+| C and C++ | Shared C ABI library, C++17 RAII wrapper, typed errors, and an installable CMake package | Physical document inspection/reference diagnostics plus owned triangle import and retained zero-copy mesh views and assembly scene ownership/baking and appearance queries; no STEP-to-mesh entry point |
 
 The [conformance table](docs/CONFORMANCE.md) records supported behavior and test
 evidence. See the [roadmap](docs/ROADMAP.md) for remaining work.

@@ -1,116 +1,157 @@
-# Products and representations
+# Products, representations and assembly semantics
 
-Milestone 5 now has an initial structural product graph and explicit unit scales.
-Placement descriptions are preserved, not evaluated. This is a Rust extraction API,
-not AP242 conformance, a geometry loader or an assembly renderer.
+Milestone 5 delivers bounded local 3D product semantics over explicitly supplied,
+structurally decoded schemas: products, formations, definitions, shapes, contexts,
+units, uncertainty measures, reusable representations, mapped items and placed assembly
+occurrences. STEP placements are evaluated with the independent checked math layer.
+This is not full AP242 conformance or STEP B-rep/mesh adaptation.
 
-## Ownership and entry points
+## Entry points and ownership
 
-`tessstep-product` has no dependencies. Callers construct `Parts` and validate them
-with `Model::new(parts, max_work)`. Successful models expose immutable parts and roots.
-Typed product, formation, definition, representation, shape, occurrence, map and item
-identities are local to a model; they are not vector indexes or geometric validity.
-Products, versions/formations, design definitions and occurrences remain distinct.
-Repeated occurrences reuse the same definition and representation records.
+`tessstep-product` depends only on `tessstep-math` and can be constructed without STEP.
+`Model::new(parts, max_work)` checks caller-owned `Parts` and publishes an immutable
+model. Typed IDs identify products, formations, definitions, shapes, representations,
+occurrences and items; they are sparse identities, never allocation sizes.
 
-`tessstep-ap242::adapt(decoded, schema_name, limits)` adapts a structurally decoded
-document. The umbrella exports these crates as `tessstep::product` and `tessstep::ap242`.
-The adapter crate name reserves the architecture boundary, not a claim that a complete
-AP242 schema is bundled or supported. Callers supply metadata and pass the decoder;
-no unsupported EXPRESS rule or diagnostic is bypassed here.
+`tessstep-ap242::adapt(decoded, schema_name, limits)` reads named attributes and resolved
+schema memberships and returns an owned product model. The umbrella exports these APIs
+as `tessstep::ap242` and `tessstep::product`. No AP inheritance hierarchy or physical
+parameter offsets are hand encoded. Callers must pass the structural decoder first;
+unsupported EXPRESS rules are not suppressed or evaluated by the adapter.
 
 ```rust,ignore
 let decoded = tessstep::model::decode::decode(
     &document, &bindings::SCHEMA_SET, "MY_SCHEMA", Default::default(),
 )?;
-let products = tessstep::ap242::adapt(&decoded, "MY_SCHEMA", Default::default())?;
-for root in products.roots() {
-    println!("assembly root: {root:?}");
-}
+let model = tessstep::ap242::adapt(&decoded, "MY_SCHEMA", Default::default())?;
+let instances = model.expand(root_definition, root_representation,
+    &std::collections::BTreeMap::new(), Default::default())?;
 ```
 
-Output owns its strings and graph records. Adapter identity numbers preserve physical
-entity IDs. Opaque item IDs are provenance for a future geometry adapter; retain the
-original document if those items will need interpretation. No geometry is discovered
-by scanning ADVANCED_FACE records. No evaluated placement or world transform is
-manufactured from product graph success.
+Output owns its strings, graph records and evaluated transforms. Adapter ID numbers
+preserve physical IDs. Opaque geometry items remain provenance: retain the physical
+model for later geometry interpretation. No ADVANCED_FACE scan discovers geometry,
+and no mesh or topology validity follows from product-stage acceptance.
 
-## Supported relationships
+## Product and representation relationships
 
-Roles resolve through the explicitly selected schema's symbol table. The adapter checks
-decoded declaration memberships and named attributes, without a hand-encoded AP
-inheritance tree or physical parameter offsets. Both internal and external complex
-mappings work within the decoder's subset.
-
-| Input role | Retained meaning |
+| Input role | Interpretation |
 | --- | --- |
 | product → product_definition_formation → product_definition | Product identity, version and design definition |
 | product_definition_shape → shape_definition_representation | Shape identity and representation binding |
-| representation → context_of_items/items | Reusable representation, units and opaque item identities |
-| next_assembly_usage_occurrence | Parent/child definition and distinct occurrence identity |
-| representation_relationship | Ordered representation endpoints; unspecified transformation stays explicit |
-| representation_relationship_with_transformation → item_defined_transformation | Ordered item pair, never an assumed identity matrix |
-| context_dependent_shape_representation | Occurrence-to-representation-relationship placement link |
-| representation_map / mapped_item | Reusable source representation, mapping origin and target item |
+| representation → context_of_items/items | Reusable representation, explicit units and opaque item identities |
+| next_assembly_usage_occurrence | Distinct immediate parent/child usage |
+| representation_relationship_with_transformation | Ordered endpoints with item-defined or Cartesian transformation |
+| context_dependent_shape_representation | Usage-to-representation-relationship link |
+| shape_representation_relationship without transformation | Transitive shape ownership association |
+| representation_map / mapped_item | Reusable source, origin, target and evaluated source-to-user placement |
 
-Validation rejects duplicate identities, missing links, assembly cycles and mapped-use
-cycles, including disconnected cycles. Repeated children and diamonds are legal; no
-instance tree is expanded. Roots follow input order.
+Products, versions, definitions, shapes and occurrences remain distinct. Repeated parts
+share definition/representation records. Reference closure through representation items
+resolves indirect context membership, including placement points/directions and nested
+item groups. A map's source is a context boundary; its source items are not imported into
+the using context by this traversal. Cyclic item references terminate through visited sets.
 
-This slice requires transformation item 1 directly in representation 1 and item 2 in
-representation 2. Map origins must be direct source representation members; targets
-must be direct members of each using representation. Occurrence placements must connect
-representations directly bound to the parent/child definitions, in either endpoint order.
-Indirect item-in-context and transitive shape association paths fail graph validation.
-Multiple representation alternatives and placements remain explicit; none is selected
-as an active alternative.
+Untransformed shape associations extend definition-to-representation ownership in both
+directions, including cyclic association graphs. Assembly placement edges do not extend
+ownership. An occurrence's relationship endpoints must belong to its parent and child
+shapes. Ordered item-defined endpoints must belong to the corresponding representation
+contexts. Assembly definition cycles and mapped-representation cycles are rejected,
+including disconnected cycles. Multiple representations and placements are preserved.
 
-## Explicit units
+## Placement contract
 
-Only 3D geometric contexts with global unit assignments are supported. Each must supply
-exactly one length, plane-angle and solid-angle unit; no default units are invented.
-SI metre/radian/steradian units with STEP prefixes from atto through exa and positive
-conversion-based chains are interpreted. Conversion must preserve its unit role and
-seven dimensional exponents. Iterative chains have cycle and depth checks. Offset units,
-other dimensions and uninterpretable unit definitions are explicit unsupported errors.
-Names such as “inch” and “degree” are labels; the numeric chain determines the scale.
+All evaluated transforms operate on **metre-based coordinates**, use column vectors
+and store row-major linear matrices. The adapter evaluates:
 
-`Unit::to_si(value)` converts explicitly requested quantities to **metres, radians or
-steradians**. It rejects non-finite values and nonzero underflow. Scales are finite and
-positive; f64 arithmetic does not promise exact decimal conversion. Raw geometry
-coordinates remain uninterpreted: storing a scale does not convert the physical file.
+- `axis2_placement_3d`, with normalized directions, projected x reference, default +Z
+  axis, and default +X reference (or +Y when Z is exactly parallel to X).
+- Item-defined relationships: `rep_1_to_rep_2 = frame_2 * inverse(frame_1)`. Each frame
+  origin uses its own representation context's length unit.
+- 3D Cartesian operators: projected orthogonal axes, default scale 1, positive scale,
+  destination-unit origin and dimensionless scale. The second axis preserves handedness;
+  zero/degenerate projections fail. No silent axis repair is performed.
+- A supplied `cartesian_transformation_operator_3d_non_uniform` schema extension with
+  optional scale2/scale3 defaulting to scale. This supplemental role does not claim that
+  every STEP AP declares such an entity.
+- Mapped items: `source_to_using = target * inverse(mapping_origin)`, with origin and
+  target translations converted in their respective contexts. Targets may be axis2
+  placements or supported operators. Unit conversion never becomes an extra shape scale.
 
-## Limits and remaining work
+`Parts::relationship_transforms` and `Parts::mapped_transforms` expose immutable evaluated
+maps while preserving source descriptors. Unsupported placement kinds fail explicitly.
+Absent transformation remains absent, not identity. The checked math layer rejects
+non-finite results, unusable inverses and nearly parallel axes at its documented numerical
+threshold. These are floating-point safeguards, not exact predicates or error certificates.
 
-Errors carry typed kinds and physical owner/attribute/source when available. Global
-graph failures have a graph error without an invented owner. No partial model is
-published. Default budgets are 5,000,000 logical work steps, 16,000,000 copied text
-bytes and 128 unit-chain nodes. Graph validation consumes the remaining work budget.
-Ordered maps and input-order vectors preserve determinism. Membership scans can be
-quadratic; logical budgets are not exact RSS or wall-time limits.
+## Assembly expansion
 
-Administrative metadata, uncertainty/tolerance measures, geometric placement values,
-axis defaults, matrix composition/inversion, Cartesian/nonuniform transformation
-operators, 2D contexts, external assemblies, other assembly relationship kinds,
-AP242 occurrence variants, configuration selection and general EXPRESS rules remain
-future work. Opaque representation items are not certified by product stage success.
-The C ABI and C++ wrapper remain at physical documents; no product/schema operations,
-mesh views or Rust layouts are exposed through ABI 1.
+`Model::expand(root_definition, root_representation, selections, limits)` explicitly
+instantiates the definition DAG into a preorder vector. Each `Instance` records a parent
+index, source occurrence/definition/representation IDs, local-to-parent and local-to-world
+transforms. Repeated subassemblies expand into distinct paths without copying geometry.
+The chosen root has identity world placement. World composition applies the child-to-parent
+map first, then the parent's world map; reversed relationship endpoints are inverted.
+
+The caller chooses the root representation. Multiple matching placement relationships
+return `AmbiguousPlacement` unless the caller selects a relationship for that occurrence.
+Missing transforms return `MissingPlacement`. Same-context untransformed shape associations
+can connect coordinate frames during traversal; cross-context ownership association alone
+does not establish a world placement. No external resources or arbitrary alternatives are
+selected. Output contains no partial expansion on failure.
+
+Defaults: 5,000,000 work steps, 100,000 instances, 1,024 levels. Traversal is iterative;
+instance and work limits stop exponential DAG expansion before unbounded output allocation.
+The independent mesh scene API can consume these explicit transforms and caller-selected
+mesh assets; automatic STEP geometry-to-mesh asset binding remains a separate task.
+
+## Units and uncertainty
+
+Each supported 3D geometric context supplies exactly one length, plane-angle and solid-angle
+unit. No defaults are invented. SI metre/radian/steradian units with the STEP prefix set
+atto–exa and positive conversion chains are normalized. Conversion role and all seven
+explicit dimensional exponents must agree; cycles, overflow and nonzero underflow fail.
+Names such as “inch” do not override numeric conversion factors.
+
+`Unit::to_si` returns metres, radians or steradians. Placement origins and uncertainty
+values are converted; opaque geometry coordinates are not. Global uncertainty assignments
+retain every positive measure, its dimension, source ID, name and optional description.
+Each measure uses its own unit, independently of the context unit. The adapter never
+chooses a tessellation tolerance from an uncertainty value or merges competing measures.
+
+## Budgets and conformance boundaries
+
+Adapter defaults: 5,000,000 work steps, 16,000,000 copied text bytes, 128 unit-chain nodes.
+Graph validation consumes remaining adapter work. Errors carry typed kinds, physical
+owner/attribute/span where available, and math/graph failure kinds. Ordered maps and input
+order preserve determinism. Closure and membership scans can be superlinear; these logical
+limits are not exact RSS or wall-time bounds.
+
+This milestone covers local immediate single-occurrence 3D assemblies. Quantified,
+promissory and specified-higher usage forms are explicitly rejected: they cannot safely
+be interpreted as immediate individual instances. Full AP242 occurrence/configuration
+variants, external assembly resolution, 2D contexts, offset/other unit dimensions,
+administrative metadata and full EXPRESS rule evaluation are outside this slice.
+Geometry item evaluation and automatic mesh asset binding remain later adapter work.
+C/C++ product operations are not yet exposed; existing physical/mesh/scene interfaces
+and their ownership contracts are unchanged. Rust math or container layouts never cross
+that ABI.
 
 ## Evidence and references
 
-`corpus/product/sample.exp` is an original reduced test schema, not an ISO extract.
-Tests cover independent graphs, repeated parts, millimetre/inch and degree conversion,
-complex mappings, mapped reuse, ordering, budgets, invalid units/links, cycles and
-deterministic mutations. `python3 scripts/check_product.py` verifies generated metadata
-and separate physical/schema/product stages against reviewed fixture expectations.
-See [VALIDATION.md](VALIDATION.md) for observed evidence and remaining limits.
+The authored `corpus/product` schema is a reduced synthetic schema, not an ISO extract.
+`python3 scripts/check_product.py` verifies generated metadata, eleven reviewed physical /
+schema / product outcomes, evaluated matrices, graph counts and uncertainty values.
+Rust tests additionally cover reversed transforms, noncommuting nested placement,
+reflections, shared representations, indirect context/shape links, ambiguity, missing
+placement, numeric failures and a 2,000-level expansion. See [VALIDATION.md](VALIDATION.md).
 
-Relationship fields were checked against STEP Tools' published reference pages for
-[mapped_item](https://www.steptools.com/docs/stp_aim/html/t_mapped_item.html),
-[representation_map](https://www.steptools.com/stds/stp_aim/html/t_representation_map.html),
-[context_dependent_shape_representation](https://www.steptools.com/stds/stp_aim/html/t_context_dependent_shape_representation.html),
-[item_defined_transformation](https://www.steptools.com/stds/stp_aim/html/t_item_defined_transformation.html),
-[si_unit](https://www.steptools.com/stds/stp_aim/html/t_si_unit.html) and
-[conversion_based_unit](https://www.steptools.com/stds/stp_aim/html/t_conversion_based_unit.html).
-These references do not establish full standards compliance.
+Axis/default rules were checked against STEP Tools' published
+[base_axis](https://www.steptools.com/stds/stp_aim/html/t_base_axis.html),
+[first_proj_axis](https://www.steptools.com/stds/stp_aim/html/t_first_proj_axis.html) and
+[second_proj_axis](https://www.steptools.com/stds/stp_aim/html/t_second_proj_axis.html)
+functions. The [uncertainty reference](https://www.steptools.com/stds/stp_aim/html/t_valid_measure_value.html)
+requires positive measures. The
+[product structure reference](https://www.steptools.com/stds/smrl/data/resource_docs/product_structure_configuration/sys/4_schema.htm)
+distinguishes immediate usages from promised or quantified use. These references inform
+this bounded implementation, not a standards certification claim.

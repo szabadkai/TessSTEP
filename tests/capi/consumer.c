@@ -22,7 +22,159 @@ static const char unsupported[] = HEADER "#1=&SCOPE #2=A(); ENDSCOPE A();" END;
 static int text_is(ts_string_view view, const char *expected) {
     return view.size == strlen(expected) && memcmp(view.data, expected, view.size) == 0;
 }
+static void mesh_contract(void) {
+    _Static_assert(sizeof(ts_mesh_options) == 40, "mesh options layout");
+    _Static_assert(sizeof(ts_mesh_view) == 80, "mesh view layout");
+    _Static_assert(offsetof(ts_mesh_view, face_ids) == 48, "mesh face offset");
+    _Static_assert(offsetof(ts_mesh_view, signed_volume) == 72, "mesh volume offset");
+    double xyz[] = {0,0,0, 1,0,0, 0,1,0, 0,0,1};
+    const uint32_t triangles[] = {0,2,1, 0,1,3, 1,2,3, 2,0,3};
+    ts_mesh *mesh = NULL;
+    ts_mesh_options options;
+    ts_mesh_view view, again;
+    assert(ts_mesh_options_init(&options) == TS_OK);
+    assert(options.struct_size == 40 && options.abi_version == 1);
+    options.require_solid = 1;
+    assert(ts_mesh_create(xyz,4,triangles,4,&options,&mesh) == TS_OK);
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK);
+    assert(view.vertex_count == 4 && view.triangle_count == 4 && view.boundary_edges == 0 && view.components == 1);
+    assert(view.signed_volume > 0.1666 && view.signed_volume < 0.1667);
+    xyz[0] = 8;
+    assert(view.positions[0] == 0 && view.triangles[1] == 2 && view.normals[2] == -1 && view.uvs[0] == 0 && view.face_ids[0] == 0);
+    assert(ts_mesh_retain(mesh) == TS_OK);
+    ts_mesh_release(mesh);
+    assert(ts_mesh_get_view(mesh,&again) == TS_OK && again.positions == view.positions);
+    ts_mesh_release(mesh);
+    assert(ts_mesh_get_view(NULL,&view) == TS_INVALID_ARGUMENT && !view.positions && view.vertex_count == 0);
+    xyz[0] = 0;
+    assert(ts_mesh_create(xyz,4,triangles,3,&options,&mesh) == TS_INVALID_MESH && !mesh);
+    options.max_vertices = 0;
+    assert(ts_mesh_create(xyz,4,triangles,4,&options,&mesh) == TS_RESOURCE_LIMIT && !mesh);
+    assert(ts_mesh_retain(NULL) == TS_INVALID_ARGUMENT);
+    ts_mesh_release(NULL);
+}
+static void scene_contract(void) {
+    _Static_assert(sizeof(ts_scene_options) == 40, "scene options layout");
+    _Static_assert(sizeof(ts_scene_asset) == 16, "asset layout");
+    _Static_assert(sizeof(ts_scene_instance) == 120, "instance layout");
+    _Static_assert(offsetof(ts_scene_instance, linear) == 24, "local linear offset");
+    _Static_assert(sizeof(ts_scene_instance_info) == 232, "instance info layout");
+    _Static_assert(offsetof(ts_scene_instance_info, world_linear) == 120, "world linear offset");
+    _Static_assert(offsetof(ts_scene_instance_info, mirrored) == 224, "mirrored offset");
+    _Static_assert(sizeof(ts_scene_info) == 16, "scene info layout");
+    const double xyz[] = {0,0,0, 1,0,0, 0,1,0};
+    const uint32_t tri[] = {0,1,2};
+    ts_mesh *mesh = NULL, *acquired = NULL, *baked = NULL;
+    ts_scene *scene = NULL;
+    ts_scene_asset asset;
+    ts_mesh_view original, view;
+    ts_scene_info info;
+    ts_scene_instance_info instance;
+    ts_scene_options options;
+    ts_scene_instance nodes[] = {
+        {7,42,9, {-2,0,0, 0,3,0, 0,0,4}, {1,0,0}},
+        {42,0,0, {1,0,0, 0,1,0, 0,0,1}, {10,0,0}}
+    };
+    assert(ts_mesh_create(xyz,3,tri,1,NULL,&mesh)==TS_OK);
+    assert(ts_mesh_get_view(mesh,&original)==TS_OK);
+    asset.id=9; asset.mesh=mesh;
+    assert(ts_scene_options_init(&options)==TS_OK && options.struct_size==sizeof(options));
+    assert(ts_scene_options_init(NULL)==TS_INVALID_ARGUMENT);
+    assert(ts_scene_create(&asset,1,nodes,2,&options,&scene)==TS_OK);
+    ts_mesh_release(mesh); mesh=NULL;
+    assert(ts_scene_retain(scene)==TS_OK); ts_scene_release(scene);
+    assert(ts_scene_get_info(scene,&info)==TS_OK && info.asset_count==1 && info.instance_count==2);
+    assert(ts_scene_instance_at(scene,0,&instance)==TS_OK && instance.source.id==7);
+    assert(instance.depth==2 && instance.mirrored==1 && instance.world_translation[0]==11);
+    assert(ts_scene_instance_at(scene,2,&instance)==TS_NOT_FOUND && instance.source.id==0);
+    assert(ts_scene_asset_mesh(scene,9,&acquired)==TS_OK);
+    assert(ts_mesh_get_view(acquired,&view)==TS_OK && view.positions==original.positions);
+    assert(ts_scene_bake_instance(scene,7,NULL,&baked)==TS_OK);
+    assert(ts_mesh_get_view(baked,&view)==TS_OK && view.positions[0]==11 && view.positions[3]==9);
+    assert(view.triangles[1]==2 && view.normals[2]==1);
+    ts_mesh_release(baked); baked=NULL;
+    assert(ts_scene_bake_instance(scene,42,NULL,&baked)==TS_NOT_FOUND && !baked);
+    assert(ts_scene_asset_mesh(scene,88,&baked)==TS_NOT_FOUND && !baked);
+    ts_scene_release(scene); scene=NULL;
+    assert(ts_mesh_get_view(acquired,&view)==TS_OK && view.positions==original.positions);
+    asset.mesh=acquired;
+    nodes[1].parent_id=7;
+    assert(ts_scene_create(&asset,1,nodes,2,NULL,&scene)==TS_INVALID_SCENE && !scene);
+    nodes[1].parent_id=0;
+    options.max_instances=0;
+    assert(ts_scene_create(&asset,1,nodes,2,&options,&scene)==TS_RESOURCE_LIMIT && !scene);
+    assert(ts_scene_create(NULL,1,nodes,2,NULL,&scene)==TS_INVALID_ARGUMENT && !scene);
+    assert(ts_scene_get_info(NULL,&info)==TS_INVALID_ARGUMENT && info.asset_count==0);
+    assert(ts_scene_retain(NULL)==TS_INVALID_ARGUMENT);
+    ts_scene_release(NULL);
+    ts_mesh_release(acquired);
+}
+static void appearance_contract(void) {
+    _Static_assert(sizeof(ts_appearance_options)==32,"appearance options layout");
+    _Static_assert(sizeof(ts_material)==40,"material layout");
+    _Static_assert(sizeof(ts_style_target)==24,"style target layout");
+    _Static_assert(sizeof(ts_style_binding)==32,"binding layout");
+    _Static_assert(sizeof(ts_resolved_material)==64,"resolved layout");
+    _Static_assert(offsetof(ts_resolved_material,source)==40,"resolved source offset");
+    _Static_assert(sizeof(ts_appearance_info)==16,"appearance info layout");
+    const double xyz[]={0,0,0,1,0,0,0,1,0}; const uint32_t tri[]={0,1,2};
+    ts_mesh *mesh=NULL; ts_scene *scene=NULL,*retained=NULL; ts_appearance *appearance=NULL,*bad=NULL;
+    ts_mesh_view original,view; ts_resolved_material resolved; ts_appearance_info info;
+    ts_appearance_options options; ts_style_binding copied; ts_material color;
+    ts_material materials[]={{1,{1,0,0,1}},{2,{0,1,0,1}},{3,{0,0,1,0}}};
+    ts_style_binding bindings[]={{{TS_STYLE_ASSET,0,1,0},1},
+        {{TS_STYLE_INSTANCE,0,42,0},2},{{TS_STYLE_INSTANCE_FACE,0,7,0},3}};
+    ts_scene_instance nodes[]={
+        {7,42,1,{1,0,0,0,1,0,0,0,1},{0,0,0}},
+        {8,42,1,{1,0,0,0,1,0,0,0,1},{0,0,0}},
+        {9,0,1,{1,0,0,0,1,0,0,0,1},{0,0,0}},
+        {10,0,2,{1,0,0,0,1,0,0,0,1},{0,0,0}},
+        {42,0,0,{1,0,0,0,1,0,0,0,1},{0,0,0}}};
+    assert(ts_mesh_create(xyz,3,tri,1,NULL,&mesh)==TS_OK);
+    assert(ts_mesh_get_view(mesh,&original)==TS_OK);
+    ts_scene_asset assets[]={{1,mesh},{2,mesh}};
+    assert(ts_scene_create(assets,2,nodes,5,NULL,&scene)==TS_OK);
+    ts_mesh_release(mesh); mesh=NULL;
+    assert(ts_appearance_options_init(&options)==TS_OK && options.struct_size==sizeof(options));
+    assert(ts_appearance_options_init(NULL)==TS_INVALID_ARGUMENT);
+    assert(ts_appearance_create(scene,materials,3,bindings,3,&options,&appearance)==TS_OK);
+    ts_scene_release(scene);
+    assert(ts_appearance_retain(appearance)==TS_OK);ts_appearance_release(appearance);
+    materials[2].rgba[3]=1;
+    assert(ts_appearance_resolve_triangle(appearance,7,0,&resolved)==TS_OK && resolved.material.id==3);
+    assert(resolved.material.rgba[3]==0 && resolved.source.kind==TS_STYLE_INSTANCE_FACE && resolved.source.id==7);
+    assert(ts_appearance_resolve_triangle(appearance,8,0,&resolved)==TS_OK && resolved.material.id==2);
+    assert(resolved.source.kind==TS_STYLE_INSTANCE && resolved.source.id==42);
+    assert(ts_appearance_resolve_triangle(appearance,9,0,&resolved)==TS_OK && resolved.material.id==1);
+    assert(ts_appearance_resolve_triangle(appearance,10,0,&resolved)==TS_OK && resolved.material.id==0 && resolved.source.kind==0);
+    assert(ts_appearance_resolve_triangle(appearance,42,0,&resolved)==TS_NOT_FOUND && resolved.material.id==0);
+    assert(ts_appearance_resolve_triangle(appearance,7,1,&resolved)==TS_NOT_FOUND && resolved.source.id==0);
+    assert(ts_appearance_get_info(appearance,&info)==TS_OK && info.material_count==3 && info.binding_count==3);
+    assert(ts_appearance_material_at(appearance,2,&color)==TS_OK && color.id==3 && color.rgba[3]==0);
+    assert(ts_appearance_binding_at(appearance,2,&copied)==TS_OK && copied.material_id==3);
+    assert(ts_appearance_material_at(appearance,3,&color)==TS_NOT_FOUND && color.id==0);
+    assert(ts_appearance_binding_at(appearance,3,&copied)==TS_NOT_FOUND && copied.material_id==0);
+    assert(ts_appearance_get_scene(appearance,&retained)==TS_OK && retained==scene);
+    ts_appearance_release(appearance); appearance=NULL;
+    assert(ts_scene_asset_mesh(retained,1,&mesh)==TS_OK);
+    assert(ts_mesh_get_view(mesh,&view)==TS_OK && view.positions==original.positions);
+    ts_mesh_release(mesh);
+    materials[0].rgba[0]=2;
+    assert(ts_appearance_create(retained,materials,3,bindings,3,NULL,&bad)==TS_INVALID_APPEARANCE && !bad);
+    materials[0].rgba[0]=1;bindings[0].target.reserved=1;
+    assert(ts_appearance_create(retained,materials,3,bindings,3,NULL,&bad)==TS_INVALID_ARGUMENT && !bad);
+    bindings[0].target.reserved=0;options.max_work=0;
+    assert(ts_appearance_create(retained,materials,3,bindings,3,&options,&bad)==TS_RESOURCE_LIMIT && !bad);
+    assert(ts_appearance_create(retained,NULL,1,NULL,0,NULL,&bad)==TS_INVALID_ARGUMENT && !bad);
+    assert(ts_appearance_get_info(NULL,&info)==TS_INVALID_ARGUMENT && info.material_count==0);
+    assert(ts_appearance_get_scene(NULL,&scene)==TS_INVALID_ARGUMENT && !scene);
+    assert(ts_appearance_retain(NULL)==TS_INVALID_ARGUMENT);ts_appearance_release(NULL);
+    ts_scene_release(retained);
+}
 int main(void) {
+    appearance_contract();
+    scene_contract();
+    mesh_contract();
     ts_document *doc = NULL;
     ts_diagnostics *report = NULL;
     ts_parse_options options;

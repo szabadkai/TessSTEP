@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20134, the initial Milestone 5 product slice and independent geometry Milestones 6\u201313; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -186,19 +186,19 @@
       "feature": "STEP geometry / topology / meshes",
       "status": "not implemented",
       "test": null,
-      "limitations": "independent constructed geometry/topology, UV reconstruction and edge samples available; no STEP geometry adapter or triangle meshes"
+      "limitations": "constructed geometry/topology and regular face/solid tessellation available; no STEP geometry adapter"
     },
     {
       "feature": "public C ABI",
-      "status": "physical documents implemented",
+      "status": "physical documents, meshes, assembly scenes and appearance implemented",
       "test": "c_abi_document_and_diagnostic_contract",
-      "limitations": "ABI 1 shared library; buffer parsing, inspection and reference reports; schema/geometry/mesh APIs pending"
+      "limitations": "additive ABI 1; physical documents, triangle meshes, explicit scenes and appearance; schema/B-rep/tessellation APIs pending"
     },
     {
       "feature": "public C++ wrapper / CMake package",
-      "status": "physical documents implemented",
+      "status": "physical documents, meshes, assembly scenes and appearance implemented",
       "test": "tests/capi/consumer.cpp",
-      "limitations": "C++17 RAII and typed results; relocated shared package via TessSTEP::TessSTEP; mesh views and static linkage pending"
+      "limitations": "C++17 RAII for documents/meshes/scenes/appearance, retained zero-copy mesh views and typed results; installed TessSTEP::TessSTEP target; static linkage pending"
     },
     {
       "feature": "Generated schema validator and corpus stage",
@@ -216,25 +216,25 @@
       "feature": "Independent product/representation/assembly graphs",
       "status": "structural subset implemented",
       "test": "independent_product_graph_preserves_reuse_and_rejects_cycles",
-      "limitations": "typed identities and immutable validated graph; no expanded instance tree or evaluated placements"
+      "limitations": "typed identities and immutable validated graphs; explicit bounded expansion with missing/ambiguous placement errors"
     },
     {
       "feature": "Schema-decoded product adapters",
       "status": "structural subset implemented",
       "test": "product_adapter_follows_definitions_representations_and_occurrences",
-      "limitations": "supplied metadata; explicit role subset and direct item/shape membership; no complete AP schema"
+      "limitations": "supplied metadata; local 3D immediate assembly usages, indirect context/shape association; no full AP schema"
     },
     {
       "feature": "SI and conversion-based unit scales",
       "status": "subset implemented",
       "test": "product_adapter_unit_failures_are_explicit_and_located",
-      "limitations": "3D contexts with length/plane-angle/solid-angle units; offsets, other dimensions and uncertainties unsupported"
+      "limitations": "3D length/angle units and positive uncertainty measures; offsets and other dimensions unsupported"
     },
     {
-      "feature": "Mapped representation reuse and placement descriptions",
-      "status": "structural subset implemented",
-      "test": "product_adapter_complex_membership_and_mapping_reuse",
-      "limitations": "ordered item pairs and map links preserved; matrices, axis values/defaults and indirect contexts not evaluated"
+      "feature": "Mapped representations and evaluated STEP placements",
+      "status": "bounded subset implemented",
+      "test": "product_cartesian_operators_reflections_nonuniform_and_mapping",
+      "limitations": "axis2 and 3D Cartesian operators; supplemental nonuniform schema role; no full STEP geometry adaptation"
     },
     {
       "feature": "Product adapter mutation smoke",
@@ -348,19 +348,139 @@
       "feature": "Canonical shared-edge sampling",
       "status": "implemented",
       "test": "shared_edge_circle_obeys_independent_sagitta_and_angle_checks",
-      "limitations": "measured chord/tangent criteria, not certified continuous error; no triangle meshes"
+      "limitations": "measured chord/tangent criteria, not certified continuous error; boundary sampling only"
     },
     {
       "feature": "Shared face boundary position views",
       "status": "implemented",
       "test": "shared_edge_face_boundaries_keep_identical_positions_and_distinct_seam_uv",
-      "limitations": "zero-copy position references with per-use UVs; constrained triangulation pending"
+      "limitations": "zero-copy position references with per-use UVs; actual-resolution checks before planar triangulation"
     },
     {
       "feature": "Bounded boundary pipeline mutation smoke",
       "status": "implemented",
       "test": "topology_trim_sampling_bounded_mutation_smoke",
-      "limitations": "3,000 mutations and 388 prefixes; no extended instrumented hardening claim"
+      "limitations": "3,000 mutations and 582 prefixes, including adaptive meshes; no extended instrumented hardening claim"
+    },
+    {
+      "feature": "Constrained planar face triangulation",
+      "status": "implemented",
+      "test": "planar_concave_holes_area_constraints_and_determinism",
+      "limitations": "analytic planes, concave polygons and holes; bounded f64 bridge/ear clipping, no exact predicates or quality guarantee"
+    },
+    {
+      "feature": "Planar shared boundary and orientation",
+      "status": "implemented",
+      "test": "planar_shared_interior_knot_samples_keep_identity",
+      "limitations": "specialized borrowed planar result; general pipeline separately returns owned mesh assets"
+    },
+    {
+      "feature": "Actual-resolution boundary validation",
+      "status": "implemented",
+      "test": "planar_actual_boundary_resolution_is_revalidated",
+      "limitations": "invalid coarse polygons fail explicitly; no boundary repair or independent per-face resampling"
+    },
+    {
+      "feature": "Regular analytic curved-face refinement",
+      "status": "implemented",
+      "test": "analytic_sphere_cone_and_torus_regular_patches",
+      "limitations": "sampled chord/normal checks and periodic guards; singular poles/apices and certified bounds unsupported"
+    },
+    {
+      "feature": "NURBS knot-cell refinement",
+      "status": "implemented",
+      "test": "nurbs_rational_and_narrow_knot_spans_are_sampled",
+      "limitations": "positive-weight regular patches, one-sided cell probes; no exact predicates or internal crease alignment"
+    },
+    {
+      "feature": "Synchronized shared-boundary refinement",
+      "status": "implemented",
+      "test": "adjacent_faces_share_requested_refinement_and_keep_sharp_normals",
+      "limitations": "canonical parameter requests and topology identity; no proximity welding or missing-pcurve projection"
+    },
+    {
+      "feature": "Owned manifold shell/solid meshes",
+      "status": "implemented",
+      "test": "solid_torus_welds_both_periodic_seams",
+      "limitations": "one closed component and positive algebraic volume; no self-intersection, material or cavity proof"
+    },
+    {
+      "feature": "Mesh invariants and disconnected vertex links",
+      "status": "implemented",
+      "test": "mesh_open_disconnected_and_pinched_vertices_are_distinct",
+      "limitations": "finite f64, logical budgets; no healing or geometric intersection validation"
+    },
+    {
+      "feature": "C mesh buffer ownership and layouts",
+      "status": "implemented",
+      "test": "c_abi_mesh_owned_buffers_limits_and_failures",
+      "limitations": "copied triangle import, zero-copy immutable queries; C++ retained-view lifetimes covered by installed consumer"
+    },
+    {
+      "feature": "Closed-edge endpoint incidence",
+      "status": "implemented",
+      "test": "topology_closed_edges_keep_two_endpoint_incidences",
+      "limitations": "structural link validation distinguishes ends at one vertex; no geometric singular-edge repair"
+    },
+    {
+      "feature": "Shared mesh assets and nested occurrence scenes",
+      "status": "implemented",
+      "test": "scene_nested_reuse_preserves_buffers_and_composition_order",
+      "limitations": "explicit SI affine placements and occurrence forests; no STEP placement adapter or definition-DAG expansion"
+    },
+    {
+      "feature": "Reflected and nonuniform instance baking",
+      "status": "implemented",
+      "test": "scene_reflections_nonuniform_scale_and_corner_attributes",
+      "limitations": "inverse-transpose normals, corner ordering and mesh revalidation; no world-space tolerance or union guarantee"
+    },
+    {
+      "feature": "Assembly graph validation and budgets",
+      "status": "implemented",
+      "test": "scene_rejects_invalid_graphs_transforms_and_limits",
+      "limitations": "iterative forest traversal, finite numerical thresholds and logical limits; no exact memory bound"
+    },
+    {
+      "feature": "C/C++ assembly ownership and views",
+      "status": "implemented",
+      "test": "c_abi_scene_ownership_layouts_and_failure_outputs",
+      "limitations": "additive ABI 1, retained shared mesh assets and explicit baking; C++ lifetime/relocation coverage in installed consumers"
+    },
+    {
+      "feature": "Explicit linear RGBA materials and style validation",
+      "status": "implemented",
+      "test": "appearance_invalid_colors_targets_and_shadowed_assignments_fail",
+      "limitations": "finite linear RGB/straight opacity and exact identity bindings; no STEP presentation adapter, textures or lighting model"
+    },
+    {
+      "feature": "Appearance precedence and inherited occurrence overrides",
+      "status": "implemented",
+      "test": "appearance_precedence_inheritance_and_shared_asset_identity",
+      "limitations": "explicit kernel precedence, ancestor provenance and shared geometry; not ISO style precedence"
+    },
+    {
+      "feature": "Bounded appearance resolution and mutation oracle",
+      "status": "implemented",
+      "test": "appearance_bounded_mutations_match_independent_precedence_oracle",
+      "limitations": "2,000 deterministic cases; iterative inheritance, allocation-free queries, no industrial fuzzing claim"
+    },
+    {
+      "feature": "C/C++ appearance ownership and scalar queries",
+      "status": "implemented",
+      "test": "c_abi_appearance_records_ownership_and_failure_outputs",
+      "limitations": "retained original scene and shared mesh views, additive ABI 1; installed native consumers exercise lifetimes and layouts"
+    },
+    {
+      "feature": "Bounded definition-DAG assembly expansion",
+      "status": "implemented",
+      "test": "product_nested_assembly_composition_choices_and_limits",
+      "limitations": "explicit root and alternative selection; metre-based local/world maps; no automatic mesh asset binding"
+    },
+    {
+      "feature": "Indirect context/shape links and uncertainty",
+      "status": "implemented",
+      "test": "product_indirect_contexts_associations_and_uncertainties",
+      "limitations": "budgeted closures; positive measures retained individually, never converted into implicit tessellation tolerances"
     }
   ]
 }

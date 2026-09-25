@@ -1,6 +1,13 @@
 //! Canonical shared-edge sampling from immutable normalized topology.
-//! This stage emits boundary polylines, not triangles or a watertight solid.
+//! Shared boundaries, adaptive regular face triangles and manifold shell/solid assembly.
 #![forbid(unsafe_code)]
+mod adaptive;
+mod planar;
+pub use adaptive::{
+    TessellationError, TessellationErrorKind, TessellationOptions, tessellate_faces,
+    tessellate_shell, tessellate_solid,
+};
+pub use planar::{PlanarError, PlanarMesh, PlanarOptions};
 use tessstep_curves::{Evaluation, spline::KnotSide};
 use tessstep_math::{ModelSpace, Point3, TessellationTolerance};
 use tessstep_topology::{CoedgeId, EdgeId, NormalizedBrep};
@@ -126,6 +133,14 @@ pub fn sample_edges(
     tolerance: TessellationTolerance,
     limits: SamplingLimits,
 ) -> Result<SharedEdges<'_>, Error> {
+    sample_edges_seeded(brep, tolerance, limits, &[])
+}
+fn sample_edges_seeded<'a>(
+    brep: &'a NormalizedBrep,
+    tolerance: TessellationTolerance,
+    limits: SamplingLimits,
+    forced: &[Vec<f64>],
+) -> Result<SharedEdges<'a>, Error> {
     if limits.max_depth > 48 || limits.max_samples > 10_000_000 {
         return Err(Error {
             edge: EdgeId(0),
@@ -141,10 +156,21 @@ pub fn sample_edges(
         let sample = |budget: &mut Budget| -> Result<Vec<Sample>, ErrorKind> {
             let chord = tolerance.chord().as_metres();
             let angle = tolerance.normal_angle().as_radians();
-            let seeds = edge
+            let mut seeds = edge
                 .curve
                 .break_parameters(edge.range, budget.samples)
                 .map_err(|_| ErrorKind::ResourceLimit)?;
+            if let Some(extra) = forced.get(i) {
+                if extra.len() > limits.max_samples {
+                    return Err(ErrorKind::ResourceLimit);
+                }
+                seeds.extend_from_slice(extra);
+                seeds.sort_by(f64::total_cmp);
+                seeds.dedup();
+                if seeds.len() > budget.samples {
+                    return Err(ErrorKind::ResourceLimit);
+                }
+            }
             let evaluate = |u: f64,
                             side: KnotSide,
                             budget: &mut Budget|
@@ -333,7 +359,7 @@ pub struct FaceBoundary<'a> {
 impl SharedEdges<'_> {
     /// Reconstruct the chart, then map each canonical edge sample to every face use.
     /// Position references point into this cache, including both uses of a seam.
-    /// This is input for later constrained triangulation, not a triangle mesh.
+    /// Input for planar triangulation, also usable as a standalone boundary view.
     pub fn face_boundary(
         &self,
         face: tessstep_topology::FaceId,

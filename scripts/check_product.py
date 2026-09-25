@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify generated fixture metadata and run separate schema/product corpus stages."""
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -32,12 +33,16 @@ def main():
     actual = {path: case["stages"]["product"] for case in report["cases"] for path in case["paths"]}
     assert actual == expected, (actual, expected)
     assert all(case["stages"]["schema"] == "accepted" for case in report["cases"])
+    expectations = {Path(item["path"]).name: item for item in json.loads((ROOT / "corpus/manifest.json").read_text())["files"] if item["path"].startswith("product/")}
     for case in report["cases"]:
         if case["stages"]["product"] == "accepted":
             result = case["product_result"]
-            assert (result["products"], result["definitions"], result["occurrences"]) == (2, 2, 2)
-            mapped = "mapped.step" in case["paths"]
-            assert (result["representations"], result["maps"], result["mapped_items"]) == ((3, 1, 1) if mapped else (2, 0, 0))
+            item = expectations[case["paths"][0]]
+            assert {key: result[key] for key in item["product_counts"]} == item["product_counts"]
+            matrix = result["relationship_matrices"][0]
+            assert all(math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-12) for row, expected_row in zip(matrix, item["first_relationship_matrix"], strict=True) for a, b in zip(row, expected_row, strict=True))
+            if case["paths"] == ["indirect.step"]:
+                assert result["uncertainty_values_si"] == [0.00001]
     print(f"product corpus: {len(actual)} reviewed outcomes verified; reports/product/index.html")
 
 

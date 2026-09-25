@@ -31,3 +31,27 @@ It exposes no IR when errors exist. Retained opaque expressions/algorithm bodies
 `Severity::Unsupported` (EX2001); successful structural compilation does not mean those
 semantics were checked. `expressc --strict` rejects this diagnostic category as well as
 errors; ordinary mode returns structural IR with the diagnostics visible.
+
+Tessellation returns `TessellationError` with an optional model-local face and a typed
+kind, retaining nested sampling, trim, polygon or mesh errors. Invalid handles/options,
+resource exhaustion, singular surfaces and unresolved sampled tolerances are distinct
+failures. Mesh validation separately reports invalid attributes/indices, degeneracy,
+orientation/manifold defects, open/disconnected components and nonpositive solid volume.
+No partial mesh or automatic repair accompanies failure. C mesh import maps invalid
+geometry to `TS_INVALID_MESH` and budgets to `TS_RESOURCE_LIMIT`; detailed Rust enums
+remain private to Rust callers. See [TESSELLATION.md](TESSELLATION.md) and [C_API.md](C_API.md).
+
+Assembly scenes distinguish missing/duplicate typed asset and occurrence identities,
+cycles, empty group baking, resource exhaustion, located numerical transform failures
+and mesh validation errors. The C boundary maps malformed scene creation to
+`TS_INVALID_SCENE` (8), missing query/bake targets to `TS_NOT_FOUND`, and limits to
+`TS_RESOURCE_LIMIT`; C++ exposes the corresponding typed error codes. No partial scene
+or baked mesh is published. Existing ABI status meanings are unchanged.
+
+Appearance distinguishes invalid color components, zero/duplicate/missing material IDs,
+duplicate bindings, missing asset/instance/face targets, group-face assignments, invalid
+triangle queries and resource limits. Unstyled is successful absence, distinct from
+an explicit alpha-zero material. The C bridge maps invalid appearance semantics to
+`TS_INVALID_APPEARANCE` (9), malformed C records to `TS_INVALID_ARGUMENT`, missing query
+targets to `TS_NOT_FOUND` and budgets to `TS_RESOURCE_LIMIT`. Creation never publishes
+partially validated assignments; all writable failure outputs are cleared.

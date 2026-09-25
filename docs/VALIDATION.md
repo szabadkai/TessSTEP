@@ -1,3 +1,231 @@
+# Milestone 19 appearance — 2026-09-25
+
+Implemented an independent retained appearance layer with validated linear RGBA
+materials, exact asset/face bindings, inherited occurrence overrides, winning-source
+provenance and allocation-free triangle queries. C/C++ interfaces preserve shared
+scene/mesh ownership. See [APPEARANCE.md](APPEARANCE.md) for the explicit precedence
+policy and limits; STEP presentation/style decoding is not claimed.
+
+Observed locally on macOS arm64:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace tests, separate build directory | 191 passed, including doctests |
+| Mesh/C ABI locked release tests | 23 passed |
+| Appearance package fmt; workspace Clippy and rustdoc with warnings denied | passed |
+| Architecture and generated conformance | passed; 18 packages |
+| Installed C11/C++17 consumers with native ASan/UBSan | passed; relocated Debug/Release and C-only packages |
+| ABI exports/layouts | exactly 34 C symbols; previous records and status values unchanged |
+| Appearance regressions | six tests: precedence, ancestry, transparency/absence, face identity, shared storage, reflected baking, invalid inputs and budgets |
+| Mutation/depth evidence | 2,000 deterministic binding/color cases with independent parent-walking oracle; 10,000-deep inheritance |
+
+The full suite used `cargo test --workspace --locked --target-dir target/m19-verification`
+to avoid interference from concurrent edits/builds in the shared default target directory.
+Clippy/rustdoc used a separate `target/m19-lint` directory. These counts are the observed
+workspace snapshot, including product work present during this run. No new hosted
+cross-platform CI or instrumented appearance libFuzzer campaign was run here; native
+consumer ASan/UBSan does not instrument Rust library accesses.
+
+`cargo bench -p tessstep-mesh --bench appearance` measured 20 appearance constructions
+for a 10,000-occurrence assembly in 29.604 ms total, and 1,000,000 allocation-free
+triangle queries in 75.300 ms total. These are local optimized observations, not
+statistical comparisons, renderer measurements or large-assembly memory guarantees.
+
+External corpus run `2026-09-25T20-44-07-464938Z` inspected **6,438 paths / 3,227 unique
+contents** in 32.210 seconds: **2,821 clean, 38 reference-error, 368 structured rejections**;
+no crashes, timeouts or runner errors. `python3 scripts/corpus.py --check` passed. The
+per-file report and both baseline/previous-run change sets were inspected: no changes.
+Representative observations remain clean `Ctl019.stp`, reference-error `Pf037.stp`
+(TS1103) and rejected `Ctl001.stp` (TS1010). The baseline was not refreshed. All external
+inputs still reported schema, product, geometry and tessellation as `not_implemented`
+without configured validators; these independent appearance APIs enable no STEP style
+stage. STEP style adaptation, surface-side styling, textures, lighting models and
+rendering remain unsupported by this slice.
+
+The records below describe earlier milestones and their verification snapshots.
+
+# Milestone 18 assembly assets — 2026-09-25
+
+Implemented independent shared mesh assets, explicit nested occurrence placement and
+checked world-space baking, with additive C/C++ scene operations. Scope and limits are
+in [ASSEMBLY_ASSETS.md](ASSEMBLY_ASSETS.md); STEP placement decoding remains pending.
+
+Observed locally on macOS arm64:
+
+| Check | Result |
+| --- | --- |
+| Workspace debug tests | 178 passed, including doctests |
+| Mesh/C ABI release tests with locked dependencies | 16 passed |
+| Workspace fmt, Clippy and rustdoc with warnings denied | passed |
+| Architecture and generated conformance | passed; unchanged 18-package graph |
+| Installed C11/C++17 consumers with native ASan/UBSan | passed; relocated Debug/Release and C-only packages |
+| C symbols and layouts | exactly 25 exports; previous ABI-1 layouts/statuses unchanged |
+| New scene tests | buffer sharing, noncommuting nested placement, reflections, nonuniform scale/shear, corner provenance, graph/numeric/budget errors |
+| Bounded mutation/depth tests | 2,000 graph/transform cases and a 10,000-deep forest; passed |
+
+`cargo bench -p tessstep-mesh --bench scenes` measured 20 constructions of 10,000
+shared occurrences in 85.674 ms total and 10,000 explicit single-triangle bakes in
+13.362 ms total. These are local optimized observations, not statistical comparisons,
+large-part memory profiles or industrial performance guarantees. No new instrumented
+scene libFuzzer campaign or hosted cross-platform CI run was performed here.
+
+External corpus run `2026-09-25T20-28-02-201951Z` inspected **6,438 paths / 3,227 unique
+contents** in 33.426 seconds: **2,821 clean, 38 reference-error, 368 structured rejections**;
+no crashes, timeouts or runner errors. `python3 scripts/corpus.py --check` passed.
+The generated per-file JSON/HTML report, baseline changes and previous-run changes
+were inspected: both change sets are empty. Representative inputs retain clean
+`Ctl019.stp`, missing-reference `Pf037.stp` (TS1103) and rejected `Ctl001.stp` (TS1010).
+The baseline was not refreshed. All 3,227 inputs still report schema, product, geometry
+and tessellation as `not_implemented` without configured adapters/validators; independent
+scene tests do not establish STEP assembly or STEP-to-mesh acceptance.
+
+The records below describe earlier milestones and their verification snapshots.
+
+# Milestones 15–17 adaptive tessellation and mesh validation — 2026-09-25
+
+This delivery implements bounded regular analytic/NURBS face refinement, synchronized
+boundary refinement and owned manifold shell/solid meshes. It also adds C/C++ triangle
+import and retained read-only mesh views. Contracts are in [TESSELLATION.md](TESSELLATION.md),
+[MESH.md](MESH.md) and [C_API.md](C_API.md). STEP geometry adapters, singular pole/apex
+repair, exact predicates, self-intersection/material proofs and cavity shells remain open.
+
+Observed locally on macOS arm64:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace debug tests | 172 passed, including doctests |
+| Tessellation/mesh/topology release tests | 39 passed, including three compile-fail doctests |
+| Workspace/fuzz fmt and Clippy, warnings denied | passed |
+| Workspace rustdoc, warnings denied | passed |
+| Architecture and generated conformance | passed; 18 packages |
+| Python corpus/CI tests | 21 passed |
+| Installed C11/C++17 consumers with native ASan/UBSan | passed; relocated Debug/Release and C-only packages |
+| ABI exports and layouts | exactly 17 C symbols; existing ABI-1 layouts unchanged; new 40/80-byte mesh records |
+| Combined stable mutation harness | 3,000 mutations plus 582 prefixes, now including adaptive owned meshes |
+| Updated libFuzzer driver | 1,000 stable-built smoke runs completed without crashes (109 seconds) |
+
+Nine adaptive regression tests use independent dense barycentric grids on output
+triangles, exercising cylinder/sphere/cone/torus regular patches, reversed planar holes,
+rational NURBS bumps, a narrow knot-span feature, tighter tolerances, shared refinement
+between curved/planar faces, per-corner sharp normals, caps and both seams of a closed
+torus. Closed-cylinder/torus tests check manifold closure and approximate known volume;
+inward orientation is rejected. Limits, duplicate face requests and invalid handles
+fail explicitly. Mesh tests independently reject invalid indices, degenerate/duplicate
+triangles, winding conflicts, malformed attributes, unused and pinched vertices, and
+distinguish open/disconnected meshes from solids.
+
+A topology regression confirms that closed circular edges retain distinct endpoint
+incidences at the same vertex. This fixes cap/seam shells while the existing invalid-link
+regressions continue to pass. C/C++ tests verify copied input ownership, stable view
+pointers, retained views surviving their mesh wrapper, safe moves, error mapping,
+concurrent reads and balanced release. Native sanitizers do not instrument the Rust
+library. The stable-built libFuzzer driver warned about absent sanitizer/coverage
+instrumentation; its 1,000 runs are driver smoke only. Cross-platform/MSRV CI and
+extended instrumented hardening were not observed.
+
+## External corpus
+
+`python3 scripts/corpus.py --check` passed in **34.542 seconds**, run
+**2026-09-25T19-28-43-044904Z**: **6,438 paths / 3,227 unique inputs**, with
+**2,821 clean**, **38 reference-error** and **368 structured-rejection** outcomes.
+There were no crashes, timeouts, runner errors or outcome/diagnostic changes against
+the previous run or reviewed baseline. Stage totals and representative per-file entries
+for all three outcomes were inspected in [the generated report](../reports/corpus/index.html).
+
+All external entries still report schema/product/geometry/tessellation as `not_implemented`:
+no AP validators are configured and constructed-geometry tessellation does not supply a
+STEP adapter. No external geometry acceptance is inferred. `corpus/baseline.json` is
+unchanged. The implemented geometry and mesh stages have independent constructed-input
+regressions rather than fabricated STEP-stage success.
+
+## Benchmark and architecture review
+
+`cargo bench -p tessstep-tessellate --bench boundaries --locked` reports one-second
+local observations after warmup, with geometry construction/normalization outside timing:
+
+| Operation | Iterations | Microseconds/iteration |
+| --- | ---: | ---: |
+| Closed-cylinder solid, including shared sampling and cap/trim checks | 23 | 44,499.567 |
+| NURBS bump adaptive tessellation | 263 | 3,805.205 |
+
+Both new cases use 0.01 metre chord / 0.25 radian angular tolerance. These are initial
+observations, not statistical comparisons or STEP-to-mesh throughput guarantees.
+
+The mesh crate activates the reserved math-only dependency boundary. Tessellation shares
+UV triangulation, performs bounded conforming refinement and preserves canonical sample
+identity through position assembly. Ordered maps and iterative walks retain determinism.
+Mesh and C bridge storage stay distinct; C callers see only specified scalar buffers and
+opaque ownership. No third-party production dependency or unsafe kernel code was added.
+Public C B-rep/tessellation inputs and STEP adaptation remain separate future work.
+
+---
+
+# Milestone 14 planar tessellation validation — 2026-09-25
+
+This delivery adds constrained triangulation of constructed analytic-plane faces.
+Concave outlines, multiple holes, collinear vertices and sampled curved boundaries retain
+canonical edge-cache positions. See [TESSELLATION.md](TESSELLATION.md) for API, ownership,
+resource and numerical limits. Curved-face refinement, owned mesh assets, C/C++ mesh
+views, STEP geometry adaptation and watertight solids remain pending.
+
+Observed locally on macOS arm64:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace debug tests | 157 passed, including doctests |
+| Topology/trim/tessellate release tests | 34 passed, including three compile-fail doctests |
+| Workspace and fuzz fmt / Clippy with warnings denied | passed |
+| Workspace rustdoc with warnings denied | passed |
+| Architecture and generated conformance checks | passed |
+| Stable combined pipeline mutations | 3,000 mutations plus 388 prefixes passed; now includes planar triangles |
+| Updated libFuzzer driver | built with locked dependencies; 1,000 smoke runs, no crash |
+
+Nine planar regression tests verify known areas, independent interior probes, boundary
+segment incidence, deterministic output, concavities, multiple hole orders, circles and
+an annulus, tilted planes, reversed orientation, shared interior sample identity and
+limits. Forty varied concave polygon/hole fixtures exercise bridge/ear selection. A
+coarse circle/hole fixture passes smooth trim reconstruction but fails mesh-resolution
+polygon validation, then succeeds after shared-edge refinement. A compile-fail doctest
+checks that face meshes cannot outlive the edge cache. The trim polygon API separately
+checks invalid coordinates, winding, holes and budgets.
+
+The stable-built libFuzzer run warned about absent sanitizer/coverage instrumentation;
+it is driver smoke, not an instrumented hardening campaign. The deterministic mutation
+suite remains the full-size bounded-input regression check. No new C/C++ operation was
+added; the existing C ABI tests passed within the workspace suite. Installed-package
+consumer tests were not rerun for this Rust-only API addition.
+
+## External corpus
+
+Final `python3 scripts/corpus.py --check` run: **2026-09-25T19-04-37-108617Z**,
+34.234 seconds, **6,438 paths / 3,227 unique inputs**. Results remain **2,821 clean**,
+**38 with reference errors**, and **368 structured rejections**. There were no crashes,
+timeouts, runner errors, outcome changes or diagnostic changes against either the prior
+run or the reviewed baseline. Stage counts and representative per-file entries for all
+three outcomes were inspected in [the report](../reports/corpus/index.html).
+
+All 3,227 inputs still report schema/product/geometry/tessellation as `not_implemented`:
+no AP validators are configured and no STEP geometry adapter/checker exists. Constructed
+planar triangulation is not presented as external STEP tessellation coverage.
+`corpus/baseline.json` was not modified.
+
+## Benchmark and architecture review
+
+The boundary benchmark now includes planar disk triangulation from cached edges,
+including trim reconstruction and polygon validation: **21,881.108 microseconds per
+iteration**, 46 iterations over one second on this machine. This is an initial local
+observation, not a statistical comparison or a STEP-to-mesh throughput claim.
+
+The surfaces dependency moves from development-only to the already permitted production
+edge; the fuzz lockfile records that local edge. No third-party production dependency,
+unsafe kernel code, C symbol or ABI layout was introduced. Polygon relationship checks
+are shared with trimming, and triangle results borrow the cache with immutable access.
+Bounded iterative bridges/ears and ordered incidence postchecks preserve deterministic
+output. Exact predicates, triangle-quality optimization and worst-case performance
+improvements remain future work; difficult cases return typed failures.
+
+---
+
 # Milestones 11–13 boundary pipeline validation — 2026-09-25
 
 The existing Milestones 8–10 work was checkpointed as `52c752c` after the workspace

@@ -1,8 +1,8 @@
 # Geometry foundation
 
 Status: Milestones 6–10 provide independent math, analytic curves/surfaces and NURBS
-curves/surfaces. Milestones 11–13 add independent topology, UV reconstruction and
-shared-edge sampling. STEP geometry adaptation and external geometry corpus validation remain
+curves/surfaces. Milestones 11–17 add independent topology, UV reconstruction,
+shared-edge sampling, adaptive regular-face tessellation and owned manifold meshes. STEP geometry adaptation and external geometry corpus validation remain
 pending. See [CURVES.md](CURVES.md), [SURFACES.md](SURFACES.md) and [NURBS.md](NURBS.md).
 
 `tessstep-math` (also `tessstep::math`) has no STEP or schema dependency. It provides
@@ -45,9 +45,10 @@ let model_point = local_to_model.transform_point(Point3::new([1., 0., 0.])?)?;
 ## Next layers
 
 Analytic and NURBS curves/surfaces expose evaluation and derivatives without raw
-entity access. Their tests are independent of the pending schema adapters. The Milestone 5 product graph still retains ordered placement descriptions;
-this math foundation does not evaluate them or expand an assembly into world coordinates.
+entity access. Their tests are independent of geometry schema adapters. The Milestone 5 product adapter
+now uses this foundation to evaluate placement descriptions and expand bounded assemblies
+into world coordinates.
 The external corpus therefore gains no geometry/tessellation acceptance claim.
 
-The Rust math API is not a C layout contract. Public C/C++ interfaces currently expose
-physical documents only; future geometry/mesh operations must follow [C_API.md](C_API.md).
+The Rust math API is not a C layout contract. Public C/C++ operations retain explicit C contracts; Rust product/math types are not
+exposed directly. See [C_API.md](C_API.md).

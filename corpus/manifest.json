@@ -269,25 +269,87 @@
       "path": "product/assembly.step",
       "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
       "license": "MIT",
-      "sha256": "61c75b66098a9f7ad8d6933ddb7e8cbfdde352f0b7d3942f459f36cdd49b1c7f",
+      "sha256": "07accfeb1a5015ecb2cad916db061356d768876c24e88f4a46416e126f040fe4",
       "syntax": "valid",
       "schema": "accepted",
-      "product": "accepted"
+      "product": "accepted",
+      "product_counts": {
+        "products": 2,
+        "definitions": 2,
+        "representations": 2,
+        "occurrences": 2,
+        "maps": 0,
+        "mapped_items": 0,
+        "resolved_relationships": 2,
+        "resolved_mappings": 0,
+        "uncertainties": 0
+      },
+      "first_relationship_matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0746
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ]
+      ]
     },
     {
       "path": "product/complex.step",
       "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
       "license": "MIT",
-      "sha256": "363f54182aa5229e2637b784ada7178d539c940918394fbb9493f99ed2ddf56d",
+      "sha256": "5e4a05ed1789dbf2687d4a9adefa02907b20a6e74d6189e3e957fecb04c7d9ed",
       "syntax": "valid",
       "schema": "accepted",
-      "product": "accepted"
+      "product": "accepted",
+      "product_counts": {
+        "products": 2,
+        "definitions": 2,
+        "representations": 2,
+        "occurrences": 2,
+        "maps": 0,
+        "mapped_items": 0,
+        "resolved_relationships": 2,
+        "resolved_mappings": 0,
+        "uncertainties": 0
+      },
+      "first_relationship_matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0746
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ]
+      ]
     },
     {
       "path": "product/cycle.step",
       "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
       "license": "MIT",
-      "sha256": "abd2dffeb0dfcc7b828e905d048d13109ea148149b2e1df333ad4e351c326b21",
+      "sha256": "bcd9799d1a1b23e7b1b1ac403df6417ced7fc1d9025d9b7a49af82ffdb6e89bb",
       "syntax": "valid",
       "schema": "accepted",
       "product": "rejected"
@@ -296,16 +358,47 @@
       "path": "product/mapped.step",
       "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
       "license": "MIT",
-      "sha256": "2785dd804422a5c35d1845de7d2c7d54763f6502102f37c0f36d5fab49652269",
+      "sha256": "c76fa102f516d6e706d324090e06069241aaf3be7119c36e83bc2596822c8fca",
       "syntax": "valid",
       "schema": "accepted",
-      "product": "accepted"
+      "product": "accepted",
+      "product_counts": {
+        "products": 2,
+        "definitions": 2,
+        "representations": 3,
+        "occurrences": 2,
+        "maps": 1,
+        "mapped_items": 1,
+        "resolved_relationships": 2,
+        "resolved_mappings": 1,
+        "uncertainties": 0
+      },
+      "first_relationship_matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0746
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ]
+      ]
     },
     {
       "path": "product/missing-units.step",
       "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
       "license": "MIT",
-      "sha256": "b832692391ae9e2552092679636980431509f11d4b7e030b6707d8b8c95602dc",
+      "sha256": "2f68eb503deb0b285234143a2635c3b24ea9f355b00a43e6be2af271e3c63bc8",
       "syntax": "valid",
       "schema": "accepted",
       "product": "rejected"
@@ -314,16 +407,154 @@
       "path": "product/sample.exp",
       "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
       "license": "MIT",
-      "sha256": "37b45d719377913db42c01b3cdda4f40d0a5ee00221432898c21c1d5d2a2b2db"
+      "sha256": "458dee31ac5ffe85cffdfaf2024903c61aed90a7440540c8b767bb21a8c17cfc"
     },
     {
       "path": "product/unsupported-context.step",
       "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
       "license": "MIT",
-      "sha256": "f1fd2d12bf0516bb70fd454147d4d9588dc01a1ecc09a4494057757cb4a7bbf7",
+      "sha256": "f0fcda3232b56a22f63ce452c5757098d78e27a93ea3e1d297e532e7a9a88971",
       "syntax": "valid",
       "schema": "accepted",
       "product": "unsupported"
+    },
+    {
+      "path": "product/bad-axis.step",
+      "source": "Authored for TessSTEP product placement tests; reduced synthetic schema, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "rejected",
+      "sha256": "548c03613262f37a384b811d2872961022ecbb787a01d143c348ee5943a6eb1a"
+    },
+    {
+      "path": "product/indirect.step",
+      "source": "Authored for TessSTEP product placement tests; reduced synthetic schema, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "accepted",
+      "sha256": "9752dd096665991beaba516b038be4ef4de3d261aa0a9ff47925ef4434207b5a",
+      "product_counts": {
+        "products": 2,
+        "definitions": 2,
+        "representations": 3,
+        "occurrences": 2,
+        "maps": 0,
+        "mapped_items": 0,
+        "resolved_relationships": 2,
+        "resolved_mappings": 0,
+        "uncertainties": 1
+      },
+      "first_relationship_matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0746
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ]
+      ]
+    },
+    {
+      "path": "product/negative-uncertainty.step",
+      "source": "Authored for TessSTEP product placement tests; reduced synthetic schema, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "rejected",
+      "sha256": "7ceaa322fe02d02fa0597d94df97403f6b506bea807e93a1614ef6c84a021217"
+    },
+    {
+      "path": "product/nested.step",
+      "source": "Authored for TessSTEP product placement tests; reduced synthetic schema, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "accepted",
+      "sha256": "37e6b761440cfee4718e31bec34cabb93246e9e48484c17bd916b6d90939debd",
+      "product_counts": {
+        "products": 3,
+        "definitions": 3,
+        "representations": 3,
+        "occurrences": 3,
+        "maps": 0,
+        "mapped_items": 0,
+        "resolved_relationships": 3,
+        "resolved_mappings": 0,
+        "uncertainties": 0
+      },
+      "first_relationship_matrix": [
+        [
+          1.0,
+          0.0,
+          0.0,
+          0.0746
+        ],
+        [
+          0.0,
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          1.0,
+          0.0
+        ]
+      ]
+    },
+    {
+      "path": "product/operator.step",
+      "source": "Authored for TessSTEP product placement tests; reduced synthetic schema, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "accepted",
+      "sha256": "54c8437b58993add8a88b16ca5abc7a5a37b068b56aea29878b2623a341d826b",
+      "product_counts": {
+        "products": 2,
+        "definitions": 2,
+        "representations": 2,
+        "occurrences": 2,
+        "maps": 0,
+        "mapped_items": 0,
+        "resolved_relationships": 2,
+        "resolved_mappings": 0,
+        "uncertainties": 0
+      },
+      "first_relationship_matrix": [
+        [
+          2.0,
+          0.0,
+          0.0,
+          0.1
+        ],
+        [
+          0.0,
+          -3.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          4.0,
+          0.0
+        ]
+      ]
     }
   ]
 }

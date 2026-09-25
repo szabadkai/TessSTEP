@@ -2,9 +2,10 @@
 //!
 //! The crate name reserves the AP242 adapter boundary; it is not a claim of
 //! AP242 schema conformance. Callers supply structurally decoded metadata.
-//! Geometry items and placement pairs remain opaque, ordered descriptions.
+//! Geometry items remain opaque; supported placements are evaluated in metres.
 #![forbid(unsafe_code)]
 
+mod placement;
 mod units;
 use std::collections::BTreeMap;
 use tessstep_model::decode::{DecodedDocument, EntityView};
@@ -34,6 +35,7 @@ pub enum ErrorKind {
     TypeMismatch,
     Unsupported,
     Units,
+    Placement,
     Graph,
     ResourceLimit,
 }
@@ -45,6 +47,7 @@ pub struct Error {
     pub source: Option<SourceSpan>,
     pub message: &'static str,
     pub graph_error: Option<tessstep_product::Error>,
+    pub math_error: Option<tessstep_math::Error>,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -54,6 +57,17 @@ impl std::fmt::Display for Error {
 impl std::error::Error for Error {}
 
 const ROLES: &[&str] = &[
+    "cartesian_point",
+    "direction",
+    "axis2_placement_3d",
+    "cartesian_transformation_operator_3d",
+    "cartesian_transformation_operator_3d_non_uniform",
+    "global_uncertainty_assigned_context",
+    "uncertainty_measure_with_unit",
+    "shape_representation_relationship",
+    "quantified_assembly_component_usage",
+    "promissory_usage_occurrence",
+    "specified_higher_usage_occurrence",
     "product",
     "product_definition_formation",
     "product_definition",
@@ -149,7 +163,11 @@ pub fn adapt(
             });
         }
         if cx.is(view, "product_definition_relationship")? {
-            if !cx.is(view, "next_assembly_usage_occurrence")? {
+            if !cx.is(view, "next_assembly_usage_occurrence")?
+                || cx.is(view, "quantified_assembly_component_usage")?
+                || cx.is(view, "promissory_usage_occurrence")?
+                || cx.is(view, "specified_higher_usage_occurrence")?
+            {
                 return Err(cx.error(
                     ErrorKind::Unsupported,
                     "only next assembly usage occurrences are interpreted",
@@ -192,6 +210,7 @@ pub fn adapt(
             if let std::collections::btree_map::Entry::Vacant(e) = contexts.entry(context_id) {
                 let units = cx.context_units(context)?;
                 e.insert(parts.contexts.len());
+                cx.uncertainties(context, context_id, &mut parts)?;
                 parts.contexts.push(tessstep_product::Context {
                     id: context_id,
                     units,
@@ -215,26 +234,36 @@ pub fn adapt(
         if cx.is(view, "representation_relationship")? {
             let a = cx.target(view, "rep_1", "representation")?;
             let b = cx.target(view, "rep_2", "representation")?;
+            let mut operator = None;
             let transform = if cx.is(view, "representation_relationship_with_transformation")? {
-                let transform = cx.target(
-                    view,
-                    "transformation_operator",
-                    "item_defined_transformation",
-                )?;
-                let item_1 = cx.target(transform, "transform_item_1", "representation_item")?;
-                let item_2 = cx.target(transform, "transform_item_2", "representation_item")?;
-                Some(ItemTransform {
-                    item_1: ItemId(item_1.id.get()),
-                    item_2: ItemId(item_2.id.get()),
-                })
+                let transform = cx.reference(view, "transformation_operator")?;
+                if cx.is(transform, "item_defined_transformation")? {
+                    let item_1 = cx.target(transform, "transform_item_1", "representation_item")?;
+                    let item_2 = cx.target(transform, "transform_item_2", "representation_item")?;
+                    Some(ItemTransform {
+                        item_1: ItemId(item_1.id.get()),
+                        item_2: ItemId(item_2.id.get()),
+                    })
+                } else {
+                    cx.expect(transform, "cartesian_transformation_operator_3d")?;
+                    operator = Some(ItemId(transform.id.get()));
+                    None
+                }
             } else {
                 None
             };
+            if transform.is_none()
+                && operator.is_none()
+                && cx.is(view, "shape_representation_relationship")?
+            {
+                parts.associations.push(RelationshipId(id));
+            }
             parts.relationships.push(Relationship {
                 id: RelationshipId(id),
                 rep_1: RepresentationId(a.id.get()),
                 rep_2: RepresentationId(b.id.get()),
                 transform,
+                operator,
             });
         }
         if cx.is(view, "context_dependent_shape_representation")? {
@@ -273,6 +302,7 @@ pub fn adapt(
             });
         }
     }
+    cx.finish_placements(&mut parts)?;
     // Global graph errors have no invented physical owner.
     cx.entity = None;
     cx.attribute = None;
@@ -309,6 +339,7 @@ impl<'d, 'a> Context<'d, 'a> {
             source: self.source,
             message,
             graph_error: None,
+            math_error: None,
         }
     }
     fn tick(&mut self) -> Result<(), Error> {

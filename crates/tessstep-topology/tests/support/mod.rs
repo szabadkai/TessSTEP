@@ -245,3 +245,71 @@ pub fn cylinder_seam() -> RawBrep {
     });
     r
 }
+
+pub fn closed_cylinder() -> RawBrep {
+    let mut r = cylinder_seam();
+    for (edge, z, orientation) in [
+        (0, 0., Orientation::Reversed),
+        (1, 1., Orientation::Forward),
+    ] {
+        let cid = CoedgeId(r.coedges.len());
+        let pc = match disk().coedges.remove(0).pcurve {
+            Some(pc) => pc,
+            None => unreachable!(),
+        };
+        r.coedges.push(Coedge {
+            edge: EdgeId(edge),
+            orientation: Orientation::Forward,
+            pcurve: Some(pc),
+        });
+        let wire = WireId(r.wires.len());
+        r.wires.push(Wire { coedges: vec![cid] });
+        r.faces.push(Face {
+            surface: SurfaceGeometry::Analytic(tessstep_surfaces::Surface::plane(
+                PlaneFrame::new(
+                    Point::new([0., 0., z]).unwrap(),
+                    Vector::new([1., 0., 0.]).unwrap(),
+                    Vector::new([0., 1., 0.]).unwrap(),
+                    NumericalTolerance::default(),
+                )
+                .unwrap(),
+            )),
+            outer: wire,
+            holes: vec![],
+            orientation,
+        });
+    }
+    r.shells.push(Shell {
+        faces: (0..3).map(FaceId).collect(),
+        closed: true,
+    });
+    r.solids.push(Solid { shell: ShellId(0) });
+    r
+}
+pub fn nurbs_bump() -> RawBrep {
+    let mut r = square();
+    let controls: Vec<_> = (0..3)
+        .flat_map(|i| {
+            (0..3).map(move |j| {
+                Point::new([
+                    i as f64 * 0.5,
+                    j as f64 * 0.5,
+                    if i == 1 && j == 1 { 1. } else { 0. },
+                ])
+                .unwrap()
+            })
+        })
+        .collect();
+    r.faces[0].surface = SurfaceGeometry::Nurbs(
+        tessstep_surfaces::NurbsSurface::new(
+            [2, 2],
+            [&[0., 0., 0., 1., 1., 1.]; 2],
+            [3, 3],
+            &controls,
+            &[1.; 9],
+            Default::default(),
+        )
+        .unwrap(),
+    );
+    r
+}

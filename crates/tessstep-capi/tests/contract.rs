@@ -116,3 +116,466 @@ fn c_abi_budget_and_failure_states() {
         assert!(report.is_null());
     }
 }
+
+#[test]
+fn c_abi_mesh_owned_buffers_limits_and_failures() {
+    assert_eq!(size_of::<TsMeshOptions>(), 40);
+    assert_eq!(size_of::<TsMeshView>(), 80);
+    assert_eq!(std::mem::offset_of!(TsMeshView, face_ids), 48);
+    assert_eq!(std::mem::offset_of!(TsMeshView, signed_volume), 72);
+    let mut p = [0., 0., 0., 1., 0., 0., 0., 1., 0.];
+    let t = [0, 1, 2];
+    // SAFETY: valid input arrays and disjoint output slots, balanced mesh references.
+    unsafe {
+        let mut mesh = ptr::null();
+        let mut view = TsMeshView::default();
+        let mut options = TsMeshOptions::default();
+        assert_eq!(ts_mesh_options_init(&mut options), TS_OK);
+        assert_eq!(
+            ts_mesh_create(p.as_ptr(), 3, t.as_ptr(), 1, &options, &mut mesh),
+            TS_OK
+        );
+        assert_eq!(ts_mesh_get_view(mesh, &mut view), TS_OK);
+        assert_eq!(view.vertex_count, 3);
+        assert_eq!(view.triangle_count, 1);
+        assert_eq!(view.boundary_edges, 3);
+        p[0] = 7.;
+        assert_eq!(*view.positions, 0.);
+        assert_eq!(*view.normals.add(2), 1.);
+        let address = view.positions;
+        assert_eq!(ts_mesh_retain(mesh), TS_OK);
+        ts_mesh_release(mesh);
+        assert_eq!(ts_mesh_get_view(mesh, &mut view), TS_OK);
+        assert_eq!(view.positions, address);
+        ts_mesh_release(mesh);
+        assert_eq!(
+            ts_mesh_get_view(ptr::null(), &mut view),
+            TS_INVALID_ARGUMENT
+        );
+        assert!(view.positions.is_null());
+        options.require_solid = 1;
+        p[0] = 0.;
+        assert_eq!(
+            ts_mesh_create(p.as_ptr(), 3, t.as_ptr(), 1, &options, &mut mesh),
+            TS_INVALID_MESH
+        );
+        assert!(mesh.is_null());
+        options.max_vertices = 0;
+        assert_eq!(
+            ts_mesh_create(p.as_ptr(), 3, t.as_ptr(), 1, &options, &mut mesh),
+            TS_RESOURCE_LIMIT
+        );
+        assert!(mesh.is_null());
+        assert_eq!(
+            ts_mesh_create(ptr::null(), 0, ptr::null(), 0, ptr::null(), &mut mesh),
+            TS_INVALID_MESH
+        );
+        assert_eq!(
+            ts_mesh_create(ptr::null(), 1, t.as_ptr(), 1, ptr::null(), &mut mesh),
+            TS_INVALID_ARGUMENT
+        );
+        options = TsMeshOptions::default();
+        options.reserved = 1;
+        assert_eq!(
+            ts_mesh_create(p.as_ptr(), 3, t.as_ptr(), 1, &options, &mut mesh),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            ts_mesh_get_view(ptr::null(), ptr::null_mut()),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(ts_mesh_retain(ptr::null()), TS_INVALID_ARGUMENT);
+        ts_mesh_release(ptr::null());
+    }
+}
+
+#[test]
+fn c_abi_scene_ownership_layouts_and_failure_outputs() {
+    assert_eq!(size_of::<TsSceneOptions>(), 40);
+    assert_eq!(size_of::<TsSceneAsset>(), 16);
+    assert_eq!(size_of::<TsSceneInstance>(), 120);
+    assert_eq!(size_of::<TsSceneInstanceInfo>(), 232);
+    assert_eq!(std::mem::offset_of!(TsSceneInstanceInfo, mirrored), 224);
+    assert_eq!(size_of::<TsSceneInfo>(), 16);
+    // SAFETY: valid aligned storage, library handles, and balanced acquisitions.
+    unsafe {
+        let p = [0., 0., 0., 1., 0., 0., 0., 1., 0.];
+        let t = [0, 1, 2];
+        let mut mesh = ptr::null();
+        assert_eq!(
+            ts_mesh_create(p.as_ptr(), 3, t.as_ptr(), 1, ptr::null(), &mut mesh),
+            TS_OK
+        );
+        let assets = [TsSceneAsset { id: 9, mesh }];
+        let mut nodes = [TsSceneInstance {
+            id: 7,
+            asset_id: 9,
+            linear: [-1., 0., 0., 0., 1., 0., 0., 0., 1.],
+            ..Default::default()
+        }];
+        let mut scene = ptr::null();
+        assert_eq!(
+            ts_scene_create(
+                assets.as_ptr(),
+                1,
+                nodes.as_ptr(),
+                1,
+                ptr::null(),
+                &mut scene
+            ),
+            TS_OK
+        );
+        ts_mesh_release(mesh);
+        let mut acquired = ptr::null();
+        assert_eq!(ts_scene_asset_mesh(scene, 9, &mut acquired), TS_OK);
+        assert_eq!(acquired, mesh);
+        assert_eq!(ts_scene_retain(scene), TS_OK);
+        ts_scene_release(scene);
+        let mut info = TsSceneInstanceInfo::default();
+        assert_eq!(ts_scene_instance_at(scene, 0, &mut info), TS_OK);
+        assert_eq!(info.mirrored, 1);
+        let mut baked = ptr::null();
+        assert_eq!(
+            ts_scene_bake_instance(scene, 7, ptr::null(), &mut baked),
+            TS_OK
+        );
+        let mut view = TsMeshView::default();
+        assert_eq!(ts_mesh_get_view(baked, &mut view), TS_OK);
+        assert_eq!(*view.positions.add(3), -1.);
+        assert_eq!(*view.triangles.add(1), 2);
+        ts_mesh_release(baked);
+        let mut o = TsMeshOptions {
+            max_work: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            ts_scene_bake_instance(scene, 7, &o, &mut baked),
+            TS_RESOURCE_LIMIT
+        );
+        assert!(baked.is_null());
+        o.abi_version = 99;
+        assert_eq!(
+            ts_scene_bake_instance(scene, 7, &o, &mut baked),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            ts_scene_bake_instance(scene, 55, ptr::null(), &mut baked),
+            TS_NOT_FOUND
+        );
+        ts_scene_release(scene);
+        assert_eq!(ts_mesh_get_view(acquired, &mut view), TS_OK);
+        assert_eq!(*view.positions.add(3), 1.);
+        nodes[0].parent_id = 7;
+        assert_eq!(
+            ts_scene_create(
+                assets.as_ptr(),
+                1,
+                nodes.as_ptr(),
+                1,
+                ptr::null(),
+                &mut scene
+            ),
+            TS_INVALID_SCENE
+        );
+        assert!(scene.is_null());
+        nodes[0].parent_id = 0;
+        nodes[0].linear[0] = f64::NAN;
+        assert_eq!(
+            ts_scene_create(
+                assets.as_ptr(),
+                1,
+                nodes.as_ptr(),
+                1,
+                ptr::null(),
+                &mut scene
+            ),
+            TS_INVALID_SCENE
+        );
+        let mut opts = TsSceneOptions {
+            max_assets: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            ts_scene_create(assets.as_ptr(), 1, nodes.as_ptr(), 1, &opts, &mut scene),
+            TS_RESOURCE_LIMIT
+        );
+        opts.abi_version = 99;
+        assert_eq!(
+            ts_scene_create(ptr::null(), 0, ptr::null(), 0, &opts, &mut scene),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            ts_scene_create(ptr::null(), 1, ptr::null(), 0, ptr::null(), &mut scene),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            ts_scene_instance_at(ptr::null(), 0, &mut info),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(info.source.id, 0);
+        assert_eq!(
+            ts_scene_get_info(ptr::null(), ptr::null_mut()),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(ts_scene_retain(ptr::null()), TS_INVALID_ARGUMENT);
+        ts_scene_release(ptr::null());
+        ts_mesh_release(acquired);
+    }
+}
+
+#[test]
+fn c_abi_appearance_records_ownership_and_failure_outputs() {
+    assert_eq!(size_of::<TsAppearanceOptions>(), 32);
+    assert_eq!(size_of::<TsMaterial>(), 40);
+    assert_eq!(size_of::<TsStyleTarget>(), 24);
+    assert_eq!(size_of::<TsStyleBinding>(), 32);
+    assert_eq!(size_of::<TsResolvedMaterial>(), 64);
+    assert_eq!(std::mem::offset_of!(TsResolvedMaterial, source), 40);
+    assert_eq!(size_of::<TsAppearanceInfo>(), 16);
+    // SAFETY: readable aligned arrays and output storage, live library handles,
+    // and balanced acquisitions including the retained scene and mesh chain.
+    unsafe {
+        let xyz = [0., 0., 0., 1., 0., 0., 0., 1., 0.];
+        let tri = [0, 1, 2];
+        let mut mesh = ptr::null();
+        assert_eq!(
+            ts_mesh_create(xyz.as_ptr(), 3, tri.as_ptr(), 1, ptr::null(), &mut mesh),
+            TS_OK
+        );
+        let assets = [TsSceneAsset { id: 1, mesh }];
+        let nodes = [TsSceneInstance {
+            id: 1,
+            asset_id: 1,
+            linear: [1., 0., 0., 0., 1., 0., 0., 0., 1.],
+            ..Default::default()
+        }];
+        let mut scene = ptr::null();
+        assert_eq!(
+            ts_scene_create(
+                assets.as_ptr(),
+                1,
+                nodes.as_ptr(),
+                1,
+                ptr::null(),
+                &mut scene
+            ),
+            TS_OK
+        );
+        ts_mesh_release(mesh);
+        let mut materials = [TsMaterial {
+            id: 42,
+            rgba: [0.2, 0.3, 0.4, 0.],
+        }];
+        let mut bindings = [TsStyleBinding {
+            target: TsStyleTarget {
+                kind: 2,
+                id: 1,
+                face_id: 0,
+                reserved: 0,
+            },
+            material_id: 42,
+        }];
+        let mut appearance = ptr::null();
+        assert_eq!(
+            ts_appearance_create(
+                scene,
+                materials.as_ptr(),
+                1,
+                bindings.as_ptr(),
+                1,
+                ptr::null(),
+                &mut appearance
+            ),
+            TS_OK
+        );
+        let mut resolved = TsResolvedMaterial::default();
+        assert_eq!(
+            ts_appearance_resolve_triangle(appearance, 1, 0, &mut resolved),
+            TS_OK
+        );
+        assert_eq!(resolved.material.id, 42);
+        assert_eq!(resolved.material.rgba[3], 0.);
+        assert_eq!(resolved.source.kind, 2);
+        assert_eq!(resolved.source.face_id, 0);
+        materials[0].rgba[3] = 1.;
+        assert_eq!(
+            ts_appearance_resolve_triangle(appearance, 1, 0, &mut resolved),
+            TS_OK
+        );
+        assert_eq!(resolved.material.rgba[3], 0.);
+        assert_eq!(ts_appearance_retain(appearance), TS_OK);
+        ts_appearance_release(appearance);
+        let mut info = TsAppearanceInfo::default();
+        assert_eq!(ts_appearance_get_info(appearance, &mut info), TS_OK);
+        assert_eq!(info.material_count, 1);
+        let mut material = TsMaterial::default();
+        assert_eq!(
+            ts_appearance_material_at(appearance, 0, &mut material),
+            TS_OK
+        );
+        assert_eq!(material.rgba[3], 0.);
+        let mut binding = TsStyleBinding::default();
+        assert_eq!(ts_appearance_binding_at(appearance, 0, &mut binding), TS_OK);
+        assert_eq!(binding.material_id, 42);
+        assert_eq!(
+            ts_appearance_resolve_triangle(appearance, 1, 1, &mut resolved),
+            TS_NOT_FOUND
+        );
+        assert_eq!(resolved.material.id, 0);
+        assert_eq!(resolved.source.kind, 0);
+        assert_eq!(
+            ts_appearance_material_at(appearance, 99, &mut material),
+            TS_NOT_FOUND
+        );
+        assert_eq!(material.id, 0);
+        assert_eq!(
+            ts_appearance_binding_at(appearance, 99, &mut binding),
+            TS_NOT_FOUND
+        );
+        assert_eq!(binding.material_id, 0);
+        let mut retained = ptr::null();
+        ts_scene_release(scene);
+        assert_eq!(ts_appearance_get_scene(appearance, &mut retained), TS_OK);
+        assert_eq!(scene, retained);
+        ts_appearance_release(appearance);
+        assert_eq!(ts_scene_asset_mesh(retained, 1, &mut mesh), TS_OK);
+        let mut view = TsMeshView::default();
+        assert_eq!(ts_mesh_get_view(mesh, &mut view), TS_OK);
+        assert_eq!(*view.positions.add(3), 1.);
+        ts_mesh_release(mesh);
+        let mut bad = ptr::null();
+        for v in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
+            materials[0].rgba[0] = v;
+            assert_eq!(
+                ts_appearance_create(
+                    retained,
+                    materials.as_ptr(),
+                    1,
+                    bindings.as_ptr(),
+                    1,
+                    ptr::null(),
+                    &mut bad
+                ),
+                TS_INVALID_APPEARANCE
+            );
+            assert!(bad.is_null());
+        }
+        materials[0].rgba[0] = 0.;
+        bindings[0].target.reserved = 1;
+        assert_eq!(
+            ts_appearance_create(
+                retained,
+                materials.as_ptr(),
+                1,
+                bindings.as_ptr(),
+                1,
+                ptr::null(),
+                &mut bad
+            ),
+            TS_INVALID_ARGUMENT
+        );
+        bindings[0].target.reserved = 0;
+        bindings[0].target.kind = 99;
+        assert_eq!(
+            ts_appearance_create(
+                retained,
+                materials.as_ptr(),
+                1,
+                bindings.as_ptr(),
+                1,
+                ptr::null(),
+                &mut bad
+            ),
+            TS_INVALID_ARGUMENT
+        );
+        bindings[0].target.kind = 2;
+        bindings[0].target.face_id = 99;
+        assert_eq!(
+            ts_appearance_create(
+                retained,
+                materials.as_ptr(),
+                1,
+                bindings.as_ptr(),
+                1,
+                ptr::null(),
+                &mut bad
+            ),
+            TS_INVALID_APPEARANCE
+        );
+        let mut options = TsAppearanceOptions {
+            max_work: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            ts_appearance_create(
+                retained,
+                materials.as_ptr(),
+                1,
+                bindings.as_ptr(),
+                1,
+                &options,
+                &mut bad
+            ),
+            TS_RESOURCE_LIMIT
+        );
+        options.abi_version = 99;
+        assert_eq!(
+            ts_appearance_create(retained, ptr::null(), 0, ptr::null(), 0, &options, &mut bad),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            ts_appearance_create(
+                retained,
+                ptr::null(),
+                1,
+                ptr::null(),
+                0,
+                ptr::null(),
+                &mut bad
+            ),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(
+            ts_appearance_create(
+                retained,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                ptr::null(),
+                &mut bad
+            ),
+            TS_OK
+        );
+        assert_eq!(
+            ts_appearance_resolve_triangle(bad, 1, 0, &mut resolved),
+            TS_OK
+        );
+        assert_eq!(resolved.material.id, 0);
+        ts_appearance_release(bad);
+        ts_scene_release(retained);
+        assert_eq!(
+            ts_appearance_create(
+                ptr::null(),
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                ptr::null(),
+                &mut bad
+            ),
+            TS_INVALID_ARGUMENT
+        );
+        assert!(bad.is_null());
+        assert_eq!(
+            ts_appearance_resolve_triangle(ptr::null(), 1, 0, &mut resolved),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(ts_appearance_retain(ptr::null()), TS_INVALID_ARGUMENT);
+        assert_eq!(
+            ts_appearance_options_init(ptr::null_mut()),
+            TS_INVALID_ARGUMENT
+        );
+        ts_appearance_release(ptr::null());
+    }
+}

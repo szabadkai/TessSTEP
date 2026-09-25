@@ -24,7 +24,7 @@ ALLOWED = {
     "tessstep-io": {"tessstep-mesh", "tessstep-product", "tessstep-math"},
     "expressc": {"tessstep-express", "tessstep-codegen"},
     "stepdump": {"tessstep-part21", "tessstep-model"},
-    "tessstep-capi": {"tessstep-part21", "tessstep-model"},
+    "tessstep-capi": {"tessstep-part21", "tessstep-model", "tessstep-mesh"},
 }
 metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version=1", "--no-deps"], cwd=ROOT))
 for package in metadata["packages"]:

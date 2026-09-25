@@ -117,10 +117,10 @@ contract. The runner snapshots/hashes both executables and reports outcomes sepa
 Product acceptance regressions fail `--check`.
 
 `python3 scripts/check_product.py` generates metadata from an original reduced test
-schema, verifies the checked-in test bindings, compiles two checkers and runs six
+schema, verifies the checked-in test bindings, compiles two checkers and runs eleven
 reviewed fixtures through physical, schema and product stages. See `reports/product/`.
-Three product graphs are accepted, two rejected and one unsupported; all six pass
-structural decoding. These are test applications, not bundled AP validators.
+Six product models are accepted, four rejected and one unsupported; all eleven pass
+structural decoding. Accepted matrices, graph counts and uncertainty values are verified. These are test applications, not bundled AP validators.
 
 Without a checker, product remains `not_implemented`. Older baseline entries without
 this field compare as `not_implemented`, avoiding artificial outcome changes. The

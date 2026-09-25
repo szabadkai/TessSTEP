@@ -85,6 +85,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 name = "tessstep-ap242"
 version = "0.1.0"
 dependencies = [
+ "tessstep-math",
  "tessstep-model",
  "tessstep-part21",
  "tessstep-product",
@@ -121,6 +122,7 @@ dependencies = [
  "tessstep-math",
  "tessstep-model",
  "tessstep-part21",
+ "tessstep-product",
  "tessstep-schema",
  "tessstep-surfaces",
  "tessstep-tessellate",
@@ -131,6 +133,13 @@ dependencies = [
 [[package]]
 name = "tessstep-math"
 version = "0.1.0"
+
+[[package]]
+name = "tessstep-mesh"
+version = "0.1.0"
+dependencies = [
+ "tessstep-math",
+]
 
 [[package]]
 name = "tessstep-model"
@@ -147,6 +156,9 @@ version = "0.1.0"
 [[package]]
 name = "tessstep-product"
 version = "0.1.0"
+dependencies = [
+ "tessstep-math",
+]
 
 [[package]]
 name = "tessstep-schema"
@@ -166,6 +178,8 @@ version = "0.1.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
+ "tessstep-mesh",
+ "tessstep-surfaces",
  "tessstep-topology",
  "tessstep-trim",
 ]

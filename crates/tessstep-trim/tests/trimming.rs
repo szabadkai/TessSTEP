@@ -270,3 +270,48 @@ fn uv_trimming_uses_one_sided_knots_and_decreasing_pcurve_parameters() {
     );
     assert_eq!(trimmed(r).unwrap_err().kind, ErrorKind::DiscontinuousPcurve);
 }
+#[test]
+fn uv_polygon_validation_checks_actual_resolution_and_limits() {
+    let outer = vec![[0., 0.], [4., 0.], [4., 4.], [0., 4.]];
+    let hole = vec![[1., 1.], [1., 2.], [2., 2.], [2., 1.]];
+    validate_polygons(&outer, std::slice::from_ref(&hole), 1e-6, 1000).unwrap();
+    assert_eq!(
+        validate_polygons(&outer, &[], 0., 1000).unwrap_err().kind,
+        ErrorKind::InvalidOptions
+    );
+    assert_eq!(
+        validate_polygons(&outer, &[], 1e-6, 0).unwrap_err().kind,
+        ErrorKind::Limit
+    );
+    assert_eq!(
+        validate_polygons(&[], &[], 1e-6, 1000).unwrap_err().kind,
+        ErrorKind::DegenerateLoop
+    );
+    let mut reversed = outer.clone();
+    reversed.reverse();
+    assert_eq!(
+        validate_polygons(&reversed, &[], 1e-6, 1000)
+            .unwrap_err()
+            .kind,
+        ErrorKind::WrongOrientation
+    );
+    assert_eq!(
+        validate_polygons(&outer, &[hole.clone(), hole], 1e-6, 1000)
+            .unwrap_err()
+            .kind,
+        ErrorKind::IntersectingLoops
+    );
+    let outside = vec![[5., 1.], [5., 2.], [6., 2.], [6., 1.]];
+    assert_eq!(
+        validate_polygons(&outer, &[outside], 1e-6, 1000)
+            .unwrap_err()
+            .kind,
+        ErrorKind::HoleOutside
+    );
+    let mut bad = outer;
+    bad[0][0] = f64::NAN;
+    assert_eq!(
+        validate_polygons(&bad, &[], 1e-6, 1000).unwrap_err().kind,
+        ErrorKind::Geometry
+    );
+}

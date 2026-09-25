@@ -5,8 +5,10 @@ use std::{
 #[path = "../../tessstep-topology/tests/support/mod.rs"]
 mod support;
 use tessstep_math::{Angle, Length, TessellationTolerance};
-use tessstep_tessellate::{SamplingLimits, sample_edges};
-use tessstep_topology::{FaceId, ValidationLimits};
+use tessstep_tessellate::{
+    PlanarOptions, SamplingLimits, sample_edges, tessellate_faces, tessellate_solid,
+};
+use tessstep_topology::{FaceId, SolidId, ValidationLimits};
 fn main() {
     let raw = support::cylinder_seam();
     let normalized = raw
@@ -17,10 +19,29 @@ fn main() {
     let tolerance =
         TessellationTolerance::new(Length::metres(0.001).unwrap(), Angle::radians(0.1).unwrap())
             .unwrap();
+    let disk = support::disk()
+        .validate(support::tolerance(), ValidationLimits::default())
+        .unwrap()
+        .normalize();
+    let disk_edges = sample_edges(&disk, tolerance, SamplingLimits::default()).unwrap();
+    let solid = support::closed_cylinder()
+        .validate(support::tolerance(), ValidationLimits::default())
+        .unwrap()
+        .normalize();
+    let bump = support::nurbs_bump()
+        .validate(support::tolerance(), ValidationLimits::default())
+        .unwrap()
+        .normalize();
+    let curved_tolerance =
+        TessellationTolerance::new(Length::metres(0.01).unwrap(), Angle::radians(0.25).unwrap())
+            .unwrap();
     for name in [
         "topology validation and normalization",
         "UV seam reconstruction",
         "shared-edge sampling and face boundary",
+        "planar disk triangulation from cached edges",
+        "closed cylinder solid",
+        "NURBS bump refinement",
     ] {
         let run = || match name {
             "topology validation and normalization" => {
@@ -39,6 +60,25 @@ fn main() {
                         tessstep_trim::Options::default(),
                     )
                     .unwrap(),
+                );
+            }
+            "planar disk triangulation from cached edges" => {
+                black_box(
+                    disk_edges
+                        .triangulate_planar(FaceId(0), PlanarOptions::default())
+                        .unwrap(),
+                );
+            }
+            "closed cylinder solid" => {
+                black_box(
+                    tessellate_solid(&solid, SolidId(0), curved_tolerance, Default::default())
+                        .unwrap(),
+                );
+            }
+            "NURBS bump refinement" => {
+                black_box(
+                    tessellate_faces(&bump, &[FaceId(0)], curved_tolerance, Default::default())
+                        .unwrap(),
                 );
             }
             _ => {

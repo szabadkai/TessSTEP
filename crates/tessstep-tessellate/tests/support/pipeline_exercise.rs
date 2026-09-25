@@ -1,16 +1,20 @@
 #[path = "../../../tessstep-topology/tests/support/mod.rs"]
 mod fixtures;
 use tessstep_math::{Angle, Length, TessellationTolerance};
-use tessstep_tessellate::{SamplingLimits, sample_edges};
+use tessstep_tessellate::{
+    PlanarOptions, SamplingLimits, TessellationOptions, sample_edges, tessellate_faces,
+};
 use tessstep_topology::*;
 use tessstep_trim::{Options, reconstruct};
 pub fn exercise(data: &[u8]) {
     let byte = |i: usize| data.get(i).copied().unwrap_or(0);
-    let mut raw = match byte(0) % 4 {
+    let mut raw = match byte(0) % 6 {
         0 => fixtures::square(),
         1 => fixtures::adjacent(),
         2 => fixtures::disk(),
-        _ => fixtures::cylinder_seam(),
+        3 => fixtures::cylinder_seam(),
+        4 => fixtures::closed_cylinder(),
+        _ => fixtures::nurbs_bump(),
     };
     let number = |i: usize| {
         let mut bytes = [0; 8];
@@ -87,6 +91,45 @@ pub fn exercise(data: &[u8]) {
         let tolerance =
             TessellationTolerance::new(Length::metres(1e-3).unwrap(), Angle::radians(0.1).unwrap())
                 .unwrap();
+        let faces: Vec<_> = (0..n.data().faces.len()).map(FaceId).collect();
+        if let Ok(mesh) = tessellate_faces(
+            &n,
+            &faces,
+            tolerance,
+            TessellationOptions {
+                planar: PlanarOptions {
+                    trim: options,
+                    max_vertices: 1024,
+                    max_triangles: 2048,
+                    max_work: 100_000,
+                },
+                max_rounds: 8,
+                max_boundary_passes: 2,
+                max_evaluations: 16_384,
+                max_work: 200_000,
+                mesh: Default::default(),
+                sampling: SamplingLimits {
+                    max_samples: 1024,
+                    max_evaluations: 8192,
+                    max_depth: 12,
+                },
+            },
+        ) {
+            assert!(
+                mesh.data()
+                    .triangles
+                    .iter()
+                    .flatten()
+                    .all(|&i| (i as usize) < mesh.data().positions.len())
+            );
+            assert!(
+                mesh.data()
+                    .positions
+                    .iter()
+                    .flatten()
+                    .all(|x| x.is_finite())
+            );
+        }
         if let Ok(samples) = sample_edges(
             &n,
             tolerance,
@@ -106,6 +149,26 @@ pub fn exercise(data: &[u8]) {
             }
             for i in 0..n.data().faces.len() {
                 let _ = samples.face_boundary(FaceId(i), options, 2048);
+                if let Ok(mesh) = samples.triangulate_planar(
+                    FaceId(i),
+                    PlanarOptions {
+                        trim: options,
+                        max_vertices: 1024,
+                        max_triangles: 2048,
+                        max_work: 100_000,
+                    },
+                ) {
+                    assert!(
+                        mesh.triangles()
+                            .iter()
+                            .flatten()
+                            .all(|&i| (i as usize) < mesh.vertices().len())
+                    );
+                    assert_eq!(
+                        mesh.triangles().len(),
+                        mesh.vertices().len() + 2 * (mesh.boundaries().len() - 1) - 2
+                    );
+                }
             }
         }
     }

@@ -6,16 +6,15 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+tessstep-mesh.workspace = true
 tessstep-trim.workspace = true
 tessstep-math.workspace = true
 tessstep-curves.workspace = true
 tessstep-topology.workspace = true
+tessstep-surfaces.workspace = true
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-tessstep-surfaces.workspace = true
 
 [[bench]]
 name = "boundaries"

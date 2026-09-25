@@ -27,6 +27,7 @@ dependencies = [
  "tessstep-curves",
  "tessstep-express",
  "tessstep-math",
+ "tessstep-mesh",
  "tessstep-model",
  "tessstep-part21",
  "tessstep-product",
@@ -41,6 +42,7 @@ dependencies = [
 name = "tessstep-ap242"
 version = "0.1.0"
 dependencies = [
+ "tessstep-math",
  "tessstep-model",
  "tessstep-part21",
  "tessstep-product",
@@ -51,6 +53,7 @@ dependencies = [
 name = "tessstep-capi"
 version = "0.1.0"
 dependencies = [
+ "tessstep-mesh",
  "tessstep-model",
  "tessstep-part21",
 ]
@@ -78,6 +81,13 @@ name = "tessstep-math"
 version = "0.1.0"
 
 [[package]]
+name = "tessstep-mesh"
+version = "0.1.0"
+dependencies = [
+ "tessstep-math",
+]
+
+[[package]]
 name = "tessstep-model"
 version = "0.1.0"
 dependencies = [
@@ -92,6 +102,9 @@ version = "0.1.0"
 [[package]]
 name = "tessstep-product"
 version = "0.1.0"
+dependencies = [
+ "tessstep-math",
+]
 
 [[package]]
 name = "tessstep-schema"
@@ -111,6 +124,7 @@ version = "0.1.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
+ "tessstep-mesh",
  "tessstep-surfaces",
  "tessstep-topology",
  "tessstep-trim",

@@ -259,10 +259,23 @@ fn product_adapter_fuzz_smoke() {
                     max_text_bytes: 4096,
                     max_unit_depth: 16,
                 };
-                assert_eq!(
-                    adapt(&decoded, "product_test", limits),
-                    adapt(&decoded, "product_test", limits)
-                );
+                let first = adapt(&decoded, "product_test", limits);
+                assert_eq!(first, adapt(&decoded, "product_test", limits));
+                if let Ok(model) = first {
+                    if let Some(&root) = model.roots().first() {
+                        if let Some(&rep) = model.representations_of(root).and_then(|r| r.first()) {
+                            let limits = ExpansionLimits {
+                                max_work: 30_000,
+                                max_instances: 64,
+                                max_depth: 32,
+                            };
+                            assert_eq!(
+                                model.expand(root, rep, &Default::default(), limits),
+                                model.expand(root, rep, &Default::default(), limits)
+                            );
+                        }
+                    }
+                }
             }
         }
     }

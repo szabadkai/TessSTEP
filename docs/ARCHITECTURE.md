@@ -3,7 +3,8 @@
 Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust generation
 and runtime reflection, plus a bounded product semantics slice, checked math and
 independent analytic/NURBS curves and surfaces, structural topology, supplied-pcurve UV
-reconstruction and shared-edge sampling. Architecture is a contract for later work, not a declaration that the geometry kernel already exists.
+reconstruction, shared-edge sampling, adaptive regular-face tessellation and owned
+manifold shell/solid meshes. STEP geometry adaptation and industrial hardening remain pending.
 
 ## Implemented dependency graph
 
@@ -13,7 +14,7 @@ expressc ──→ tessstep-codegen ──→ tessstep-express
 
 generated consumer ──→ tessstep-schema (standard library only)
 
-tessstep-capi ──→ tessstep-model / tessstep-part21
+tessstep-capi ──→ tessstep-model / tessstep-part21 / tessstep-mesh
 C++ wrapper ──→ public C ABI only
 
 stepdump ──→ tessstep-model ──→ tessstep-part21
@@ -28,10 +29,11 @@ tessstep-surfaces ──→ tessstep-curves ──→ tessstep-math (standard li
 
 tessstep-tessellate ──→ tessstep-trim ──→ tessstep-topology
         └────────────────────────────→ tessstep-topology
-        └────→ tessstep-math / tessstep-curves
+        └────→ tessstep-mesh ──→ tessstep-math
+        └────→ tessstep-math / tessstep-curves / tessstep-surfaces
 tessstep-trim / tessstep-topology ──→ tessstep-math / tessstep-curves / tessstep-surfaces
 
-tessstep ──→ tessstep-topology / tessstep-trim / tessstep-tessellate
+tessstep ──→ tessstep-topology / tessstep-trim / tessstep-tessellate / tessstep-mesh
     └──────→ tessstep-surfaces / tessstep-curves / tessstep-math / tessstep-ap242 / tessstep-product
     ├──────→ tessstep-codegen
     ├──────→ tessstep-schema
@@ -114,8 +116,8 @@ crate when its first tested vertical slice is implemented.
 | tessstep-surfaces (active) | analytic and tensor-product NURBS surface evaluation/refinement |
 | tessstep-topology (active) | typed handles, builders and immutable validity states |
 | tessstep-trim (active) | UV boundaries, periodic seams and trim reconstruction |
-| tessstep-mesh | mesh assets and mesh invariants |
-| tessstep-tessellate (active) | shared-edge sampling now; normalized face/solid tessellation later |
+| tessstep-mesh (active) | owned indexed assets, per-corner attributes and manifold invariants |
+| tessstep-tessellate (active) | shared-edge sampling, adaptive regular faces and shell/solid assembly |
 | tessstep-validate | structured semantic, topology and mesh reports |
 | tessstep-io | exporters outside the kernel |
 
@@ -125,8 +127,8 @@ views where possible. Its installed CMake package exports `TessSTEP::TessSTEP`.
 No Rust type, layout, allocator, panic, or ownership semantics may cross the ABI
 boundary. Mesh storage must accommodate stable public read-only buffer formats
 without exposing private kernel layouts. See [C_API.md](C_API.md) for ownership,
-view lifetime, compatibility and consumer-test requirements. The physical-document subset of both interfaces is implemented; schema decoding
-and mesh views remain future work.
+view lifetime, compatibility and consumer-test requirements. Physical documents and owned mesh import/read-only views are implemented in both
+interfaces; schema decoding and B-rep/tessellation entry points remain future work.
 
 The three data worlds remain separate: generic STEP instances, normalized CAD objects,
 and mesh assets. A tessellator must not inspect raw STEP parameters. Geometry must be
@@ -326,3 +328,123 @@ volume. STEP adapters, triangle assets and C/C++ geometry APIs are still absent.
 The stable physical-document C ABI and installed C++ package remain release-tested;
 no new symbol, allocator or Rust representation crosses their boundary. External
 corpus stages remain unimplemented until real STEP adapters/checkers exist.
+
+## Milestone 14 planar triangulation architecture review
+
+Planar triangulation remains in `tessstep-tessellate`; the already permitted surfaces
+edge moves from test-only to production use for explicit analytic-plane discrimination.
+There is no new crate, external dependency or unsafe code. Trimming owns the reusable
+polygon validity contract; reconstruction and actual-resolution validation share hole
+relationship checks. Tessellation never inspects physical or schema entities.
+
+Face results borrow canonical cached positions and own only UV/sample-reference records,
+u32 indices, loop indices and a normal. Public access is immutable; no general owned
+mesh asset layer is claimed. Bridge/ear operations are deterministic and iterative.
+Finite logical budgets bound potentially cubic work; incidence postchecks use ordered
+maps. No boundary vertex is healed, welded or discarded, and failure publishes no mesh.
+Exact geometric robustness and triangle quality are separate future responsibilities.
+
+At Milestone 14, public C/C++ mesh buffers were still unimplemented; the bridge must translate into
+explicit C-defined storage and retain its owner rather than expose these Rust references.
+The existing C ABI has no symbol, allocator, layout or ownership changes from this work.
+Independent constructed-face tests do not enable the external STEP geometry or
+tessellation corpus stages without an actual schema-to-geometry adapter/checker.
+
+## Milestones 15–17 adaptive mesh pipeline architecture review
+
+`tessstep-mesh` activates the reserved mesh/math boundary. It owns immutable flat arrays
+and validates oriented manifold incidence without any STEP, topology or surface dependency.
+The tessellator composes normalized topology, UV constraints, surface evaluation and mesh
+validation. Its shared UV triangulator also continues to serve the borrowed planar API.
+No parser/schema layer acquires a geometry dependency.
+
+Adaptive refinement is iterative and conforming. A global driver gathers boundary split
+requests and resamples canonical edges before rebuilding selected faces; interpolation
+is never independently performed on two uses of the same boundary. Position identity
+uses topology vertices and edge sample ordinals, not proximity. Per-corner normals/UVs
+retain discontinuities after position welding. NURBS cell clipping and one-sided probes
+avoid missing entire knot spans, while retaining an explicit sampled-error contract.
+
+All maps and iteration orders are deterministic. Separate sample/trim/triangulation,
+adaptive and final-mesh budgets are explicit. Output is private until complete success;
+no healing, recursive graph expansion, unsafe kernel code or external numerical dependency
+was added. Closed-edge endpoint incidences are now distinguished in topology vertex links.
+Watertightness is a manifold incidence property, not a nonintersection or cavity proof.
+
+The C composition root adds only a mesh dependency. Mesh creation copies scalar inputs,
+validates them and copies into explicit C scalar storage behind a retained opaque handle.
+Queries return address-stable read-only pointers without copying. C++ views independently
+retain ownership. Five additive C functions and one status extend ABI 1 without changing
+existing layouts, symbols or ownership; installed C/C++ consumers validate new layouts,
+retention, moves, concurrent reads, failure cleanup and relocation. No Rust kernel layout,
+allocator or lifetime semantics cross that boundary. Public B-rep/tessellation inputs
+and STEP geometry adaptation remain distinct future interfaces.
+
+## Milestone 18 assembly asset architecture review
+
+`mesh::scene` extends the existing mesh/math boundary without new dependency edges.
+It has no physical/schema/product access: callers supply asset identity and metre-based
+local placements. Immutable Arc-owned assets are shared across occurrences. Ordered
+sparse indexes and iterative breadth-first forest traversal preserve input order and
+bound graph work/depth without expanding repeated subassembly definitions. Transform
+composition, inverse-transpose caching and scaled handedness checks use checked math.
+Explicit baking preserves asset-local face IDs, fixes reflected corner order and consumes
+its remaining budget in mesh validation. Scene construction makes no world-mesh validity
+or tolerance claim. No unsafe kernel code or external dependency is added.
+
+The C bridge retains the validated kernel mesh alongside its existing C scalar buffers,
+adding one kernel copy per imported asset, never per occurrence. A scene retains original
+C handles and kernel Arcs, so asset queries return the same address-stable buffers without
+repacking. No raw input pointer is retained without acquiring library ownership. Eight
+additive functions and TS_INVALID_SCENE extend ABI 1 with separate frozen scalar records;
+existing layouts and codes are unchanged. C++ Scene and acquired Mesh objects use RAII.
+Installed consumers check independent lifetimes, pointer identity, moves, layouts, error
+outputs and concurrent reads. STEP product/placement semantics and external geometry
+corpus stages remain separate, unimplemented adapter work.
+
+## Milestone 19 appearance architecture review
+
+`mesh::appearance` stays within the existing mesh/math boundary and reads only an
+immutable, explicitly retained scene. It owns a validated palette and sparse exact-ID
+bindings; it neither duplicates geometry nor allocates per-occurrence triangle arrays.
+Asset face sets are cached only during binding validation. Iterative forest traversal
+resolves nearest occurrence overrides once, preserving ancestor provenance. Triangle
+queries use ordered lookups without allocation, recursion or mesh scans. Separate limits
+cover materials, bindings, face scans and traversal; they are logical, not exact RSS caps.
+No appearance rule is inferred from STEP data, and no renderer/texture/shader dependency
+or unsafe kernel code is introduced. Previous Rust mesh and scene record layouts and
+constructor contracts remain unchanged.
+
+C appearance handles retain the original scene handle and share its Arc-owned kernel
+scene. This internal ownership adjustment adds no scene or mesh copy. New operations
+translate C scalar input/output records without exposing Rust vectors, Arc, enums or
+color layouts. Nine additive functions and TS_INVALID_APPEARANCE extend ABI 1; all
+previous symbols, records and status meanings remain intact. C++ RAII and independent
+scene/mesh acquisitions preserve the existing zero-copy mesh-view contract. Installed
+consumers verify destruction order, copied appearance inputs, original geometry pointer
+identity, concurrent queries, moves, failure clearing and layout/export compatibility.
+
+## Milestone 5 completion review
+
+The previously initial product slice now adds `tessstep-product → tessstep-math` and
+`tessstep-ap242 → tessstep-math`, already permitted by the dependency checker. No STEP
+access enters math or mesh. The adapter evaluates frame/operator placements only after
+structural schema decoding; geometry items remain opaque. Each origin and uncertainty
+is normalized with its own unit; dimensionless operator scale is not a unit conversion.
+
+Context membership is an iterative closure through representation-item references,
+without crossing representation-map source boundaries. Shape ownership propagates only
+through untransformed shape associations. Assembly and mapping cycle checks remain
+separate. Explicit expansion tracks occurrence paths by parent index, handles endpoint
+direction, and rejects missing/ambiguous placements. Instance/work/depth budgets bound
+output before expansion; no recursive tree copying or hidden identity transform occurs.
+
+All new graph scans, reference traversal and copies consume logical budgets; graph
+validation uses remaining adapter work. Checked affine construction, inversion and
+composition enforce finite/numerical limits. Structured errors preserve source spans
+and math/graph kinds. Owned output remains immutable; no new dependency, unsafe code,
+global state, external fetch or C ABI change was introduced. Source descriptors and
+evaluated maps remain separate; independent caller graphs can retain missing placements,
+which expansion explicitly rejects. Corpus acceptance now checks evaluated matrices
+and uncertainty values as well as graph counts. Full AP validation and STEP geometry
+adaptation remain distinct stages.

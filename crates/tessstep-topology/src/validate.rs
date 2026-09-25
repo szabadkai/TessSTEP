@@ -186,7 +186,8 @@ impl RawBrep {
                 return Err(fail(Defect::Empty, "shell", si));
             }
             let mut incidence: BTreeMap<EdgeId, Vec<(usize, bool)>> = BTreeMap::new();
-            let mut links: BTreeMap<VertexId, Vec<(EdgeId, EdgeId)>> = BTreeMap::new();
+            type Germ = (EdgeId, bool);
+            let mut links: BTreeMap<VertexId, Vec<(Germ, Germ)>> = BTreeMap::new();
             for (local, &fid) in shell.faces.iter().enumerate() {
                 own(&mut faces, fid.0, "face")?;
                 let f = &self.faces[fid.0];
@@ -201,7 +202,11 @@ impl RawBrep {
                         ));
                         let prev = &self.coedges[cs[(j + cs.len() - 1) % cs.len()].0];
                         let v = self.use_vertices(cid).expect("validated handles")[0];
-                        links.entry(v).or_default().push((prev.edge, c.edge));
+                        // Closed edges have two distinct endpoint incidences at the same vertex.
+                        links.entry(v).or_default().push((
+                            (prev.edge, !prev.orientation.is_reversed()),
+                            (c.edge, c.orientation.is_reversed()),
+                        ));
                     }
                 }
             }
@@ -238,7 +243,7 @@ impl RawBrep {
             }
             // Each vertex link must be one path (boundary) or one cycle (interior).
             for corners in links.values() {
-                let mut graph: BTreeMap<EdgeId, Vec<EdgeId>> = BTreeMap::new();
+                let mut graph: BTreeMap<Germ, Vec<Germ>> = BTreeMap::new();
                 for &(a, b) in corners {
                     graph.entry(a).or_default().push(b);
                     graph.entry(b).or_default().push(a);

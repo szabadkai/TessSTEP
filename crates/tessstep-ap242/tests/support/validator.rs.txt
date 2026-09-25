@@ -11,8 +11,13 @@ fn main() -> std::process::ExitCode {
     match tessstep_ap242::adapt(&decoded,schema,Default::default()) {
         Ok(model) => {
             let p = model.parts();
-            println!("{{\"format_version\":1,\"scope\":\"product-structure\",\"status\":\"accepted\",\"entity_count\":{},\"products\":{},\"definitions\":{},\"representations\":{},\"occurrences\":{},\"maps\":{},\"mapped_items\":{}}}",
-                document.entities().len(),p.products.len(),p.definitions.len(),p.representations.len(),p.occurrences.len(),p.maps.len(),p.mapped_items.len());
+            let matrices: Vec<_> = p.relationship_transforms.iter().map(|r| {
+                let m = r.rep_1_to_rep_2.linear(); let t = r.rep_1_to_rep_2.translation();
+                std::array::from_fn::<_,3,_>(|i| [m[i][0],m[i][1],m[i][2],t[i]])
+            }).collect();
+            let uncertainty: Vec<_> = p.uncertainties.iter().map(|u|u.value_si).collect();
+            println!("{{\"format_version\":1,\"scope\":\"product-structure\",\"status\":\"accepted\",\"entity_count\":{},\"products\":{},\"definitions\":{},\"representations\":{},\"occurrences\":{},\"maps\":{},\"mapped_items\":{},\"resolved_relationships\":{},\"resolved_mappings\":{},\"uncertainties\":{},\"relationship_matrices\":{matrices:?},\"uncertainty_values_si\":{uncertainty:?}}}",
+                document.entities().len(),p.products.len(),p.definitions.len(),p.representations.len(),p.occurrences.len(),p.maps.len(),p.mapped_items.len(),p.relationship_transforms.len(),p.mapped_transforms.len(),p.uncertainties.len());
             ExitCode::SUCCESS
         }
         Err(error) => {

@@ -2,6 +2,13 @@
 //! Opaque handles expose no Rust representation. This is the only unsafe crate.
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod appearance;
+pub use appearance::*;
+mod mesh;
+mod scene;
+pub use mesh::*;
+pub use scene::*;
+
 use std::{panic::catch_unwind, ptr, sync::Arc};
 use tessstep_model::Document;
 use tessstep_part21::{Diagnostic, DiagnosticCode, EntityId, ParseLimits, Severity};
@@ -13,6 +20,9 @@ pub const TS_UNSUPPORTED: u32 = 3;
 pub const TS_RESOURCE_LIMIT: u32 = 4;
 pub const TS_NOT_FOUND: u32 = 5;
 pub const TS_INTERNAL_ERROR: u32 = 6;
+pub const TS_INVALID_MESH: u32 = 7;
+pub const TS_INVALID_SCENE: u32 = 8;
+pub const TS_INVALID_APPEARANCE: u32 = 9;
 
 #[derive(Debug)]
 pub struct TsDocument {
@@ -454,5 +464,7 @@ mod tests {
         fn check<T: Send + Sync>() {}
         check::<TsDocument>();
         check::<TsDiagnostics>();
+        check::<TsScene>();
+        check::<TsAppearance>();
     }
 }

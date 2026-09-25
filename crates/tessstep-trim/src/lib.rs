@@ -138,6 +138,62 @@ impl Budget {
         self.work(1)
     }
 }
+/// Validate polygons at a caller's actual boundary resolution. Outer winding must
+/// be CCW, holes CW, strictly contained, disjoint and unnested. No vertices are
+/// removed or moved. Predicates use finite f64 arithmetic and a UV distance tolerance.
+pub fn validate_polygons(
+    outer: &[[f64; 2]],
+    holes: &[Vec<[f64; 2]>],
+    uv_tolerance: f64,
+    max_work: usize,
+) -> Result<(), Error> {
+    if !uv_tolerance.is_finite() || uv_tolerance <= 0. {
+        return Err(err(ErrorKind::InvalidOptions));
+    }
+    let mut budget = Budget {
+        work: max_work,
+        samples: 0,
+    };
+    if polygon::validate(outer, uv_tolerance, &mut budget)? <= 0. {
+        return Err(err(ErrorKind::WrongOrientation));
+    }
+    for (i, hole) in holes.iter().enumerate() {
+        if polygon::validate(hole, uv_tolerance, &mut budget)? >= 0. {
+            return Err(err(ErrorKind::WrongOrientation));
+        }
+        validate_hole(
+            outer,
+            hole,
+            holes[..i].iter().map(Vec::as_slice),
+            uv_tolerance,
+            &mut budget,
+        )?;
+    }
+    Ok(())
+}
+fn validate_hole<'a>(
+    outer: &[[f64; 2]],
+    hole: &[[f64; 2]],
+    previous: impl Iterator<Item = &'a [[f64; 2]]>,
+    eps: f64,
+    budget: &mut Budget,
+) -> Result<(), Error> {
+    polygon::disjoint(outer, hole, eps, budget)?;
+    budget.work(outer.len())?;
+    if polygon::classify(outer, hole[0], eps)? != Containment::Inside {
+        return Err(err(ErrorKind::HoleOutside));
+    }
+    for other in previous {
+        polygon::disjoint(other, hole, eps, budget)?;
+        budget.work(other.len().saturating_add(hole.len()))?;
+        if polygon::classify(other, hole[0], eps)? != Containment::Outside
+            || polygon::classify(hole, other[0], eps)? != Containment::Outside
+        {
+            return Err(err(ErrorKind::IntersectingLoops));
+        }
+    }
+    Ok(())
+}
 pub fn reconstruct(
     brep: &NormalizedBrep,
     face: FaceId,
@@ -169,33 +225,15 @@ pub fn reconstruct(
         if h.signed_area >= 0. {
             return Err(err(ErrorKind::WrongOrientation));
         }
-        polygon::disjoint(
+        validate_hole(
             &outer.polygon,
             &h.polygon,
+            holes
+                .iter()
+                .map(|other: &TrimLoop| other.polygon.as_slice()),
             options.uv_tolerance,
             &mut budget,
         )?;
-        if polygon::classify(&outer.polygon, h.polygon[0], options.uv_tolerance)?
-            != Containment::Inside
-        {
-            return Err(err(ErrorKind::HoleOutside));
-        }
-        for other in &holes {
-            let other: &TrimLoop = other;
-            polygon::disjoint(
-                &other.polygon,
-                &h.polygon,
-                options.uv_tolerance,
-                &mut budget,
-            )?;
-            if polygon::classify(&other.polygon, h.polygon[0], options.uv_tolerance)?
-                != Containment::Outside
-                || polygon::classify(&h.polygon, other.polygon[0], options.uv_tolerance)?
-                    != Containment::Outside
-            {
-                return Err(err(ErrorKind::IntersectingLoops));
-            }
-        }
         holes.push(h);
     }
     Ok(TrimmedFace {

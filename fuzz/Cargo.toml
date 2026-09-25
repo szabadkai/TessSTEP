@@ -8,6 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+tessstep-product = { path = "../crates/tessstep-product" }
 tessstep-topology = { path = "../crates/tessstep-topology" }
 tessstep-trim = { path = "../crates/tessstep-trim" }
 tessstep-tessellate = { path = "../crates/tessstep-tessellate" }

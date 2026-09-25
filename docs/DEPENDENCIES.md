@@ -11,9 +11,10 @@ dependencies. This is development infrastructure, never linked into the public l
 or either CLI. The deterministic smoke harness and benchmarks themselves need no external
 packages. The minimal std benchmark reports timing/throughput, not confidence intervals.
 
-Every production crate root explicitly forbids unsafe code, reinforced by workspace
-lints. There is no handwritten unsafe Rust in this repository. A future exception must
-be isolated (for example C ABI or predicates), justify necessity, state every invariant,
+Every kernel crate root explicitly forbids unsafe code, reinforced by workspace
+lints. The isolated `tessstep-capi` bridge is the audited exception, with
+`deny(unsafe_op_in_unsafe_fn)` and native ownership/layout tests. Any further exception
+must be isolated, justify necessity, state every invariant,
 put a SAFETY comment on every unsafe block, and add focused tests. Profiling is required
 before proposing an unsafe optimization. Third-party fuzz runtime native code is confined
 to test tooling and is not an exception in a kernel crate.

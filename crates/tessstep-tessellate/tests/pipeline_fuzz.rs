@@ -13,7 +13,7 @@ fn topology_trim_sampling_bounded_mutation_smoke() {
         }
         pipeline::exercise(&data);
     }
-    for kind in 0..4 {
+    for kind in 0..6 {
         let mut data = [0u8; 96];
         data[0] = kind;
         for n in 0..=96 {

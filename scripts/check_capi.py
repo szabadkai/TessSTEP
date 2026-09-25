@@ -11,10 +11,16 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SYMBOLS = {
+    "ts_appearance_options_init", "ts_appearance_create", "ts_appearance_retain", "ts_appearance_release",
+    "ts_appearance_get_info", "ts_appearance_material_at", "ts_appearance_binding_at",
+    "ts_appearance_resolve_triangle", "ts_appearance_get_scene",
+    "ts_scene_options_init", "ts_scene_create", "ts_scene_retain", "ts_scene_release",
+    "ts_scene_get_info", "ts_scene_instance_at", "ts_scene_asset_mesh", "ts_scene_bake_instance",
     "ts_api_version", "ts_parse_options_init", "ts_document_parse", "ts_document_retain",
     "ts_document_release", "ts_document_get_info", "ts_document_entity_at",
     "ts_document_record_name", "ts_document_diagnostics", "ts_diagnostics_release",
     "ts_diagnostics_count", "ts_diagnostics_get",
+    "ts_mesh_options_init", "ts_mesh_create", "ts_mesh_retain", "ts_mesh_release", "ts_mesh_get_view",
 }
 
 

@@ -5,12 +5,15 @@
 //! A bounded structural instance decoder is available in `model::decode`.
 //! A bounded product graph adapter is available in `ap242`, with an independent
 //! owned model in `product`. No AP conformance, STEP geometry adaptation or
-//! triangle tessellation is implemented. Placements remain ordered descriptions. Independent
+//! STEP-to-mesh conversion is implemented. Product placements and bounded assembly expansion are implemented. Independent
 //! coordinates, units, tolerances and affine transforms are available in `math`;
 //! analytic lines/conics, derivatives, parameter spans and NURBS are in `curves`.
 //! Analytic and tensor-product NURBS evaluators are available in `surfaces`.
 //! `topology`, `trim` and `tessellate` provide constructed structural B-reps,
-//! supplied-pcurve UV reconstruction and shared-edge boundary sampling.
+//! supplied-pcurve UV reconstruction, adaptive regular face tessellation and shell/solid
+//! assembly. `mesh` owns checked indexed assets and per-corner attributes.
+//! `mesh::scene` shares assets across explicit nested affine occurrences and bakes instances.
+//! `mesh::appearance` adds explicit color/opacity, face styles and inherited overrides.
 //!
 //! ```
 //! use tessstep::{parse, ParseLimits};
@@ -44,3 +47,5 @@ pub use tessstep_surfaces as surfaces;
 pub use tessstep_tessellate as tessellate;
 pub use tessstep_topology as topology;
 pub use tessstep_trim as trim;
+
+pub use tessstep_mesh as mesh;

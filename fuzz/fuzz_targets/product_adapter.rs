@@ -27,10 +27,26 @@ fuzz_target!(|bytes: &[u8]| {
                 max_text_bytes: 4096,
                 max_unit_depth: 16,
             };
+            let first = tessstep_ap242::adapt(&decoded, "product_test", limits);
             assert_eq!(
-                tessstep_ap242::adapt(&decoded, "product_test", limits),
+                first,
                 tessstep_ap242::adapt(&decoded, "product_test", limits)
             );
+            if let Ok(model) = first {
+                if let Some(&root) = model.roots().first() {
+                    if let Some(&rep) = model.representations_of(root).and_then(|r| r.first()) {
+                        let limits = tessstep_product::ExpansionLimits {
+                            max_work: 30_000,
+                            max_instances: 64,
+                            max_depth: 32,
+                        };
+                        assert_eq!(
+                            model.expand(root, rep, &Default::default(), limits),
+                            model.expand(root, rep, &Default::default(), limits)
+                        );
+                    }
+                }
+            }
         }
     }
 });

@@ -25,9 +25,9 @@ DATA;
 #25=MEASURE_WITH_UNIT(25.4,#20);
 #26=CONVERTED_LENGTH(#24,'inch',#25);
 #27=MODEL_CONTEXT(2,(#26,#21,#22));
-#30=REPRESENTATION_ITEM('parent left placement');
-#31=REPRESENTATION_ITEM('parent right placement');
-#32=REPRESENTATION_ITEM('part origin');
+#30=AXIS2_PLACEMENT_3D('parent left placement',#70,$,$);
+#31=AXIS2_PLACEMENT_3D('parent right placement',#71,$,$);
+#32=AXIS2_PLACEMENT_3D('part origin',#72,$,$);
 #33=OPAQUE_GEOMETRY('unevaluated body');
 #34=REPRESENTATION('assembly',(#30,#31),#23);
 #35=REPRESENTATION('part',(#32,#33),#27);
@@ -41,5 +41,8 @@ DATA;
 #45=CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#43,#12);
 
 
+#70=CARTESIAN_POINT('',(100.,0.,0.));
+#71=CARTESIAN_POINT('',(0.,200.,0.));
+#72=CARTESIAN_POINT('',(1.,0.,0.));
 ENDSEC;
 END-ISO-10303-21;

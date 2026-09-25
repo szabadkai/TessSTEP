@@ -1,8 +1,12 @@
 //! STEP-independent product and representation graphs, with explicit SI scales.
 //!
-//! Placements remain descriptions until the independent math layer can evaluate
-//! them. Graph validity does not establish geometry, topology or AP conformance.
+//! Explicit placements use checked metre-based affine maps. Graph validity does
+//! not establish geometry, topology or AP conformance.
 #![forbid(unsafe_code)]
+
+mod assembly;
+pub use assembly::*;
+pub type Transform = tessstep_math::Affine3<tessstep_math::ModelSpace, tessstep_math::ModelSpace>;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
@@ -135,6 +139,8 @@ pub struct Relationship {
     pub rep_2: RepresentationId,
     /// None means no transformation was specified, not an identity matrix.
     pub transform: Option<ItemTransform>,
+    /// Alternative Cartesian operator identity; mutually exclusive with the pair.
+    pub operator: Option<ItemId>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct OccurrencePlacement {
@@ -169,6 +175,13 @@ pub struct Parts {
     pub placements: Vec<OccurrencePlacement>,
     pub maps: Vec<RepresentationMap>,
     pub mapped_items: Vec<MappedItem>,
+    /// Contextual references between representation items, excluding map-source crossings.
+    pub item_dependencies: Vec<(ItemId, ItemId)>,
+    /// Untransformed shape relationships used for definition ownership discovery.
+    pub associations: Vec<RelationshipId>,
+    pub relationship_transforms: Vec<ResolvedRelationship>,
+    pub mapped_transforms: Vec<ResolvedMapping>,
+    pub uncertainties: Vec<Uncertainty>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -178,6 +191,9 @@ pub enum Error {
     InvalidUnit,
     NumericRange,
     ResourceLimit,
+    InvalidTransform,
+    AmbiguousPlacement,
+    MissingPlacement,
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -190,6 +206,8 @@ impl std::error::Error for Error {}
 pub struct Model {
     parts: Parts,
     roots: Vec<DefinitionId>,
+    definition_reps: BTreeMap<DefinitionId, BTreeSet<RepresentationId>>,
+    context_items: BTreeMap<ContextId, BTreeSet<ItemId>>,
 }
 impl Model {
     /// Validate references, unique identities, unit dimensions and acyclic assembly
@@ -221,17 +239,32 @@ impl Model {
                 return Err(Error::InvalidUnit);
             }
         }
-        let mut items = BTreeSet::new();
+        let mut dependencies: BTreeMap<ItemId, Vec<ItemId>> = BTreeMap::new();
+        for &(a, b) in &parts.item_dependencies {
+            work.tick()?;
+            dependencies.entry(a).or_default().push(b);
+        }
+        let mut context_items: BTreeMap<ContextId, BTreeSet<ItemId>> = BTreeMap::new();
+        let mut representation_items = BTreeMap::new();
         for p in &parts.representations {
             work.link(&contexts, p.context)?;
-            let mut local = BTreeSet::new();
-            for &item in &p.items {
+            context_items.entry(p.context).or_default();
+            let local = index(p.items.iter().copied(), &mut work)?;
+            let mut found = BTreeSet::new();
+            let mut stack: Vec<_> = local.keys().copied().collect();
+            while let Some(item) = stack.pop() {
                 work.tick()?;
-                if !local.insert(item) {
-                    return Err(Error::DuplicateId);
+                if found.insert(item) {
+                    context_items.entry(p.context).or_default().insert(item);
+                    if let Some(children) = dependencies.get(&item) {
+                        for &child in children {
+                            work.tick()?;
+                            stack.push(child);
+                        }
+                    }
                 }
-                items.insert(item);
             }
+            representation_items.insert(p.id, found);
         }
         for p in &parts.shapes {
             match p.target {
@@ -254,6 +287,38 @@ impl Model {
                     .insert(p.representation);
             }
         }
+        let mut associated: BTreeMap<RepresentationId, Vec<RepresentationId>> = BTreeMap::new();
+        for &id in &parts.associations {
+            work.link(&relationships, id)?;
+            let r = &parts.relationships[relationships[&id]];
+            if r.transform.is_some() || r.operator.is_some() {
+                return Err(Error::InvalidTransform);
+            }
+            work.link(&representations, r.rep_1)?;
+            work.link(&representations, r.rep_2)?;
+            associated.entry(r.rep_1).or_default().push(r.rep_2);
+            associated.entry(r.rep_2).or_default().push(r.rep_1);
+        }
+        for reps in definition_reps.values_mut() {
+            let mut stack = Vec::new();
+            for &rep in reps.iter() {
+                work.tick()?;
+                stack.push(rep);
+            }
+            let mut seen = BTreeSet::new();
+            while let Some(rep) = stack.pop() {
+                work.tick()?;
+                if seen.insert(rep) {
+                    reps.insert(rep);
+                    if let Some(next) = associated.get(&rep) {
+                        for &r in next {
+                            work.tick()?;
+                            stack.push(r);
+                        }
+                    }
+                }
+            }
+        }
         let mut assembly = Vec::new();
         let mut children = BTreeSet::new();
         for p in &parts.occurrences {
@@ -266,9 +331,16 @@ impl Model {
         for p in &parts.relationships {
             work.link(&representations, p.rep_1)?;
             work.link(&representations, p.rep_2)?;
+            if p.transform.is_some() && p.operator.is_some() {
+                return Err(Error::InvalidTransform);
+            }
             if let Some(t) = p.transform {
                 for (rep, item) in [(p.rep_1, t.item_1), (p.rep_2, t.item_2)] {
-                    work.member(&parts.representations[representations[&rep]].items, item)?;
+                    work.tick()?;
+                    let context = parts.representations[representations[&rep]].context;
+                    if !context_items[&context].contains(&item) {
+                        return Err(Error::MissingLink);
+                    }
                 }
             }
         }
@@ -290,27 +362,65 @@ impl Model {
         }
         for p in &parts.maps {
             work.link(&representations, p.representation)?;
-            work.member(
-                &parts.representations[representations[&p.representation]].items,
-                p.origin,
-            )?;
-        }
-        for p in &parts.mapped_items {
-            work.link(&maps, p.map)?;
             work.tick()?;
-            if !items.contains(&p.id) || !items.contains(&p.target) {
+            let context = parts.representations[representations[&p.representation]].context;
+            if !context_items[&context].contains(&p.origin) {
                 return Err(Error::MissingLink);
             }
         }
+        for p in &parts.mapped_items {
+            work.link(&maps, p.map)?;
+        }
         let mut mapping_edges = Vec::new();
+        let mut used = BTreeSet::new();
         for p in &parts.representations {
-            for item in &p.items {
+            for item in &representation_items[&p.id] {
                 work.tick()?;
                 if let Some(&i) = mapped.get(item) {
                     let m = &parts.mapped_items[i];
-                    work.member(&p.items, m.target)?;
+                    if !context_items[&p.context].contains(&m.target) {
+                        return Err(Error::MissingLink);
+                    }
+                    used.insert(m.id);
                     mapping_edges.push((p.id, parts.maps[maps[&m.map]].representation));
                 }
+            }
+        }
+        if used.len() != mapped.len() {
+            return Err(Error::MissingLink);
+        }
+        index(
+            parts.relationship_transforms.iter().map(|p| p.relationship),
+            &mut work,
+        )?;
+        for p in &parts.relationship_transforms {
+            work.link(&relationships, p.relationship)?;
+            let r = &parts.relationships[relationships[&p.relationship]];
+            if r.transform.is_none() && r.operator.is_none() {
+                return Err(Error::InvalidTransform);
+            }
+            p.rep_1_to_rep_2
+                .inverse(Default::default())
+                .map_err(|_| Error::InvalidTransform)?;
+        }
+        let mut mappings = BTreeSet::new();
+        for p in &parts.mapped_transforms {
+            work.link(&mapped, p.item)?;
+            work.link(&representations, p.using_representation)?;
+            if !representation_items[&p.using_representation].contains(&p.item) {
+                return Err(Error::MissingLink);
+            }
+            if !mappings.insert((p.item, p.using_representation)) {
+                return Err(Error::DuplicateId);
+            }
+            p.source_to_using
+                .inverse(Default::default())
+                .map_err(|_| Error::InvalidTransform)?;
+        }
+        for p in &parts.uncertainties {
+            work.link(&contexts, p.context)?;
+            if !p.value_si.is_finite() || p.value_si <= 0.0 {
+                return Err(Error::NumericRange);
             }
         }
         acyclic(&representations, &mapping_edges, &mut work)?;
@@ -321,7 +431,12 @@ impl Model {
                 roots.push(p.id);
             }
         }
-        Ok(Self { parts, roots })
+        Ok(Self {
+            parts,
+            roots,
+            definition_reps,
+            context_items,
+        })
     }
     pub fn parts(&self) -> &Parts {
         &self.parts
@@ -344,15 +459,6 @@ impl Budget {
         } else {
             Err(Error::MissingLink)
         }
-    }
-    fn member<K: PartialEq>(&mut self, items: &[K], key: K) -> Result<(), Error> {
-        for item in items {
-            self.tick()?;
-            if *item == key {
-                return Ok(());
-            }
-        }
-        Err(Error::MissingLink)
     }
 }
 fn index<K: Ord>(

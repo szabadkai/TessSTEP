@@ -46,3 +46,9 @@ Failure to satisfy a tolerance within depth/evaluation limits returns a typed er
 no partial face is published. Tests include planar holes, curved analytic/NURBS boundaries,
 full cylinder seams, wrapped pcurve chart alignment, missing/mismatched pcurves, singular
 surfaces, winding, intersections, noncontractible loops and resource exhaustion.
+
+`validate_polygons(outer, holes, uv_tolerance, max_work)` exposes the same winding,
+intersection, containment and hole-relationship checks for callers with an existing
+polygon resolution. Planar triangulation uses it on canonical shared-edge samples;
+passing trim reconstruction at a different resolution is not sufficient. The function
+neither changes vertices nor evaluates source curves, and charges a finite work budget.

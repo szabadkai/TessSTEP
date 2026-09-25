@@ -153,3 +153,13 @@ fn topology_rejects_nonmanifold_edges_and_pinched_vertices() {
     });
     assert_eq!(defect(r), Defect::NonManifoldVertex);
 }
+#[test]
+fn topology_closed_edges_keep_two_endpoint_incidences() {
+    let n = closed_cylinder()
+        .validate(tolerance(), ValidationLimits::default())
+        .unwrap()
+        .normalize();
+    assert_eq!(n.data().vertices.len(), 2);
+    assert_eq!(n.edge_uses(EdgeId(0)).unwrap().len(), 2);
+    assert_eq!(n.edge_uses(EdgeId(2)).unwrap().len(), 2);
+}

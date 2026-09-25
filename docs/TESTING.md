@@ -172,7 +172,48 @@ Constructed fixtures cover invalid ownership/references, shell closure/connectiv
 edge orientation and vertex-link defects, planar holes, curved boundaries, periodic
 seams, singularities, canonical position identity, knot corners and discontinuities.
 Compile-fail examples distinguish handle kinds and prevent bypassing validity states.
-A shared 3,388-case stable harness mutates bounded raw topology and arbitrary float
+A shared 3,582-case stable harness mutates bounded raw topology and arbitrary float
 intervals, then exercises each successful downstream stage with finite budgets.
 The same harness is a libFuzzer target in nightly CI. External STEP corpus acceptance
 continues to measure physical parsing until a real geometry adapter is implemented.
+
+## Adaptive tessellation and meshes (Milestones 15–17)
+
+Run `cargo test -p tessstep-tessellate -p tessstep-mesh -p tessstep-topology`
+and the same command with `--release`. Adaptive tests independently probe every output
+triangle on a denser barycentric grid, check tighter tolerances, regular analytic/rational
+NURBS patches, narrow knot spans, shared boundary refinement, sharp corner normals, caps,
+doubly periodic tori, positive/inward volume, planar holes and finite limits. Mesh tests
+cover malformed attributes, duplicates, orientation, disconnected/open components and
+pinched vertices. Topology has a closed-edge endpoint-incidence regression.
+
+The combined mutation harness now includes closed cylinders and NURBS bump fixtures,
+then exercises bounded adaptive tessellation and owned-mesh invariants after earlier
+stages succeed. The boundary benchmark includes full closed-cylinder and NURBS-patch
+meshing, with construction/normalization outside timing. Native mesh buffers and view
+lifetimes are release gates via `python3 scripts/check_capi.py --sanitizers`.
+
+## Assembly assets
+
+`cargo test -p tessstep-mesh` covers nested/shared occurrences, mirrored/nonuniform
+transforms, provenance, deep/cyclic graphs, resource failures and bounded mutations.
+`cargo bench -p tessstep-mesh --bench scenes` measures graph construction and explicit
+baking separately. `cargo test -p tessstep-capi` and the installed C/C++ consumer gate
+include scene layouts, acquire/release symmetry, zero-copy assets and failure outputs.
+
+## Appearance
+
+`cargo test -p tessstep-mesh` includes palette/assignment validation, all precedence
+levels, transparent versus unstyled results, face identity, reflected baking correspondence,
+10,000-deep inheritance and 2,000 deterministic cases checked against an independent
+parent-walking oracle. `cargo bench -p tessstep-mesh --bench appearance` measures
+construction and allocation-free triangle queries. C ABI tests and installed C/C++
+consumers exercise appearance records, input copying, retained scene/mesh lifetimes,
+concurrent reads, typed errors and unchanged earlier ABI layouts.
+
+Milestone 5 completion also checks evaluated SI matrices, axis defaults, Cartesian
+reflection/nonuniform scale, indirect context/shape associations and positive uncertainty.
+Explicit assembly expansion tests cover reversed endpoints, noncommuting nested maps,
+alternative selection, missing placements, exact instance limits and a 2,000-level graph.
+The product corpus now contains eleven schema-accepted fixtures with six accepted, four
+rejected and one unsupported product outcomes. Its checker verifies numerical values.
