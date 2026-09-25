@@ -1,0 +1,27 @@
+
+// Test application appended to generated metadata by scripts/check_product.py.
+fn main() -> std::process::ExitCode {
+    use std::{fs::File, io::BufReader, process::ExitCode};
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.len() != 2 { return ExitCode::from(2); }
+    let Some(schema) = args[0].to_str() else { return ExitCode::from(2); };
+    let Ok(file) = File::open(&args[1]) else { return ExitCode::from(2); };
+    let Ok(document) = tessstep_model::parse(BufReader::new(file),Default::default()) else { return ExitCode::from(2); };
+    let Ok(decoded) = tessstep_model::decode::decode(&document,&SCHEMA_SET,schema,Default::default()) else { return ExitCode::from(2); };
+    match tessstep_ap242::adapt(&decoded,schema,Default::default()) {
+        Ok(model) => {
+            let p = model.parts();
+            println!("{{\"format_version\":1,\"scope\":\"product-structure\",\"status\":\"accepted\",\"entity_count\":{},\"products\":{},\"definitions\":{},\"representations\":{},\"occurrences\":{},\"maps\":{},\"mapped_items\":{}}}",
+                document.entities().len(),p.products.len(),p.definitions.len(),p.representations.len(),p.occurrences.len(),p.maps.len(),p.mapped_items.len());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            use tessstep_ap242::ErrorKind;
+            let status = match error.kind { ErrorKind::Unsupported => "unsupported", ErrorKind::ResourceLimit => "resource_limit", _ => "rejected" };
+            let entity = error.entity.map_or_else(||"null".into(),|id|id.get().to_string());
+            let offset = error.source.map_or_else(||"null".into(),|s|s.start.offset.to_string());
+            println!("{{\"format_version\":1,\"scope\":\"product-structure\",\"status\":\"{status}\",\"code\":\"{:?}\",\"graph_error\":\"{:?}\",\"entity\":{entity},\"offset\":{offset}}}",error.kind,error.graph_error);
+            ExitCode::from(1)
+        }
+    }
+}

@@ -19,7 +19,7 @@ ALLOWED = {
     "tessstep-mesh": {"tessstep-math"},
     "tessstep-tessellate": {"tessstep-math", "tessstep-curves", "tessstep-surfaces", "tessstep-topology", "tessstep-trim", "tessstep-mesh"},
     "tessstep-validate": {"tessstep-math", "tessstep-model", "tessstep-schema", "tessstep-topology", "tessstep-mesh"},
-    "tessstep-ap242": {"tessstep-model", "tessstep-schema", "tessstep-product", "tessstep-topology", "tessstep-curves", "tessstep-surfaces", "tessstep-math"},
+    "tessstep-ap242": {"tessstep-part21", "tessstep-model", "tessstep-schema", "tessstep-product", "tessstep-topology", "tessstep-curves", "tessstep-surfaces", "tessstep-math"},
     "tessstep-product": {"tessstep-math", "tessstep-topology"},
     "tessstep-io": {"tessstep-mesh", "tessstep-product", "tessstep-math"},
     "expressc": {"tessstep-express", "tessstep-codegen"},

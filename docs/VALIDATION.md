@@ -1,3 +1,70 @@
+# Milestone 5 initial product graph validation — 2026-09-25
+
+Existing Milestone 4 work was committed as `4c4bdc6` after workspace tests, formatting,
+Clippy, schema fixture and relocated C/C++ checks, and an unchanged external corpus run.
+The subsequent Milestone 5 slice adds independent product graphs, schema-decoded
+adapters, explicit unit scales, assemblies and preserved mapping/placement descriptions.
+Milestone 5 remains in progress; the exact supported subset and remaining work are in
+[PRODUCT_MODEL.md](PRODUCT_MODEL.md).
+
+Observed locally on macOS arm64 with Rust 1.95.0:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace debug tests | passed |
+| Independent product and adapter debug/release tests | passed, including iterative 10,000-definition chain and numeric limits |
+| Workspace and fuzz formatting/Clippy, warnings denied | passed |
+| Workspace rustdoc, warnings denied | passed |
+| Architecture, conformance and fixture provenance checks | passed; 11 packages and 40 authored fixtures |
+| Python corpus/CI tests | 21 passed |
+| Product fixture metadata regeneration and compiled checker consumers | passed |
+| Deterministic product mutation smoke | 1,500 mutations; repeat results agree |
+| Product libFuzzer driver smoke | 1,000 runs completed without crashes |
+
+The libFuzzer driver was compiled with stable Rust without coverage/sanitizer
+instrumentation; the runtime explicitly reported missing instrumentation. Hosted
+nightly CI configures the instrumented target, but no hosted, extended fuzz or
+cross-platform result was observed locally. The Rust 1.85 MSRV was not run here.
+No production dependencies or public C ABI layouts were added.
+
+## Product and external corpus observations
+
+The authored product report, run `2026-09-25T17-18-57-773768Z`, was inspected per file.
+All six inputs pass physical parsing and structural schema decoding:
+
+- `assembly.step`, `complex.step`, `mapped.step`: accepted product graphs; repeated
+  occurrences reuse definitions and representations, with ordered placement/map links.
+- `cycle.step`: rejected with graph cycle error.
+- `missing-units.step`: rejected with located missing length unit error at entity 23.
+- `unsupported-context.step`: explicitly unsupported 2D context at entity 23.
+
+These outcomes and expected graph counts are checked by `scripts/check_product.py`.
+The original reduced test schema is not an ISO/AP schema. Geometry and tessellation
+remain `not_implemented` for these fixtures. See [the product report](../reports/product/index.html).
+
+`python3 scripts/corpus.py --check` passed: run `2026-09-25T17-24-51-515512Z` examined
+**6,438 paths / 3,227 unique contents** in **32.341 seconds**. The report, all stage
+counts and representative accepted, reference-error and rejected inputs were inspected.
+There were **2,821 clean**, **38 reference-error** and **368 rejected** inputs, with
+**zero outcome/diagnostic changes** versus both the previous run and reviewed baseline.
+No crashes, timeouts or runner errors occurred. `corpus/baseline.json` is unchanged.
+
+All external inputs remain `not_implemented` for schema and product stages because no
+AP metadata/checker was configured; geometry and tessellation are also unimplemented.
+The added product column normalizes absent older fields to `not_implemented` for
+comparison, without changing the baseline. See [the external report](../reports/corpus/index.html).
+
+## Product adaptation benchmark
+
+`cargo bench -p tessstep-ap242 --bench product --locked` adapted a 540,877-byte,
+10,034-entity document with 10,002 occurrences after physical parsing and schema
+decoding. One warmup and a two-second sample produced **373 iterations / 2.003 s /
+5.370 ms per adaptation**. Output allocations, graph validation and destruction are
+included. This is one local observation, not a statistical comparison or a large
+industrial assembly memory measurement.
+
+---
+
 # Milestone 4 structural decoder validation — 2026-09-25
 
 Milestone 4 now delivers the supported structural-decoding scope described in

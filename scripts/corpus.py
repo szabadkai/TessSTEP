@@ -18,7 +18,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 EXTENSIONS = {".step", ".stp", ".p21"}
-STAGES = ("physical_parse", "references", "schema", "geometry", "tessellation")
+STAGES = ("physical_parse", "references", "schema", "product", "geometry", "tessellation")
 
 
 def digest(path):
@@ -93,48 +93,52 @@ def inspect(binary, path, timeout):
     return result
 
 
-def inspect_schema(binary, schema_name, path, timeout, result):
-    """Run an explicitly supplied generated validator after physical acceptance."""
-    if result["stages"]["physical_parse"] != "accepted":
-        result["stages"]["schema"] = "not_run"
+def inspect_schema(binary, schema_name, path, timeout, result, *, stage="schema"):
+    """Run an explicit stage validator or product checker after its prerequisite."""
+    prerequisite = "schema" if stage == "product" else "physical_parse"
+    scope = "product-structure" if stage == "product" else "schema-structure"
+    if result["stages"][prerequisite] != "accepted":
+        result["stages"][stage] = "not_run"
         return
     started = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
             process = subprocess.run([str(binary), schema_name, str(path)], stdout=stdout, stderr=stderr, timeout=timeout)
             stderr.seek(0)
-            result["schema_stderr"] = stderr.read(4096).decode("utf-8", errors="replace")
+            result[stage + "_stderr"] = stderr.read(4096).decode("utf-8", errors="replace")
             if process.returncode not in (0, 1):
                 result["status"] = "crash" if process.returncode < 0 or process.returncode == 101 else "runner_error"
-                result["stages"]["schema"] = result["status"]
+                result["stages"][stage] = result["status"]
             else:
                 if stdout.tell() > 64 * 1024:
-                    raise ValueError("schema validator JSON exceeds 64 KiB")
+                    raise ValueError("stage validator JSON exceeds 64 KiB")
                 stdout.seek(0)
                 payload = json.load(stdout)
                 status = payload["status"]
-                if payload.get("format_version") != 1 or payload.get("scope") != "schema-structure":
-                    raise ValueError("unsupported schema validator protocol")
+                if payload.get("format_version") != 1 or payload.get("scope") != scope:
+                    raise ValueError("unsupported stage validator protocol")
                 if status not in {"accepted", "rejected", "unsupported", "not_configured", "resource_limit"}:
                     raise ValueError("invalid schema status after physical acceptance")
                 if (status == "accepted") != (process.returncode == 0):
-                    raise ValueError("schema validator exit status disagrees with payload")
+                    raise ValueError("stage validator exit status disagrees with payload")
                 if status == "accepted" and payload.get("entity_count") != result["entity_count"]:
-                    raise ValueError("schema validator entity count differs from physical parser")
-                result["stages"]["schema"] = status
-                result["schema_result"] = payload
+                    raise ValueError("stage validator entity count differs from physical parser")
+                result["stages"][stage] = status
+                result[stage + "_result"] = payload
         except subprocess.TimeoutExpired:
             result["status"] = "timeout"
-            result["stages"]["schema"] = "timeout"
+            result["stages"][stage] = "timeout"
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
             result["status"] = "runner_error"
-            result["stages"]["schema"] = "runner_error"
-            result["schema_stderr"] = str(error)
+            result["stages"][stage] = "runner_error"
+            result[stage + "_stderr"] = str(error)
     result["seconds"] = round(result["seconds"] + time.monotonic() - started, 4)
 
 
 def signature(case):
-    return {key: case.get(key) for key in ("status", "stages", "diagnostic_counts", "entity_count", "missing_references", "schema_result")}
+    result = {key: case.get(key) for key in ("status", "stages", "diagnostic_counts", "entity_count", "missing_references", "schema_result", "product_result")}
+    result["stages"] = {"product": "not_implemented", **case.get("stages", {})}
+    return result
 
 
 def compare(cases, previous):
@@ -150,6 +154,7 @@ def compare(cases, previous):
             regression = (before["status"] == "clean" and case["status"] != "clean") or (
                 before["stages"]["physical_parse"] == "accepted" and case["stages"]["physical_parse"] != "accepted")
             regression |= before["stages"].get("schema") == "accepted" and case["stages"].get("schema") != "accepted"
+            regression |= before["stages"].get("product") == "accepted" and case["stages"].get("product") != "accepted"
             regression |= case["status"] in {"crash", "timeout", "runner_error"} and before["status"] not in {"crash", "timeout", "runner_error"}
             changes.append({"sha256": key, "path": case["paths"][0], "kind": "regression" if regression else "changed",
                             "before": before["status"], "after": case["status"]})
@@ -183,9 +188,13 @@ def render(report):
             detail += " schema: " + str(case["schema_result"])
         if case.get("schema_stderr"):
             detail += " " + case["schema_stderr"]
+        if case.get("product_result"):
+            detail += " product: " + str(case["product_result"])
+        if case.get("product_stderr"):
+            detail += " " + case["product_stderr"]
         paths = "<br>".join(esc(p) for p in case["paths"])
         rows.append(f'<tr data-status="{esc(case["status"])}"><td>{paths}</td><td>{esc(case["status"])}</td>'
-                    + "".join(f'<td>{esc(case["stages"][s])}</td>' for s in STAGES)
+                    + "".join(f'<td>{esc(case["stages"].get(s, "not_implemented"))}</td>' for s in STAGES)
                     + f'<td>{case.get("entity_count", "—")}</td><td>{case["seconds"]:.3f}</td><td>{esc(detail)}</td></tr>')
     changes = "".join(f'<li>{esc(c["kind"])}: {esc(c["path"])} {esc(c.get("before", ""))} → {esc(c.get("after", ""))}</li>' for c in report["changes"])
     history = "".join(f'<tr><td>{esc(h["run_id"])}</td><td>{h["files"]}</td><td>{h["unique_inputs"]}</td><td>{h["unique_statuses"].get("clean", 0)}</td><td>{h["unique_statuses"].get("rejected", 0)}</td><td>{h["unique_statuses"].get("reference_errors", 0)}</td></tr>' for h in report["history"][-30:])
@@ -199,12 +208,12 @@ input,select{{font:inherit;padding:10px;margin:8px 8px 0 0}}input{{width:50%}}td
 <div class="cards"><div class="card"><strong>{report["summary"]["files"]}</strong><br>file paths</div><div class="card"><strong>{len(report["cases"])}</strong><br>unique inputs</div>
 {''.join(f'<div class="card"><strong>{n}</strong><br>{esc(s)}</div>' for s,n in sorted(counts.items()))}</div>
 <p>Identical bytes run once; every discovered path appears below. “Clean” means physical syntax accepted and references resolved.</p>
-<p><b>Schema results appear separately when a validator is configured. Geometry and tessellation: not implemented.</b> Rejected adversarial files may be correct behavior. These observations are not conformance scores. External resources and signatures are not verified.</p>
+<p><b>Schema and product results appear separately when validators are configured. Geometry and tessellation: not implemented.</b> Rejected adversarial files may be correct behavior. These observations are not conformance scores. External resources and signatures are not verified.</p>
 <details><summary>Changes from previous run ({len(report["changes"])})</summary><ul>{changes or '<li>No changes</li>'}</ul></details>
 <p>Baseline comparison: {esc(dict(Counter(c["kind"] for c in report["baseline_changes"]))) if report["baseline_present"] else 'No baseline saved yet'}.</p>
 <details open><summary>Run history (latest 30)</summary><table><tr><th>Run (UTC)</th><th>Paths</th><th>Unique</th><th>Clean</th><th>Rejected</th><th>Reference errors</th></tr>{history}</table></details>
 <h2>Files</h2><input id="query" aria-label="Search files and diagnostics" placeholder="Search a filename, source, or diagnostic"><select id="status" aria-label="Filter status"><option value="">All statuses</option>{''.join(f'<option>{esc(s)}</option>' for s in sorted(counts))}</select><span id="visible"></span>
-<table id="files"><thead><tr><th>File paths</th><th>Observed status</th><th>Physical parse</th><th>References</th><th>Schema structure</th><th>Geometry</th><th>Tessellation</th><th>Entities</th><th>Seconds</th><th>Diagnostics (first 20)</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
+<table id="files"><thead><tr><th>File paths</th><th>Observed status</th><th>Physical parse</th><th>References</th><th>Schema structure</th><th>Product structure</th><th>Geometry</th><th>Tessellation</th><th>Entities</th><th>Seconds</th><th>Diagnostics (first 20)</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 <script>const rows=[...document.querySelectorAll('#files tbody tr')],q=document.querySelector('#query'),s=document.querySelector('#status');
 function filter(){{let n=0;for(const r of rows){{r.hidden=!(r.textContent.toLowerCase().includes(q.value.toLowerCase())&&(!s.value||r.dataset.status===s.value));if(!r.hidden)n++;}}document.querySelector('#visible').textContent=n+' unique inputs shown';}}
 q.addEventListener('input',filter);s.addEventListener('change',filter);filter();</script></html>'''
@@ -220,7 +229,10 @@ def main():
     parser.add_argument("--timeout", type=float, default=30, help="Seconds per unique input (default: 30)")
     parser.add_argument("--schema-validator", type=Path, help="Compiled expressc --validator executable")
     parser.add_argument("--schema-name", help="Explicit schema for the configured validator")
+    parser.add_argument("--product-validator", type=Path, help="Product checker; requires the schema validator and uses its schema name")
     args = parser.parse_args()
+    if args.product_validator and (not args.schema_validator or not args.product_validator.is_file()):
+        parser.error("--product-validator requires an existing checker and a schema validator")
     if bool(args.schema_validator) != bool(args.schema_name):
         parser.error("--schema-validator and --schema-name must be supplied together")
     if args.schema_validator and not args.schema_validator.is_file():
@@ -260,11 +272,19 @@ def main():
             schema_snapshot = Path(directory) / ("schema-validator.exe" if os.name == "nt" else "schema-validator")
             shutil.copy2(args.schema_validator, schema_snapshot)
             schema_config = {"schema": args.schema_name, "binary_sha256": digest(schema_snapshot)}
+        product_snapshot = None
+        product_config = None
+        if args.product_validator:
+            product_snapshot = Path(directory) / ("product-validator.exe" if os.name == "nt" else "product-validator")
+            shutil.copy2(args.product_validator, product_snapshot)
+            product_config = {"schema": args.schema_name, "binary_sha256": digest(product_snapshot)}
         for index, case in enumerate(cases, 1):
             path = root / case["paths"][0]
             case.update(inspect(snapshot, path, args.timeout))
             if schema_snapshot:
                 inspect_schema(schema_snapshot, args.schema_name, path, args.timeout, case)
+            if product_snapshot:
+                inspect_schema(product_snapshot, args.schema_name, path, args.timeout, case, stage="product")
             print(f'[{index}/{len(cases)}] {case["status"]:16} {case["seconds"]:7.3f}s {case["paths"][0]}', flush=True)
     summary = {"files": sum(len(c["paths"]) for c in cases), "unique_inputs": len(cases),
                "unique_statuses": dict(Counter(c["status"] for c in cases)),
@@ -272,7 +292,7 @@ def main():
                "seconds": round(time.monotonic() - started, 3)}
     history = previous.get("history", []) + [{"run_id": run_id, **summary}]
     report = {"format_version": 1, "run_id": run_id, "corpus_root": str(root), "source_fingerprint": source.hexdigest(),
-              "binary_sha256": binary_hash, "schema_validator": schema_config, "timeout_seconds": args.timeout, "summary": summary, "cases": cases,
+              "binary_sha256": binary_hash, "schema_validator": schema_config, "product_validator": product_config, "timeout_seconds": args.timeout, "summary": summary, "cases": cases,
               "changes": compare(cases, previous) if previous else [], "baseline_present": bool(baseline),
               "baseline_changes": compare(cases, baseline) if baseline else [], "history": history}
     encoded = json.dumps(report, ensure_ascii=True, indent=2) + "\n"

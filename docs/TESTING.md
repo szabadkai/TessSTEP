@@ -106,3 +106,15 @@ SELECT tags/nesting, semantic aggregate equality, numeric boundaries, expression
 and malformed metadata. `decoder_fuzz` shares generated fixture metadata and the bounded
 exercise function with the nightly `schema_decoder` target. A generator regression test
 verifies that its checked-in metadata still matches the authored `.exp` source.
+
+## Product graph slice
+
+Run `cargo test -p tessstep-product -p tessstep-ap242` and
+`python3 scripts/check_product.py`. Independent model tests do not need STEP.
+Adapter tests use generated metadata from the authored product schema, cover complex
+membership and assembly/map reuse, and run 1,500 deterministic mutations. A
+10,000-definition chain verifies iterative graph checks.
+`cargo bench -p tessstep-ap242 --bench product` measures 10,002 repeated occurrences
+after parsing/decoding, including output allocations and destruction. `product_adapter`
+is the corresponding libFuzzer target; nightly CI configures an instrumented run.
+Observed checks are recorded separately in VALIDATION.md.

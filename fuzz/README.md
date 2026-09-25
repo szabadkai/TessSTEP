@@ -46,3 +46,8 @@ bounded harness in `support/decoder.rs`. Seed with `corpus/schema`; stable mutat
 in the model crate's `decoder_fuzz` test. Regenerate `support/decoder_schema.rs` with
 `cargo run -p expressc -- --rust corpus/schema/sample.exp` when the schema changes; the
 codegen test checks this exact output. Nightly CI instruments the decoder target.
+
+The `product_adapter` target parses, structurally decodes with the original product
+test schema and adapts bounded graphs twice to check determinism. Seed with
+`corpus/product`. Generated metadata is shared with adapter consumer tests and
+verified by `scripts/check_product.py`. It does not fuzz a complete AP schema.

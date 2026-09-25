@@ -11,7 +11,10 @@ physical-file parsing, generic entity storage, reference analysis, and an EXPRES
 frontend with basic schema validation, deterministic Rust bindings and static schema
 reflection, plus [structural instance decoding](docs/DECODING.md) against supplied metadata.
 Complex entities, SELECTs, aggregate uniqueness and bounded width/bound expressions are checked. The CLIs are `stepdump` and `expressc`.
-It does **not** yet interpret AP242, products, units, geometry, or meshes. EXPRESS expression semantics remain explicitly unsupported.
+Milestone 5 now adds a [structural product graph](docs/PRODUCT_MODEL.md), explicit unit scales,
+assembly occurrences and preserved placement/mapping descriptions over supplied decoded metadata.
+It does **not** yet evaluate placements, geometry or meshes, or claim AP242 conformance.
+General EXPRESS expression semantics remain explicitly unsupported.
 A file parsing successfully is not evidence of schema or CAD conformance.
 
 The [C ABI and C++17 wrapper](docs/C_API.md) now expose physical buffer parsing,
@@ -27,6 +30,7 @@ cargo run -p stepdump -- --json corpus/part21/valid/extended.step
 cargo run -p expressc -- --json corpus/express/valid/base.exp corpus/express/valid/imports.exp
 cargo run -p expressc -- --rust corpus/express/valid/base.exp > bindings.rs
 python3 scripts/check_schema.py
+python3 scripts/check_product.py
 cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
@@ -70,6 +74,7 @@ legacy scope handling, archive reader, full schema validation, or AP support cla
 - [Tests, fuzzing, and benchmarks](docs/TESTING.md)
 - [EXPRESS frontend and limits](docs/EXPRESS.md)
 - [Generated bindings and reflection](docs/SCHEMA.md)
-- [Next milestone: schema-aware decoding](docs/ROADMAP.md)
+- [Products, units and assembly graphs](docs/PRODUCT_MODEL.md)
+- [Milestones and remaining work](docs/ROADMAP.md)
 
 Licensed under [MIT](LICENSE-MIT).

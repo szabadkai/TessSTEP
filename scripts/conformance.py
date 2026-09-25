@@ -21,8 +21,8 @@ for item in manifest['features']:
             assert f'fn {name}(' in tests, f'Missing test evidence: {name}'
     lines.append(f"| {item['feature']} | {item['status']} | {name or '—'} | {item['limitations']} |")
 lines += ['', 'The JSON manifest tracks physical syntax, the EXPRESS frontend and generated bindings.',
-          'Structural instance decoding is a separate checked stage; full schema',
-          'conformance, semantic interpretation and tessellation remain future work.', '',
+          'Structural schema decoding and product graph adaptation are separate checked stages.',
+          'Full AP conformance, geometry evaluation and tessellation remain future work.', '',
           'See [PART21.md](PART21.md), [ERROR_MODEL.md](ERROR_MODEL.md) and',
           '[VALIDATION.md](VALIDATION.md) for exact behavior and actual verification results.']
 content = '\n'.join(lines) + '\n'

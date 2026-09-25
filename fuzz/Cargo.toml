@@ -8,6 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+tessstep-ap242 = { path = "../crates/tessstep-ap242" }
 tessstep-schema = { path = "../crates/tessstep-schema" }
 tessstep-codegen = { path = "../crates/tessstep-codegen" }
 tessstep-express = { path = "../crates/tessstep-express" }
@@ -53,6 +54,13 @@ bench = false
 [[bin]]
 name = "schema_decoder"
 path = "fuzz_targets/schema_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "product_adapter"
+path = "fuzz_targets/product_adapter.rs"
 test = false
 doc = false
 bench = false

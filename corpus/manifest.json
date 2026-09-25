@@ -264,6 +264,66 @@
       "sha256": "39533cbf998cfbebad2151b23e0625ef665a9c97e85ae06d2687fa61d5728658",
       "syntax": "valid",
       "schema": "accepted"
+    },
+    {
+      "path": "product/assembly.step",
+      "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "sha256": "61c75b66098a9f7ad8d6933ddb7e8cbfdde352f0b7d3942f459f36cdd49b1c7f",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "accepted"
+    },
+    {
+      "path": "product/complex.step",
+      "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "sha256": "363f54182aa5229e2637b784ada7178d539c940918394fbb9493f99ed2ddf56d",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "accepted"
+    },
+    {
+      "path": "product/cycle.step",
+      "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "sha256": "abd2dffeb0dfcc7b828e905d048d13109ea148149b2e1df333ad4e351c326b21",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "rejected"
+    },
+    {
+      "path": "product/mapped.step",
+      "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "sha256": "2785dd804422a5c35d1845de7d2c7d54763f6502102f37c0f36d5fab49652269",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "accepted"
+    },
+    {
+      "path": "product/missing-units.step",
+      "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "sha256": "b832692391ae9e2552092679636980431509f11d4b7e030b6707d8b8c95602dc",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "rejected"
+    },
+    {
+      "path": "product/sample.exp",
+      "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "sha256": "37b45d719377913db42c01b3cdda4f40d0a5ee00221432898c21c1d5d2a2b2db"
+    },
+    {
+      "path": "product/unsupported-context.step",
+      "source": "Authored for TessSTEP product adapter tests; reduced synthetic schema and instances, not an ISO schema or exporter model.",
+      "license": "MIT",
+      "sha256": "f1fd2d12bf0516bb70fd454147d4d9588dc01a1ecc09a4494057757cb4a7bbf7",
+      "syntax": "valid",
+      "schema": "accepted",
+      "product": "unsupported"
     }
   ]
 }

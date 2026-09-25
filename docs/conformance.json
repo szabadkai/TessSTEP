@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20134 with bounded structural instance validation; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20134 plus the initial Milestone 5 product graph slice; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -183,10 +183,10 @@
       "limitations": "names and raw values can be retained without understanding them"
     },
     {
-      "feature": "products / units / geometry / topology / meshes",
+      "feature": "geometry / topology / meshes",
       "status": "not implemented",
       "test": null,
-      "limitations": "no geometry or tessellation code started"
+      "limitations": "no geometry evaluation or tessellation code started"
     },
     {
       "feature": "public C ABI",
@@ -211,6 +211,36 @@
       "status": "implemented",
       "test": "schema_decoder_fuzz_smoke",
       "limitations": "bounded mutations with generated metadata; extended instrumented fuzzing remains unobserved"
+    },
+    {
+      "feature": "Independent product/representation/assembly graphs",
+      "status": "structural subset implemented",
+      "test": "independent_product_graph_preserves_reuse_and_rejects_cycles",
+      "limitations": "typed identities and immutable validated graph; no expanded instance tree or evaluated placements"
+    },
+    {
+      "feature": "Schema-decoded product adapters",
+      "status": "structural subset implemented",
+      "test": "product_adapter_follows_definitions_representations_and_occurrences",
+      "limitations": "supplied metadata; explicit role subset and direct item/shape membership; no complete AP schema"
+    },
+    {
+      "feature": "SI and conversion-based unit scales",
+      "status": "subset implemented",
+      "test": "product_adapter_unit_failures_are_explicit_and_located",
+      "limitations": "3D contexts with length/plane-angle/solid-angle units; offsets, other dimensions and uncertainties unsupported"
+    },
+    {
+      "feature": "Mapped representation reuse and placement descriptions",
+      "status": "structural subset implemented",
+      "test": "product_adapter_complex_membership_and_mapping_reuse",
+      "limitations": "ordered item pairs and map links preserved; matrices, axis values/defaults and indirect contexts not evaluated"
+    },
+    {
+      "feature": "Product adapter mutation smoke",
+      "status": "implemented",
+      "test": "product_adapter_fuzz_smoke",
+      "limitations": "1,500 bounded deterministic mutations; no extended instrumented fuzz result claimed"
     }
   ]
 }

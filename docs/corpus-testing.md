@@ -33,7 +33,7 @@ a performance gate. Run only one corpus runner per output directory at a time.
 | `timeout` | Process exceeded the per-input deadline (30 seconds by default) |
 | `runner_error` | I/O, CLI, output protocol or output budget failure |
 
-Schema validation, geometry construction and tessellation remain explicitly
+Without configured validators, schema/product validation, geometry construction and tessellation remain explicitly
 `not_implemented`. Physical acceptance does not establish correct CAD geometry.
 Rejection of a deliberately malformed fixture may be correct. The external
 defect catalog includes schema, geometric and runtime expectations, so its
@@ -106,3 +106,23 @@ the existing physical baseline and `schema: not_implemented` observations remain
 reviewed positive/negative/unsupported fixtures through the real runner. Expected outcomes
 and provenance are in `corpus/manifest.json`; the per-file report is `reports/schema/`.
 This establishes a structural schema stage, not AP conformance or geometry support.
+
+## Configured product stage (Milestone 5)
+
+`--product-validator EXE` adds a `product` stage after the configured schema stage
+accepts an input. It requires `--schema-validator` and uses the same `--schema-name`.
+The checker runs in a separate process with its own timeout and 64 KiB JSON limit;
+its scope must be `product-structure`, with the schema-validator status/exit/count
+contract. The runner snapshots/hashes both executables and reports outcomes separately.
+Product acceptance regressions fail `--check`.
+
+`python3 scripts/check_product.py` generates metadata from an original reduced test
+schema, verifies the checked-in test bindings, compiles two checkers and runs six
+reviewed fixtures through physical, schema and product stages. See `reports/product/`.
+Three product graphs are accepted, two rejected and one unsupported; all six pass
+structural decoding. These are test applications, not bundled AP validators.
+
+Without a checker, product remains `not_implemented`. Older baseline entries without
+this field compare as `not_implemented`, avoiding artificial outcome changes. The
+physical baseline is not rewritten. No semantic result is inferred for the external
+AP corpus; geometry and tessellation remain unimplemented.

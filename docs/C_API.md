@@ -185,3 +185,7 @@ runs those same consumers. Native consumer ASan/UBSan is available with
 `--sanitizers`; this does not instrument the Rust library. Mesh lifetime and zero-copy
 acceptance tests remain future gates. See [ARCHITECTURE.md](ARCHITECTURE.md) and
 [CONFORMANCE.md](CONFORMANCE.md).
+
+Milestone 5 product graphs and unit/assembly adapters are Rust-only operations. The
+C ABI and C++ wrapper remain at the physical-document subset; no product layouts,
+placement descriptions or Rust ownership conventions are exposed through ABI 1.

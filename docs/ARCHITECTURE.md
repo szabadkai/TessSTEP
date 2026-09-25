@@ -1,7 +1,7 @@
 # Architecture
 
 Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust generation
-and runtime reflection. Architecture is a
+and runtime reflection, plus a bounded product semantics slice. Architecture is a
 contract for later work, not a declaration that the geometry kernel already exists.
 
 ## Implemented dependency graph
@@ -19,7 +19,11 @@ stepdump ──→ tessstep-model ──→ tessstep-part21
                   └─────────→ tessstep-schema
     └────────────────────────→ tessstep-part21
 
-tessstep ──→ tessstep-codegen
+tessstep-ap242 ──→ tessstep-model / tessstep-schema / tessstep-part21
+       └────────→ tessstep-product (standard library only)
+
+tessstep ──→ tessstep-ap242 / tessstep-product
+    ├──────→ tessstep-codegen
     ├──────→ tessstep-schema
     ├──────→ tessstep-express
     ├──────→ tessstep-model
@@ -93,8 +97,8 @@ crate when its first tested vertical slice is implemented.
 
 | Crate | Responsibility |
 |---|---|
-| tessstep-ap242 | generated bindings and explicit STEP-to-CAD adapters |
-| tessstep-product | normalized products, representations, assembly instances |
+| tessstep-ap242 (active) | schema-decoded product adapters now; geometry adapters later |
+| tessstep-product (active) | independent owned products, representations and assembly graphs |
 | tessstep-math | STEP-independent units, spaces, transforms and tolerances |
 | tessstep-curves / tessstep-surfaces | exact mathematical evaluators |
 | tessstep-topology | typed handles, builders and immutable validity states |
@@ -192,3 +196,33 @@ runtime. The corpus runner optionally invokes a snapshot of this executable, val
 its bounded JSON protocol and keeps schema outcomes separate from physical/reference
 outcomes. The schema stage and validator identity are recorded without altering the
 reviewed physical baseline. C ABI layouts, symbols and ownership contracts are unchanged.
+
+## Milestone 5 initial product architecture review
+
+`tessstep-product` has no dependencies and exposes validated immutable graphs built
+from caller-owned inputs. Its typed IDs are sparse identities, not offsets. Unit values
+are immutable positive SI scales; no STEP interpretation or geometry evaluator lives
+here. Assembly and mapped-use cycle checks use iterative topological traversal,
+include disconnected components and preserve shared definitions. No occurrence tree
+is expanded. Placements retain ordered descriptions and explicit absence.
+
+`tessstep-ap242` composes supplied decoded metadata, physical values and the product
+model. The dependency checker explicitly permits its Part 21 value-type dependency;
+no reverse edge enters the parser, decoder or schema runtime. Role identity comes
+from caller-selected schema symbols and decoded memberships, with no hand-encoded
+AP inheritance tree. The crate name does not imply AP conformance. Units are resolved
+iteratively with dimension, cycle, depth and numeric checks.
+
+Traversal, attribute scans and copied text have finite budgets. Graph validation
+consumes remaining adapter work, and only successful complete models are published.
+Ordered maps preserve determinism. Membership scans can be superlinear; this is not
+an exact RSS/time guarantee. Typed identities and located errors retain provenance.
+Opaque items still need the original document for later geometry interpretation.
+No unsafe code, third-party production dependency, global state, external fetching
+or ABI layout change was added.
+
+The corpus product stage follows schema acceptance, with a separate executable hash,
+timeout and protocol check. Older baselines without this stage normalize to
+`not_implemented`; this does not rewrite the baseline or claim product acceptance.
+See PRODUCT_MODEL.md for direct context/shape membership restrictions and unevaluated
+placement semantics.

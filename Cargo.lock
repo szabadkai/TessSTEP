@@ -22,10 +22,22 @@ dependencies = [
 name = "tessstep"
 version = "0.1.0"
 dependencies = [
+ "tessstep-ap242",
  "tessstep-codegen",
  "tessstep-express",
  "tessstep-model",
  "tessstep-part21",
+ "tessstep-product",
+ "tessstep-schema",
+]
+
+[[package]]
+name = "tessstep-ap242"
+version = "0.1.0"
+dependencies = [
+ "tessstep-model",
+ "tessstep-part21",
+ "tessstep-product",
  "tessstep-schema",
 ]
 
@@ -58,6 +70,10 @@ dependencies = [
 
 [[package]]
 name = "tessstep-part21"
+version = "0.1.0"
+
+[[package]]
+name = "tessstep-product"
 version = "0.1.0"
 
 [[package]]

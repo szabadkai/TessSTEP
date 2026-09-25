@@ -3,7 +3,9 @@
 //! This release exposes physical parsing, generic storage, the EXPRESS frontend,
 //! deterministic Rust generation and static schema reflection.
 //! A bounded structural instance decoder is available in `model::decode`.
-//! No full schema conformance, CAD interpretation or tessellation is implemented.
+//! A bounded product graph adapter is available in `ap242`, with an independent
+//! owned model in `product`. No AP conformance, geometry evaluation or tessellation
+//! is implemented. Placements remain ordered descriptions.
 //!
 //! ```
 //! use tessstep::{parse, ParseLimits};
@@ -20,10 +22,12 @@
 //! ```
 #![forbid(unsafe_code)]
 
+pub use tessstep_ap242 as ap242;
 pub use tessstep_codegen as codegen;
 pub use tessstep_express as express;
 pub use tessstep_model as model;
 pub use tessstep_model::{Document, parse};
 pub use tessstep_part21 as part21;
 pub use tessstep_part21::{Diagnostic, ParseLimits};
+pub use tessstep_product as product;
 pub use tessstep_schema as schema;

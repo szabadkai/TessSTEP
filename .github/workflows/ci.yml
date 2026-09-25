@@ -41,6 +41,7 @@ jobs:
       - run: python scripts/check_cli.py
       - run: python scripts/check_express.py
       - run: python scripts/check_schema.py
+      - run: python scripts/check_product.py
       - run: python scripts/conformance.py --check
       - name: C/C++ consumer sanitizers
         if: runner.os != 'Windows'

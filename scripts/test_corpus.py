@@ -109,6 +109,38 @@ class CorpusTests(unittest.TestCase):
         current["stages"]["schema"] = "rejected"
         self.assertEqual(corpus.compare([current], {"cases": [old]})[0]["kind"], "regression")
 
+    def test_product_stage_requires_schema_success_and_checks_protocol(self):
+        for schema in ("not_implemented", "rejected", "unsupported"):
+            result = case()
+            result["stages"]["schema"] = schema
+            with patch.object(corpus.subprocess, "run") as run:
+                corpus.inspect_schema(Path("checker"), "TEST", Path("file.step"), 1, result, stage="product")
+                run.assert_not_called()
+            self.assertEqual(result["stages"]["product"], "not_run")
+        for scope, count, code, expected in [("product-structure", 2, 0, "accepted"),
+                ("schema-structure", 2, 0, "runner_error"), ("product-structure", 3, 0, "runner_error"),
+                ("product-structure", 2, 1, "runner_error")]:
+            result = case()
+            result.update(seconds=0, entity_count=2)
+            result["stages"]["schema"] = "accepted"
+            def run(*args, **kwargs):
+                kwargs["stdout"].write(json.dumps({"format_version": 1, "scope": scope,
+                    "status": "accepted", "entity_count": count}).encode())
+                return subprocess.CompletedProcess(args, code)
+            with patch.object(corpus.subprocess, "run", side_effect=run):
+                corpus.inspect_schema(Path("checker"), "TEST", Path("file.step"), 1, result, stage="product")
+            self.assertEqual(result["stages"]["product"], expected)
+
+    def test_product_stage_baseline_migration_and_regressions(self):
+        old = case()
+        current = case()
+        current["stages"]["product"] = "not_implemented"
+        self.assertEqual(corpus.compare([current], {"cases": [old]}), [])
+        self.assertNotIn("product", old["stages"])
+        old["stages"]["product"] = "accepted"
+        current["stages"]["product"] = "rejected"
+        self.assertEqual(corpus.compare([current], {"cases": [old]})[0]["kind"], "regression")
+
 
 if __name__ == "__main__":
     unittest.main()

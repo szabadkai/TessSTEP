@@ -3,6 +3,7 @@
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
 vertical slice, Milestone 2 EXPRESS frontend, Milestone 3 Rust bindings/reflection and
 Milestone 4 structural schema decoding, each with explicit conformance limits.
+Milestone 5 now includes the initial structural product/representation/units/assembly slice.
 It does not start geometry or claim industrial hardening. Read ARCHITECTURE.md,
 CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
@@ -35,7 +36,16 @@ an explicit schema stage with authored positive/negative fixtures. General EXPRE
 algorithms and AP conformance remain unsupported rather than silently accepted; see
 [DECODING.md](DECODING.md) for the contract and VALIDATION.md for observed evidence.
 
-**Next: Milestone 5 — products, representations, units and assembly semantics.**
+**Milestone 5 in progress — products, representations, units and assembly semantics.**
+
+The first slice adds an independent owned product graph, a schema-decoded adapter,
+explicit SI/conversion unit scales, assembly occurrences, representation relationships
+and reusable mapped-item links. Placement descriptions retain ordered item pairs;
+no world transforms are evaluated. Separate authored schema/product corpus stages,
+cycle/resource tests, mutation smoke and an assembly benchmark cover this scope.
+See [PRODUCT_MODEL.md](PRODUCT_MODEL.md) for exact restrictions. Indirect context/shape
+association paths, uncertainty measures, additional assembly/transform forms and
+geometric placement interpretation remain. Math work must precede placement evaluation.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
@@ -51,6 +61,6 @@ target. Begin with the first usable document operations; add immutable zero-copy
 mesh views as the mesh pipeline becomes available. Design storage with that
 contract in mind. C/C++ installed-package consumer tests and ABI containment are
 release gates, not optional bindings work. See [C_API.md](C_API.md). This contract
-does not change the next schema-decoding milestone. The first physical-document
+also applies as product and geometry operations become public. The first physical-document
 slice now implements both interfaces, typed results and the shared CMake package;
 mesh views and public schema-decoding operations remain pending.

@@ -1,18 +1,19 @@
 [package]
-name = "tessstep"
+name = "tessstep-ap242"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-tessstep-product.workspace = true
-tessstep-ap242.workspace = true
-tessstep-schema.workspace = true
-tessstep-codegen.workspace = true
-tessstep-express.workspace = true
-tessstep-part21.workspace = true
 tessstep-model.workspace = true
+tessstep-schema.workspace = true
+tessstep-part21.workspace = true
+tessstep-product.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "product"
+harness = false

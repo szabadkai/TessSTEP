@@ -19,8 +19,9 @@ def markdown(report):
     lines += [f"| {status} | {counts.get(status, 0):,} |" for status in ("clean", "reference_errors", "rejected", "crash", "timeout", "runner_error")]
     lines += ["", f'Baseline changes: `{dict(Counter(c["kind"] for c in changes))}`.', "",
               "Parsing acceptance is not CAD conformance. Rejection can be correct for adversarial inputs.",
-              "Schema structure is checked only with a configured validator. Geometry and tessellation: not implemented.",
+              "Schema and product structure are checked only with configured validators. Geometry and tessellation: not implemented.",
               f"Schema stages: `{dict(Counter(c.get('stages', {}).get('schema', 'not_implemented') for c in report['cases']))}`.", "",
+              f"Product stages: `{dict(Counter(c.get('stages', {}).get('product', 'not_implemented') for c in report['cases']))}`.", "",
               "Download the `corpus-report` artifact for searchable `index.html`, complete JSON and JUnit results.",
               "Raw third-party CAD files are not included in artifacts or release packages.", "",
               f'Executable SHA-256: `{report["binary_sha256"]}`', ""]
@@ -39,7 +40,7 @@ def junit(report):
     for case in report["cases"]:
         test = ET.SubElement(suite, "testcase", name=case["paths"][0], classname="corpus.physical", time=str(case["seconds"]))
         if case["sha256"] in regressions or case["status"] in {"crash", "timeout", "runner_error"}:
-            ET.SubElement(test, "failure", message=case["status"]).text = json.dumps({"physical": case["diagnostics"], "schema": case.get("schema_result")})
+            ET.SubElement(test, "failure", message=case["status"]).text = json.dumps({"physical": case["diagnostics"], "schema": case.get("schema_result"), "product": case.get("product_result")})
             failures += 1
         ET.SubElement(test, "system-out").text = f'Observed status: {case["status"]}; SHA-256: {case["sha256"]}'
     for change in report["baseline_changes"]:
