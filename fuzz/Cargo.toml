@@ -8,6 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+tessstep-curves = { path = "../crates/tessstep-curves" }
 tessstep-math = { path = "../crates/tessstep-math" }
 tessstep-ap242 = { path = "../crates/tessstep-ap242" }
 tessstep-schema = { path = "../crates/tessstep-schema" }
@@ -69,6 +70,13 @@ bench = false
 [[bin]]
 name = "math_primitives"
 path = "fuzz_targets/math_primitives.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "analytic_curves"
+path = "fuzz_targets/analytic_curves.rs"
 test = false
 doc = false
 bench = false

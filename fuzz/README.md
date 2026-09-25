@@ -58,3 +58,9 @@ inversion, frame and coordinate operations. Run
 `cargo fuzz run math_primitives -- -max_total_time=120 -max_len=144` for instrumentation.
 Successful finite results and repeatable inverse failures are checked; this is not an
 exact arithmetic oracle or an industrial numerical-hardening claim.
+
+`analytic_curves` exercises analytic curve values through a fixed-size
+3D harness: axes, positive lengths, arbitrary parameters and oriented spans. It shares
+its 128-byte, bounded-work exercise with the stable curve smoke test. Run
+`cargo fuzz run analytic_curves -- -max_total_time=120 -max_len=128` for instrumentation.
+Successful outputs must be finite and repeatable; this is not an exact numerical oracle.

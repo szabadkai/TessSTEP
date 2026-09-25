@@ -99,6 +99,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tessstep-curves"
+version = "0.1.0"
+dependencies = [
+ "tessstep-math",
+]
+
+[[package]]
 name = "tessstep-express"
 version = "0.1.0"
 
@@ -109,6 +116,7 @@ dependencies = [
  "libfuzzer-sys",
  "tessstep-ap242",
  "tessstep-codegen",
+ "tessstep-curves",
  "tessstep-express",
  "tessstep-math",
  "tessstep-model",

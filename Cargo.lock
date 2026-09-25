@@ -24,6 +24,7 @@ version = "0.1.0"
 dependencies = [
  "tessstep-ap242",
  "tessstep-codegen",
+ "tessstep-curves",
  "tessstep-express",
  "tessstep-math",
  "tessstep-model",
@@ -55,6 +56,13 @@ name = "tessstep-codegen"
 version = "0.1.0"
 dependencies = [
  "tessstep-express",
+]
+
+[[package]]
+name = "tessstep-curves"
+version = "0.1.0"
+dependencies = [
+ "tessstep-math",
 ]
 
 [[package]]

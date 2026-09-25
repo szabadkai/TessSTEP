@@ -14,8 +14,9 @@ Complex entities, SELECTs, aggregate uniqueness and bounded width/bound expressi
 Milestone 5 now adds a [structural product graph](docs/PRODUCT_MODEL.md), explicit unit scales,
 assembly occurrences and preserved placement/mapping descriptions over supplied decoded metadata.
 Milestone 6 adds [independent checked math](docs/GEOMETRY.md): typed coordinates, units,
-tolerances and affine transforms. STEP placements, curve/surface geometry and meshes
-remain unevaluated; no AP242 conformance is claimed.
+tolerances and affine transforms. Milestone 7 adds [analytic curves](docs/CURVES.md)
+with derivatives, domains and oriented spans. STEP geometry adaptation, surfaces and
+meshes remain pending; no AP242 conformance is claimed.
 General EXPRESS expression semantics remain explicitly unsupported.
 A file parsing successfully is not evidence of schema or CAD conformance.
 

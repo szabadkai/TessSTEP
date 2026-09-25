@@ -1,3 +1,73 @@
+# Milestone 7 analytic curve validation — 2026-09-25
+
+Milestone 6 was committed as `cd28385` before this work. The next milestone adds
+`tessstep-curves`, depending only on math and reexported as `tessstep::curves`.
+It provides independent 2D/3D lines and conics, first/second derivatives, domains,
+explicit plane frames, affine evaluation transformation and oriented parameter spans.
+See [CURVES.md](CURVES.md) for parameterizations and numerical limits. STEP geometry
+adapters, surfaces, NURBS, topology and tessellation remain pending.
+
+Observed locally on macOS arm64 with Rust 1.95.0:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace debug tests | passed, 106 tests including doctests |
+| Analytic curve debug/release tests | passed, 8 integration tests and 2 doctests |
+| Frame-space compile-fail example | passed (one of the doctests) |
+| Workspace/fuzz formatting and Clippy with warnings denied | passed |
+| Workspace rustdoc with warnings denied | passed after fixing an interval rendered as a link |
+| Architecture/conformance/fixture provenance | passed; 13 packages, 40 authored fixtures |
+| Python corpus/CI tests | 21 passed |
+| Relocated C/C++ installed-package consumers | passed; Debug/Release, ABI layouts/exports, ownership and concurrency |
+| Deterministic curve arbitrary-float smoke | 10,000 random inputs plus 774 boundary/prefix inputs |
+| Curve libFuzzer driver smoke | 1,000 runs completed without crashes |
+
+Independent evidence includes known coordinates and derivatives, implicit conic loci,
+central finite differences of positions and first derivatives, 2D orientation and 3D
+plane membership, scale-first frames at subnormal/maximum magnitudes, reversed spans,
+seam crossing, multiple revolutions, affine covariance and explicit failure cases.
+Parabola/hyperbola parameterizations and ellipse axis order are documented and tested.
+These are constructed-geometry tests; they do not establish STEP/AP interpretation.
+
+The local libFuzzer driver used stable Rust, no coverage/sanitizer instrumentation and
+an empty initial corpus. Runtime warnings confirm those limitations; the full-size
+arbitrary-bit cases come from the separate stable harness. Nightly CI configures an
+instrumented curve target. No hosted CI, Rust 1.85, extended instrumented fuzzing or
+cross-platform numerical behavior was observed locally. No third-party production
+dependency, unsafe code, public C symbol or ABI layout was added.
+
+## External corpus
+
+`python3 scripts/corpus.py --check` passed. Run `2026-09-25T17-53-15-066870Z` examined
+**6,438 paths / 3,227 unique contents** in **33.837 seconds**. The generated per-file
+report, all stage counts, comparison lists and representative clean/reference-error/
+rejected entries were inspected. Outcomes remain **2,821 clean**, **38 reference-error**
+and **368 rejected**, with **zero changes** against both the previous run and reviewed
+baseline. There were no crashes, timeouts or runner errors. `corpus/baseline.json` is
+unchanged. See [the external per-file report](../reports/corpus/index.html).
+
+All 3,227 external inputs still report schema/product/geometry/tessellation as
+`not_implemented`: no AP schema/product checker was configured, and independent curve
+evaluation provides no schema-to-geometry adapter/checker. No geometry acceptance is
+inferred from physical parsing. The geometry stage must receive a real checker when
+STEP geometry adaptation becomes available.
+
+## Analytic benchmark
+
+`cargo bench -p tessstep-curves --bench analytic --locked` measured 10,000 ellipse
+position/first/second-derivative evaluations per batch, with curve construction outside
+timing and checked evaluations inside. One warmup and a two-second sample yielded
+**6,596 batches / 2.000 seconds / 303.216 microseconds per batch**. This is a local
+throughput observation, not a statistical comparison, whole-model benchmark or accuracy
+certificate.
+
+The architecture review in [ARCHITECTURE.md](ARCHITECTURE.md) records the independent
+math-only dependency, private construction invariants, fixed stack/work costs and the
+unchanged C/C++ boundary. Analytic surfaces are the next independent geometry milestone;
+STEP curve/placement adapters and the remaining Milestone 5 semantics are still open.
+
+---
+
 # Milestone 6 math foundation validation — 2026-09-25
 
 The verified Milestone 5 product/assembly slice was committed as `d84e5f3`.

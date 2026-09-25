@@ -61,3 +61,13 @@ composition order, explicit frames, near-parallel rejection, reflections, pivot 
 finite-range limits, signed zero, subnormals, 2,000 seeded round trips and arbitrary-bit
 smoke. Compile-fail examples verify space separation and transform order. See
 [GEOMETRY.md](GEOMETRY.md) for the API and [VALIDATION.md](VALIDATION.md) for observed runs.
+
+## Analytic curve extension
+
+Milestone 7 adds line/conic evaluation and two derivatives using these same finite
+value contracts. Orthonormal plane frames reject parallel inputs using a dimensionless
+sine threshold. Periodic domains retain unwrapped parameters. Span evaluation applies
+both derivative chain-rule factors and checks exact endpoints/range. Trigonometric and
+hyperbolic functions use standard f64 routines, not certified interval evaluation;
+intermediate overflow can be rejected and underflow can erase small contributions.
+See [CURVES.md](CURVES.md) for formulas, parameterization and remaining limitations.

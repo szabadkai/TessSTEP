@@ -5,8 +5,8 @@ vertical slice, Milestone 2 EXPRESS frontend, Milestone 3 Rust bindings/reflecti
 Milestone 4 structural schema decoding, each with explicit conformance limits.
 Milestone 5 now includes the initial structural product/representation/units/assembly slice.
 Milestone 6 now provides the independent checked math foundation.
-Curve/surface evaluation and industrial hardening are not claimed. Read ARCHITECTURE.md,
-CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
+Milestone 7 adds independent analytic curves. Surface evaluation and industrial
+hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
 and architecture review before declaring work done.
 
@@ -57,8 +57,18 @@ rotation and explicit right-handed frames have independent regression, property,
 compile-fail and arbitrary-bit tests plus fuzz/benchmark harnesses. Numerical limits
 are explicit in [NUMERICAL_ROBUSTNESS.md](NUMERICAL_ROBUSTNESS.md). This foundation does
 not implement exact predicates, STEP placement defaults/adapters or curve/surface
-geometry. The next geometry work is independent analytic curve evaluation, followed
-by schema adapters; Milestone 5's documented semantic gaps remain open.
+geometry. Milestone 7 now supplies independent analytic curve evaluation; Milestone 5's
+documented semantic gaps remain open.
+
+**Milestone 7 delivered — independent analytic curves.**
+
+`tessstep-curves` evaluates 2D/3D lines, circles, ellipses, parabolas and hyperbolas
+with first/second derivatives, explicit periodic domains and oriented parameter spans.
+Plane frames, seam crossing, reversed spans and affine derivative transformation are
+checked independently of STEP. Regression/finite-difference tests, arbitrary-bit smoke,
+a fuzz target and a benchmark cover the scope. See [CURVES.md](CURVES.md). Curve/schema
+adapters, STEP trim selection and pcurve units remain pending. The next independent
+geometry milestone is analytic surfaces; NURBS follows in later milestones.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

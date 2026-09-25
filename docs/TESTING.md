@@ -130,3 +130,15 @@ composition order. The deterministic fuzz smoke exercises 10,000 arbitrary-bit i
 and 870 boundary/prefix inputs through the same fixed-work harness as `math_primitives`.
 Nightly CI configures its instrumented run. The benchmark measures one inverse and
 10,000 checked point transforms per batch; point construction is outside timing.
+
+## Milestone 7 analytic curves
+
+Run `cargo test -p tessstep-curves` (debug and release) and
+`cargo bench -p tessstep-curves --bench analytic`. Independent tests cover known conic
+positions/derivatives, finite-difference checks, implicit conic equations, 2D/3D frames,
+periodicity, seam-crossing and reversed spans, chain-rule factors, affine covariance,
+and invalid/overflow/subnormal inputs. A compile-fail doctest checks frame spaces.
+The stable arbitrary-bit harness uses 10,000 random inputs plus 774 boundary/prefix
+inputs and is shared with the `analytic_curves` nightly libFuzzer target. Its maximum
+consumed input is 128 bytes and work is fixed. The benchmark measures 10,000 checked
+ellipse evaluations (position and both derivatives), with curve setup outside timing.

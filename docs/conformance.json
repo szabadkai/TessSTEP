@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20134, the initial Milestone 5 product graph slice and Milestone 6 math foundation; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20134, the initial Milestone 5 product slice, Milestone 6 math and Milestone 7 analytic curves; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -183,10 +183,10 @@
       "limitations": "names and raw values can be retained without understanding them"
     },
     {
-      "feature": "geometry / topology / meshes",
+      "feature": "STEP geometry / topology / meshes",
       "status": "not implemented",
       "test": null,
-      "limitations": "independent math only; no curve/surface evaluation, topology or tessellation"
+      "limitations": "independent analytic curves available; no STEP geometry adapter, topology or tessellation"
     },
     {
       "feature": "public C ABI",
@@ -265,6 +265,24 @@
       "status": "implemented",
       "test": "math_arbitrary_float_fuzz_smoke",
       "limitations": "10,870 deterministic inputs; extended instrumented numerical fuzzing not observed"
+    },
+    {
+      "feature": "Independent 2D/3D analytic lines and conics",
+      "status": "implemented",
+      "test": "analytic_curves_have_known_positions_derivatives_and_domains",
+      "limitations": "positions and two derivatives; floating-point evaluation; no STEP adapter, surfaces, NURBS, projection or intersection"
+    },
+    {
+      "feature": "Oriented analytic parameter spans",
+      "status": "implemented",
+      "test": "analytic_spans_keep_orientation_seams_and_chain_rule",
+      "limitations": "unwrapped explicit parameter endpoints; no STEP trim selection, topological edges or UV trimming"
+    },
+    {
+      "feature": "Analytic curve numeric checks and smoke",
+      "status": "implemented",
+      "test": "analytic_curve_arbitrary_float_smoke",
+      "limitations": "10,774 deterministic inputs; no exact predicate, certified error bounds or extended instrumented fuzz claim"
     }
   ]
 }

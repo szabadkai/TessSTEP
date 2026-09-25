@@ -1,8 +1,8 @@
 # Architecture
 
 Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust generation
-and runtime reflection, plus a bounded product semantics slice and independent checked math. Architecture is a
-contract for later work, not a declaration that the geometry kernel already exists.
+and runtime reflection, plus a bounded product semantics slice, checked math and
+independent analytic curves. Architecture is a contract for later work, not a declaration that the geometry kernel already exists.
 
 ## Implemented dependency graph
 
@@ -22,9 +22,9 @@ stepdump ──→ tessstep-model ──→ tessstep-part21
 tessstep-ap242 ──→ tessstep-model / tessstep-schema / tessstep-part21
        └────────→ tessstep-product (standard library only)
 
-tessstep-math (standard library only)
+tessstep-curves ──→ tessstep-math (standard library only)
 
-tessstep ──→ tessstep-math / tessstep-ap242 / tessstep-product
+tessstep ──→ tessstep-curves / tessstep-math / tessstep-ap242 / tessstep-product
     ├──────→ tessstep-codegen
     ├──────→ tessstep-schema
     ├──────→ tessstep-express
@@ -102,7 +102,8 @@ crate when its first tested vertical slice is implemented.
 | tessstep-ap242 (active) | schema-decoded product adapters now; geometry adapters later |
 | tessstep-product (active) | independent owned products, representations and assembly graphs |
 | tessstep-math (active) | STEP-independent units, spaces, transforms and tolerances |
-| tessstep-curves / tessstep-surfaces | exact mathematical evaluators |
+| tessstep-curves (active) | independent analytic curve positions, derivatives and domains |
+| tessstep-surfaces | independent mathematical surface evaluators |
 | tessstep-topology | typed handles, builders and immutable validity states |
 | tessstep-trim | UV boundaries, periodic seams and trim reconstruction |
 | tessstep-mesh | mesh assets and mesh invariants |
@@ -248,3 +249,24 @@ The crate has no raw STEP entity access, topology validity claims or mesh layout
 Rust representations are not exposed across the C ABI. Physical C/C++ operations,
 layouts and package ownership are unchanged; public geometry bindings remain pending.
 The corpus stages remain honest: math tests provide no STEP geometry acceptance evidence.
+
+## Milestone 7 analytic curve architecture review
+
+`tessstep-curves` depends only on `tessstep-math`; the umbrella reexports it. The
+existing dependency checker already permits this edge. No physical/schema/product
+layer now depends on curves, and no curve evaluator reads raw STEP parameters.
+Private basis/frame storage guarantees supported dimensions and constructor invariants.
+Analytic kind selection is exhaustive; evaluation publishes position and two derivatives
+only when all three succeed. Curve regularity is not implied by finite storage.
+
+Plane frames normalize explicit caller axes and reject parallel inputs. Curves preserve
+parameterization; parameter spans are a separate fixed-size wrapper with explicit
+orientation and chain-rule derivatives. Affine evaluation transformation does not
+reclassify the analytic basis. All operations have fixed work and stack storage, with
+no recursion, heap allocation, global state, unsafe blocks or external dependencies.
+Frame tags propagate through points, vectors and affine derivative transformations.
+
+The geometry corpus stage remains unimplemented because there is no schema-to-curve
+adapter/checker. Independent constructed-geometry tests are not reported as successful
+STEP geometry validation. No C symbols, ABI layouts or ownership contracts changed;
+public C/C++ curve operations remain pending under the existing interface requirement.
