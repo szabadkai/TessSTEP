@@ -28,7 +28,7 @@ jobs:
       - run: cargo fuzz run analytic_curves -- -max_total_time=120 -max_len=128
       - run: cargo fuzz run math_primitives -- -max_total_time=120 -max_len=144
       - run: cargo fuzz run product_adapter corpus/product -- -max_total_time=120 -max_len=65536
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
           name: fuzz-artifacts
@@ -48,7 +48,7 @@ jobs:
       - name: Record benchmark output
         shell: bash
         run: cargo bench --workspace --locked 2>&1 | tee benchmarks.txt
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: benchmark-results
