@@ -101,6 +101,7 @@ dependencies = [
  "tessstep-express",
  "tessstep-model",
  "tessstep-part21",
+ "tessstep-schema",
 ]
 
 [[package]]
@@ -108,8 +109,13 @@ name = "tessstep-model"
 version = "0.1.0"
 dependencies = [
  "tessstep-part21",
+ "tessstep-schema",
 ]
 
 [[package]]
 name = "tessstep-part21"
+version = "0.1.0"
+
+[[package]]
+name = "tessstep-schema"
 version = "0.1.0"

@@ -1,6 +1,6 @@
 # Schema bindings and reflection
 
-Status: Milestone 3 implemented. Milestone 4 now provides a first slice of
+Status: Milestone 3 implemented. Milestone 4 now provides
 [structural physical-instance decoding](DECODING.md) using this metadata.
 No AP schema or CAD interpretation is bundled.
 
@@ -115,3 +115,9 @@ byte-identical for the same compilation, including source names, ordered files a
 
 See [TESTING.md](TESTING.md), [VALIDATION.md](VALIDATION.md) and
 [ARCHITECTURE.md](ARCHITECTURE.md) for tests, observed checks and dependency boundaries.
+
+`expressc --validator` emits the same metadata plus a standalone validator application;
+its runtime also depends on `tessstep-model`. See [DECODING.md](DECODING.md) for its JSON
+protocol, bounds, unsupported semantics and the optional corpus schema stage. Frontend
+opaque-expression diagnostics are preserved unchanged; decoding evaluates only its named
+bound/width subset and rejects all other unsupported diagnostics.

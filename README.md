@@ -6,11 +6,11 @@
 
 **A memory-safe STEP/EXPRESS geometry kernel and watertight adaptive tessellator for Rust.**
 
-This repository implements Milestones 0–3: repository infrastructure, streaming
+This repository implements Milestones 0–4: repository infrastructure, streaming
 physical-file parsing, generic entity storage, reference analysis, and an EXPRESS
 frontend with basic schema validation, deterministic Rust bindings and static schema
-reflection. Milestone 4 has begun with [structural instance decoding](docs/DECODING.md)
-against explicitly supplied metadata. The CLIs are `stepdump` and `expressc`.
+reflection, plus [structural instance decoding](docs/DECODING.md) against supplied metadata.
+Complex entities, SELECTs, aggregate uniqueness and bounded width/bound expressions are checked. The CLIs are `stepdump` and `expressc`.
 It does **not** yet interpret AP242, products, units, geometry, or meshes. EXPRESS expression semantics remain explicitly unsupported.
 A file parsing successfully is not evidence of schema or CAD conformance.
 
@@ -26,6 +26,7 @@ cargo run -p stepdump -- corpus/part21/valid/values.step
 cargo run -p stepdump -- --json corpus/part21/valid/extended.step
 cargo run -p expressc -- --json corpus/express/valid/base.exp corpus/express/valid/imports.exp
 cargo run -p expressc -- --rust corpus/express/valid/base.exp > bindings.rs
+python3 scripts/check_schema.py
 cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check

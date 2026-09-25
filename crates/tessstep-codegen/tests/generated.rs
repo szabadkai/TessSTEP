@@ -267,9 +267,7 @@ fn codegen_fuzz_smoke() {
 
 #[test]
 fn generated_metadata_decodes_physical_instances() {
-    let c = compilation(
-        "SCHEMA sample; TYPE count = INTEGER; END_TYPE; ENTITY node; amount:count; next:OPTIONAL node; END_ENTITY; ENTITY child SUBTYPE OF(node); label:STRING; END_ENTITY; END_SCHEMA;",
-    );
+    let c = compilation(include_str!("../../../corpus/schema/sample.exp"));
     let generated = generate(&c, Limits::default()).unwrap();
     let temp =
         Temp(std::env::temp_dir().join(format!("tessstep-decode-consumer-{}", std::process::id())));
@@ -297,7 +295,7 @@ fn generated_metadata_decodes_physical_instances() {
         run(&mut cmd);
     }
     fs::write(temp.0.join("bindings.rs"), generated).unwrap();
-    fs::write(temp.0.join("main.rs"), r#"
+    fs::write(temp.0.join("main.rs"), r##"
 mod generated { include!("bindings.rs"); }
 fn main() {
     use tessstep_model::decode::{decode, Limits, ErrorKind};
@@ -309,8 +307,16 @@ fn main() {
     let bad = input.replace("CHILD(3", "CHILD('bad'");
     let doc = tessstep_model::parse(bad.as_bytes(), Default::default()).unwrap();
     assert_eq!(decode(&doc, &generated::SCHEMA_SET, "sample", Limits::default()).unwrap_err().kind, ErrorKind::TypeMismatch);
+    let extended = input.replace("ENDSEC;END-ISO", "#3=(CHILD('label')NODE(4,#2)OTHER(.T.));#4=HOLDER(#3,(1,2),'ok');#5=HOLDER(COUNT(7),(3),'hi');#6=HOLDER(COLOR(.RED.),(4,5),'ab');ENDSEC;END-ISO");
+    let doc = tessstep_model::parse(extended.as_bytes(), Default::default()).unwrap();
+    let decoded = decode(&doc, &generated::SCHEMA_SET, "sample", Limits::default()).unwrap();
+    assert_eq!(decoded.entities().len(), 6);
+    assert_eq!(decoded.entities()[2].declaration, None);
+    let bad = extended.replace("(1,2),'ok'", "(1,1),'ok'");
+    let doc = tessstep_model::parse(bad.as_bytes(), Default::default()).unwrap();
+    assert_eq!(decode(&doc, &generated::SCHEMA_SET, "sample", Limits::default()).unwrap_err().kind, ErrorKind::DuplicateValue);
 }
-"#).unwrap();
+"##).unwrap();
     let binary = temp
         .0
         .join(format!("consumer{}", std::env::consts::EXE_SUFFIX));
@@ -328,5 +334,63 @@ fn main() {
         ));
     }
     run(&mut cmd);
-    run(&mut Command::new(binary));
+    run(&mut Command::new(&binary));
+    let validator_source = tessstep_codegen::generate_validator(&c, Limits::default()).unwrap();
+    assert_eq!(
+        validator_source,
+        tessstep_codegen::generate_validator(
+            &c,
+            Limits {
+                max_output_bytes: validator_source.len(),
+                ..Limits::default()
+            }
+        )
+        .unwrap()
+    );
+    assert_eq!(
+        tessstep_codegen::generate_validator(
+            &c,
+            Limits {
+                max_output_bytes: validator_source.len() - 1,
+                ..Limits::default()
+            }
+        ),
+        Err(Error::OutputLimit)
+    );
+    fs::write(temp.0.join("main.rs"), validator_source).unwrap();
+    run(&mut cmd);
+    let fixture = temp.0.join("input.step");
+    let valid = include_str!("../../../corpus/part21/valid/empty.step")
+        .replace("DATA;", "DATA;#1=HOLDER(COUNT(7),(1,2),'ok');");
+    for (schema, text, status, exit) in [
+        ("sample", valid.clone(), "accepted", 0),
+        ("sample", valid.replace("(1,2)", "(1,1)"), "rejected", 1),
+        ("missing", valid, "not_configured", 1),
+        ("sample", "not STEP".into(), "not_run", 1),
+    ] {
+        fs::write(&fixture, text).unwrap();
+        let output = Command::new(&binary)
+            .arg(schema)
+            .arg(&fixture)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(exit));
+        let json = String::from_utf8(output.stdout).unwrap();
+        assert!(json.contains(&format!("\"status\":\"{status}\"")), "{json}");
+    }
+}
+
+#[test]
+fn decoder_fuzz_metadata_matches_authored_schema() {
+    let c = compile(
+        &[Source {
+            name: "corpus/schema/sample.exp",
+            text: include_str!("../../../corpus/schema/sample.exp"),
+        }],
+        Default::default(),
+    );
+    assert_eq!(
+        generate(&c, Limits::default()).unwrap(),
+        include_str!("../../../fuzz/support/decoder_schema.rs")
+    );
 }

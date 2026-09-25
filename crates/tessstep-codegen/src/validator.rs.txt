@@ -1,0 +1,44 @@
+
+// Generated application boundary. Requires tessstep-model and tessstep-schema.
+fn main() -> ::std::process::ExitCode {
+    use ::std::{fs::File, io::BufReader, process::ExitCode};
+    use ::tessstep_model::decode::{decode, ErrorKind, Limits};
+    let args: Vec<_> = ::std::env::args_os().skip(1).collect();
+    if args.len() != 2 {
+        eprintln!("Usage: schema-validator SCHEMA FILE.step");
+        return ExitCode::from(2);
+    }
+    let Some(schema) = args[0].to_str() else {
+        eprintln!("Schema name must be UTF-8");
+        return ExitCode::from(2);
+    };
+    let file = match File::open(&args[1]) {
+        Ok(file) => file,
+        Err(error) => { eprintln!("{error}"); return ExitCode::from(2); }
+    };
+    let document = match ::tessstep_model::parse(BufReader::new(file), Default::default()) {
+        Ok(document) => document,
+        Err(error) => {
+            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"status\":\"not_run\",\"code\":\"{:?}\"}}",error.code);
+            return ExitCode::from(1);
+        }
+    };
+    match decode(&document, &SCHEMA_SET, schema, Limits::default()) {
+        Ok(view) => {
+            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"status\":\"accepted\",\"entity_count\":{}}}",view.entities().len());
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            let status = match error.kind {
+                ErrorKind::Unsupported => "unsupported",
+                ErrorKind::UnknownSchema => "not_configured",
+                ErrorKind::ResourceLimit => "resource_limit",
+                _ => "rejected",
+            };
+            let entity = error.entity.map_or_else(|| "null".into(), |id| id.get().to_string());
+            let offset = error.source.map_or_else(|| "null".into(), |span| span.start.offset.to_string());
+            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"status\":\"{status}\",\"code\":\"{:?}\",\"entity\":{entity},\"offset\":{offset}}}",error.kind);
+            ExitCode::from(1)
+        }
+    }
+}

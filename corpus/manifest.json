@@ -208,6 +208,62 @@
       "sha256": "362630f01bbb15bdedee7f86f19e3aba1da4c199faaa235712a1b4412224104a",
       "syntax": "valid",
       "schema": "basic-checks-only"
+    },
+    {
+      "path": "schema/bad-select.step",
+      "source": "Authored for TessSTEP schema decoder tests; synthetic, no standards example or AP schema copied.",
+      "license": "MIT",
+      "sha256": "6b6ddd5eb7f7631faaa36e5c561daf8b19647e0f5f19db64ed5a39cb99dbc119",
+      "syntax": "valid",
+      "schema": "rejected"
+    },
+    {
+      "path": "schema/complex.step",
+      "source": "Authored for TessSTEP schema decoder tests; synthetic, no standards example or AP schema copied.",
+      "license": "MIT",
+      "sha256": "213019955dd3f90d5c8a6481519a6943f2a24464e64f4bae68150e2524bce399",
+      "syntax": "valid",
+      "schema": "accepted"
+    },
+    {
+      "path": "schema/duplicate.step",
+      "source": "Authored for TessSTEP schema decoder tests; synthetic, no standards example or AP schema copied.",
+      "license": "MIT",
+      "sha256": "251f58f98ea6a8af1829f63abdf23a0501b621d36974854022113de3765b0e9a",
+      "syntax": "valid",
+      "schema": "rejected"
+    },
+    {
+      "path": "schema/missing-reference.step",
+      "source": "Authored for TessSTEP schema decoder tests; synthetic, no standards example or AP schema copied.",
+      "license": "MIT",
+      "sha256": "f2e789c867a5ac05448da0d9e9187423a08b8bbd74d8d7f52144c9d669d12df3",
+      "syntax": "valid",
+      "schema": "rejected"
+    },
+    {
+      "path": "schema/population.step",
+      "source": "Authored for TessSTEP schema decoder tests; synthetic, no standards example or AP schema copied.",
+      "license": "MIT",
+      "sha256": "8ba58bdb214c5cd2c66a78f54c199f67b04d913cf49dbc6692430d43b6766e19",
+      "syntax": "valid",
+      "schema": "unsupported"
+    },
+    {
+      "path": "schema/sample.exp",
+      "source": "Authored for TessSTEP schema decoder tests; synthetic, no standards example or AP schema copied.",
+      "license": "MIT",
+      "sha256": "ebf999e78e0035886ba2b6ff16e9c55f01331fd7ef4e81e4b145eef1e6980f23",
+      "syntax": "valid",
+      "schema": "source"
+    },
+    {
+      "path": "schema/simple.step",
+      "source": "Authored for TessSTEP schema decoder tests; synthetic, no standards example or AP schema copied.",
+      "license": "MIT",
+      "sha256": "39533cbf998cfbebad2151b23e0625ef665a9c97e85ae06d2687fa61d5728658",
+      "syntax": "valid",
+      "schema": "accepted"
     }
   ]
 }

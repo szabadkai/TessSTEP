@@ -22,6 +22,7 @@ fn run() -> Result<u8, String> {
     let mut strict = false;
     let mut ast = false;
     let mut rust = false;
+    let mut validator = false;
     let mut generation_limits = tessstep_codegen::Limits::default();
     let mut paths = Vec::new();
     let mut limits = Limits::default();
@@ -36,7 +37,7 @@ fn run() -> Result<u8, String> {
             "--" => positional = true,
             "--help" | "-h" => {
                 println!(
-                    "Usage: expressc [--json | --ast | --rust] [--strict] [--max-bytes N] [--max-tokens N] [--max-work N] [--max-nesting N] [--max-output-bytes N] [--] FILE.exp ...\nCompile explicitly supplied schemas. Expressions remain opaque. --rust emits bindings and reflection to stdout. --strict rejects unsupported semantics.\nExit: 0 structural success; 1 syntax/semantic/generation/strict failure; 2 usage or I/O failure."
+                    "Usage: expressc [--json | --ast | --rust | --validator] [--strict] [--max-bytes N] [--max-tokens N] [--max-work N] [--max-nesting N] [--max-output-bytes N] [--] FILE.exp ...\nCompile explicitly supplied schemas. Expressions remain opaque. --rust emits bindings and reflection to stdout. --validator emits a standalone schema validator source. --strict rejects unsupported semantics.\nExit: 0 structural success; 1 syntax/semantic/generation/strict failure; 2 usage or I/O failure."
                 );
                 return Ok(0);
             }
@@ -44,6 +45,7 @@ fn run() -> Result<u8, String> {
             "--strict" => strict = true,
             "--ast" => ast = true,
             "--rust" => rust = true,
+            "--validator" => validator = true,
             "--max-bytes" | "--max-tokens" | "--max-work" | "--max-nesting"
             | "--max-output-bytes" => {
                 let n = args
@@ -69,8 +71,8 @@ fn run() -> Result<u8, String> {
     if paths.is_empty() {
         return Err("supply one or more EXPRESS files; see --help".into());
     }
-    if u8::from(json) + u8::from(ast) + u8::from(rust) > 1 {
-        return Err("--json, --ast and --rust are mutually exclusive".into());
+    if u8::from(json) + u8::from(ast) + u8::from(rust) + u8::from(validator) > 1 {
+        return Err("--json, --ast, --rust and --validator are mutually exclusive".into());
     }
     if paths.len() > limits.max_schemas {
         return Err("source count exceeds schema limit".into());
@@ -97,9 +99,14 @@ fn run() -> Result<u8, String> {
         .collect();
     let result = compile(&sources, limits);
     let success = result.ir.is_some() && (!strict || result.diagnostics.is_empty());
-    let output = if rust {
+    let output = if rust || validator {
         if success {
-            match tessstep_codegen::generate(&result, generation_limits) {
+            let generate = if validator {
+                tessstep_codegen::generate_validator
+            } else {
+                tessstep_codegen::generate
+            };
+            match generate(&result, generation_limits) {
                 Ok(source) => source,
                 Err(e) => {
                     eprintln!("expressc: {e}");

@@ -73,6 +73,42 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(result["status"], "timeout")
         self.assertEqual(result["stages"]["physical_parse"], "not_run")
 
+    def test_schema_stage_is_independent_and_protocol_checked(self):
+        for status, code in [("accepted", 0), ("rejected", 1), ("unsupported", 1), ("not_configured", 1), ("resource_limit", 1)]:
+            result = case()
+            result.update(seconds=0, entity_count=2)
+            payload = {"format_version": 1, "scope": "schema-structure", "status": status, "entity_count": 2}
+            def run(*args, **kwargs):
+                kwargs["stdout"].write(json.dumps(payload).encode())
+                return subprocess.CompletedProcess(args, code)
+            with patch.object(corpus.subprocess, "run", side_effect=run):
+                corpus.inspect_schema(Path("validator"), "TEST", Path("file.step"), 1, result)
+            self.assertEqual(result["status"], "clean")
+            self.assertEqual(result["stages"]["schema"], status)
+        payload["status"] = "accepted"  # nonzero exit must not claim acceptance
+        with patch.object(corpus.subprocess, "run", side_effect=run):
+            corpus.inspect_schema(Path("validator"), "TEST", Path("file.step"), 1, result)
+        self.assertEqual(result["status"], "runner_error")
+
+    def test_schema_stage_skips_rejected_inputs_and_reports_timeout(self):
+        result = case("rejected")
+        with patch.object(corpus.subprocess, "run") as run:
+            corpus.inspect_schema(Path("validator"), "TEST", Path("file.step"), 1, result)
+            run.assert_not_called()
+        self.assertEqual(result["stages"]["schema"], "not_run")
+        result = case()
+        result["seconds"] = 0
+        with patch.object(corpus.subprocess, "run", side_effect=subprocess.TimeoutExpired("validator", 1)):
+            corpus.inspect_schema(Path("validator"), "TEST", Path("file.step"), 1, result)
+        self.assertEqual(result["status"], "timeout")
+
+    def test_schema_regression_does_not_require_physical_regression(self):
+        old = case()
+        old["stages"]["schema"] = "accepted"
+        current = case()
+        current["stages"]["schema"] = "rejected"
+        self.assertEqual(corpus.compare([current], {"cases": [old]})[0]["kind"], "regression")
+
 
 if __name__ == "__main__":
     unittest.main()

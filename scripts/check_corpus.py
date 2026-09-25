@@ -7,6 +7,7 @@ manifest = json.loads((ROOT / "corpus" / "manifest.json").read_text(encoding="ut
 expected = {item["path"] for item in manifest["files"]}
 actual = {str(path.relative_to(ROOT / "corpus")).replace("\\", "/") for path in (ROOT / "corpus" / "part21").glob("*/*.step")}
 actual |= {str(path.relative_to(ROOT / "corpus")).replace("\\", "/") for path in (ROOT / "corpus" / "express").glob("*/*.exp")}
+actual |= {path.relative_to(ROOT / "corpus").as_posix() for path in (ROOT / "corpus/schema").iterdir() if path.suffix in {".step", ".exp"}}
 assert expected == actual, "Every fixture needs provenance"
 for item in manifest["files"]:
     path = ROOT / "corpus" / item["path"]

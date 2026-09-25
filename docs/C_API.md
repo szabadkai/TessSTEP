@@ -178,7 +178,8 @@ platforms, with sanitizer and ABI/layout checks where applicable.
 
 The document subset is exercised by `cargo test -p tessstep-capi` and
 `python3 scripts/check_capi.py`. The latter installs and relocates the package,
-compiles/runs independent C11 and C++17 consumers in Debug/Release with Rust tool
+compiles/runs independent C11 and C++17 consumers in Debug/Release (plus a C-only
+CMake project) with Rust tool
 invocations blocked, and verifies the exact exported symbol set. Release packaging
 runs those same consumers. Native consumer ASan/UBSan is available with
 `--sanitizers`; this does not instrument the Rust library. Mesh lifetime and zero-copy

@@ -96,3 +96,13 @@ public symbols. Packaging invokes these tests on every CI/release target.
 Use `--library-dir target/release` to reuse a release build and `--sanitizers` to
 instrument native consumers with ASan/UBSan (Linux/macOS CI). Rust-library sanitizer
 instrumentation, static packages and mesh-view tests are not claimed by this slice.
+
+## Milestone 4 structural completion
+
+Run `python3 scripts/check_schema.py` for the generated validator and six authored
+per-fixture schema outcomes; it exercises real corpus-stage integration and protocol
+validation. `cargo test -p tessstep-model --test decode` covers complex/diamond membership,
+SELECT tags/nesting, semantic aggregate equality, numeric boundaries, expression limits,
+and malformed metadata. `decoder_fuzz` shares generated fixture metadata and the bounded
+exercise function with the nightly `schema_decoder` target. A generator regression test
+verifies that its checked-in metadata still matches the authored `.exp` source.

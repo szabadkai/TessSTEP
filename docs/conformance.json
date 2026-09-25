@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20133 plus initial Milestone 4 structural instance decoding; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20134 with bounded structural instance validation; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -172,9 +172,9 @@
     },
     {
       "feature": "Schema-aware physical instance decoding/validation",
-      "status": "partial",
-      "test": "schema_decode_borrows_attributes_and_checks_forward_subtype_references",
-      "limitations": "simple entities, single inheritance, primitive/named domains, ARRAY/LIST/BAG and local reference compatibility; complex/SELECT/uniqueness/expressions deferred"
+      "status": "structural subset implemented",
+      "test": "schema_decode_complex_and_diamond_memberships",
+      "limitations": "internal/external mappings, SELECT, bounds/widths/uniqueness and local references; rules, algorithms, general expressions and AP semantics unsupported"
     },
     {
       "feature": "AP242 / AP203 / AP214 schema conformance",
@@ -199,6 +199,18 @@
       "status": "physical documents implemented",
       "test": "tests/capi/consumer.cpp",
       "limitations": "C++17 RAII and typed results; relocated shared package via TessSTEP::TessSTEP; mesh views and static linkage pending"
+    },
+    {
+      "feature": "Generated schema validator and corpus stage",
+      "status": "implemented",
+      "test": "generated_metadata_decodes_physical_instances",
+      "limitations": "explicit supplied schemas; structural JSON protocol; no bundled AP schema or automatic population selection"
+    },
+    {
+      "feature": "Schema decoder fuzz smoke",
+      "status": "implemented",
+      "test": "schema_decoder_fuzz_smoke",
+      "limitations": "bounded mutations with generated metadata; extended instrumented fuzzing remains unobserved"
     }
   ]
 }

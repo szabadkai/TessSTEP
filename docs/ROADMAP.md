@@ -1,8 +1,8 @@
 # Milestones
 
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
-vertical slice, Milestone 2 EXPRESS frontend and Milestone 3 Rust bindings/reflection
-with explicit conformance limits.
+vertical slice, Milestone 2 EXPRESS frontend, Milestone 3 Rust bindings/reflection and
+Milestone 4 structural schema decoding, each with explicit conformance limits.
 It does not start geometry or claim industrial hardening. Read ARCHITECTURE.md,
 CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
@@ -25,13 +25,17 @@ that unrelated entity references cannot be assigned. Inheritance, import identit
 anonymous domains, constraint preservation, generation budgets, fuzz smoke and a benchmark
 are covered. See SCHEMA.md for the contract and VALIDATION.md for observed checks.
 
-**In progress: Milestone 4 — schema-aware instance decoding and validation.**
+**Milestone 4 delivered: structural instance decoding with explicit validation limits.**
 
-The first slice adds borrowed structural decoding for simple entities, single inheritance,
-primitive/named domains, ARRAY/LIST/BAG bounds and compatible local references. Typed errors,
-resource limits, generated-metadata consumer coverage and mutation smoke are included.
-Complex mappings, SELECT, uniqueness and expression validation remain open; see
-[DECODING.md](DECODING.md). This is a milestone start, not completion.
+The decoder supports internal/external complex mappings, multiple inheritance, SELECT
+encodings, aggregate bounds/uniqueness, local reference compatibility and bounded integer
+bound expressions. It supplies borrowed views, typed errors and finite resource budgets.
+`expressc --validator` emits a standalone schema checker; corpus reporting now supports
+an explicit schema stage with authored positive/negative fixtures. General EXPRESS rules,
+algorithms and AP conformance remain unsupported rather than silently accepted; see
+[DECODING.md](DECODING.md) for the contract and VALIDATION.md for observed evidence.
+
+**Next: Milestone 5 — products, representations, units and assembly semantics.**
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

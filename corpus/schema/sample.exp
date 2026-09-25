@@ -1,0 +1,14 @@
+(* Authored TessSTEP fixture, MIT. No ISO/AP schema content. *)
+SCHEMA sample;
+TYPE count = INTEGER; END_TYPE;
+TYPE color = ENUMERATION OF(red,blue); END_TYPE;
+TYPE choice = SELECT(node,count,color); END_TYPE;
+ENTITY node; amount:count; next:OPTIONAL node; END_ENTITY;
+ENTITY child SUBTYPE OF(node); label:STRING; END_ENTITY;
+ENTITY other SUBTYPE OF(node); enabled:BOOLEAN; END_ENTITY;
+ENTITY holder;
+  choice:choice;
+  numbers:LIST [1:1+2] OF UNIQUE count;
+  label:STRING(2) FIXED;
+END_ENTITY;
+END_SCHEMA;

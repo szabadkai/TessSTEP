@@ -1,8 +1,13 @@
 //! Bounded structural decoding against explicitly supplied reflection metadata.
 //!
-//! This first slice handles simple entities with single inheritance. Success is
+//! Simple and complex entities are decoded through schema metadata. Success is
 //! structural validation of this subset, not full EXPRESS or AP conformance.
 //! Values borrow the physical document; no generated owned record is constructed.
+mod bounds;
+mod equality;
+mod hierarchy;
+mod select;
+
 use crate::Document;
 use std::{collections::BTreeMap, fmt};
 use tessstep_part21::{EntityId, EntityKind, SourceSpan, StepValue, ValueKind};
@@ -34,6 +39,8 @@ pub enum ErrorKind {
     RequiredValue,
     TypeMismatch,
     Cardinality,
+    DuplicateValue,
+    ComplexMapping,
     Width,
     MissingReference,
     ReferenceType,
@@ -58,13 +65,17 @@ impl std::error::Error for Error {}
 
 #[derive(Clone, Debug)]
 pub struct AttributeView<'a> {
+    pub owner: DeclarationId,
     pub declaration: &'a Attribute,
     pub value: &'a StepValue,
 }
 #[derive(Clone, Debug)]
 pub struct EntityView<'a> {
     pub id: EntityId,
-    pub declaration: DeclarationId,
+    /// Single leaf for an internal mapping; None for external complex mapping.
+    pub declaration: Option<DeclarationId>,
+    /// Complete entity membership, including supertypes, without duplicates.
+    pub types: Vec<DeclarationId>,
     pub attributes: Vec<AttributeView<'a>>,
 }
 /// Immutable borrowed results, published only after every instance passes.
@@ -121,13 +132,7 @@ pub fn decode<'a>(
     if cx.schema.is_none() {
         return Err(cx.error(ErrorKind::UnknownSchema, "selected schema is not supplied"));
     }
-    // Opaque source constraints must never become a silent success.
-    if !schemas.unsupported.is_empty() {
-        return Err(cx.error(
-            ErrorKind::Unsupported,
-            "schema set contains unsupported EXPRESS semantics",
-        ));
-    }
+    cx.check_diagnostics()?;
     for section in document.data_sections() {
         cx.tick()?;
         if !section.parameters.is_empty() {
@@ -143,26 +148,8 @@ pub fn decode<'a>(
         cx.entity = Some(entity.id);
         cx.source = Some(entity.source);
         cx.tick()?;
-        let EntityKind::Simple(record) = &entity.kind else {
-            return Err(cx.error(ErrorKind::Unsupported, "complex entity mapping"));
-        };
-        let id = cx
-            .lookup(&record.name)?
-            .ok_or_else(|| cx.error(ErrorKind::UnknownEntity, "unknown entity name"))?;
-        match cx.declaration(id)? {
-            DeclarationKind::Entity {
-                abstract_entity: true,
-                ..
-            } => {
-                return Err(cx.error(
-                    ErrorKind::AbstractEntity,
-                    "abstract entity cannot be instantiated",
-                ));
-            }
-            DeclarationKind::Entity { .. } => (),
-            _ => return Err(cx.error(ErrorKind::UnknownEntity, "record name is not an entity")),
-        }
-        cx.types.insert(entity.id, id);
+        let members = cx.instance_types(&entity.kind)?;
+        cx.types.insert(entity.id, members);
     }
     let mut entities = Vec::new();
     let mut by_id = BTreeMap::new();
@@ -170,29 +157,53 @@ pub fn decode<'a>(
         cx.entity = Some(entity.id);
         cx.attribute = None;
         cx.source = Some(entity.source);
-        let id = cx.types[&entity.id];
-        let attributes = cx.attributes(id)?;
-        let record = &entity.kind.records()[0];
-        if record.parameters.len() != attributes.len() {
-            return Err(cx.error(
-                ErrorKind::AttributeCount,
-                "physical parameter count differs from explicit attribute count",
-            ));
-        }
         let mut views = Vec::new();
-        for (attribute, value) in attributes.into_iter().zip(&record.parameters) {
-            cx.attribute = Some(attribute.name);
-            cx.source = Some(value.source);
-            cx.value(&attribute.domain, value, attribute.optional, 0)?;
-            views.push(AttributeView {
-                declaration: attribute,
-                value,
-            });
+        let mut primary = None;
+        for record in entity.kind.records() {
+            cx.source = Some(record.source);
+            let id = cx
+                .lookup(&record.name)?
+                .ok_or_else(|| cx.error(ErrorKind::UnknownEntity, "unknown entity name"))?;
+            let owners = if matches!(entity.kind, EntityKind::Simple(_)) {
+                primary = Some(id);
+                cx.hierarchy(id)?
+            } else {
+                vec![id]
+            };
+            let mut attributes = Vec::new();
+            for owner in owners {
+                for attribute in cx.local_attributes(owner)? {
+                    cx.tick()?;
+                    attributes.push((owner, attribute));
+                }
+            }
+            if record.parameters.len() != attributes.len() {
+                return Err(cx.error(
+                    ErrorKind::AttributeCount,
+                    "physical parameter count differs from explicit attribute count",
+                ));
+            }
+            for ((owner, attribute), value) in attributes.into_iter().zip(&record.parameters) {
+                cx.attribute = Some(attribute.name);
+                cx.source = Some(value.source);
+                cx.value(&attribute.domain, value, attribute.optional, 0)?;
+                views.push(AttributeView {
+                    owner,
+                    declaration: attribute,
+                    value,
+                });
+            }
+            cx.attribute = None;
         }
         by_id.insert(entity.id, entities.len());
+        for _ in 0..cx.types[&entity.id].len() {
+            cx.tick()?;
+        }
+        let types = cx.types[&entity.id].clone();
         entities.push(EntityView {
             id: entity.id,
-            declaration: id,
+            declaration: primary,
+            types,
             attributes: views,
         });
     }
@@ -212,7 +223,7 @@ struct Context<'a> {
     entity: Option<EntityId>,
     attribute: Option<&'static str>,
     source: Option<SourceSpan>,
-    types: BTreeMap<EntityId, DeclarationId>,
+    types: BTreeMap<EntityId, Vec<DeclarationId>>,
 }
 impl<'a> Context<'a> {
     fn error(&self, kind: ErrorKind, message: &'static str) -> Error {
@@ -246,59 +257,6 @@ impl<'a> Context<'a> {
             .declaration(id)
             .map(|d| d.kind)
             .ok_or_else(|| self.error(ErrorKind::InvalidMetadata, "declaration ID is out of range"))
-    }
-    fn attributes(&mut self, mut id: DeclarationId) -> Result<Vec<&'a Attribute>, Error> {
-        let mut chain = Vec::new();
-        loop {
-            if chain.len() >= self.limits.max_depth.min(128) {
-                return Err(self.error(ErrorKind::ResourceLimit, "inheritance depth budget"));
-            }
-            let DeclarationKind::Entity {
-                supertypes,
-                attributes,
-                unique,
-                where_rules,
-                supertype_constraint,
-                ..
-            } = self.declaration(id)?
-            else {
-                return Err(self.error(ErrorKind::InvalidMetadata, "supertype is not an entity"));
-            };
-            if !unique.is_empty() || !where_rules.is_empty() || supertype_constraint.is_some() {
-                return Err(self.error(
-                    ErrorKind::Unsupported,
-                    "entity constraints, DERIVE or INVERSE",
-                ));
-            }
-            for attribute in attributes {
-                self.tick()?;
-                if !matches!(attribute.kind, AttributeKind::Explicit) {
-                    return Err(self.error(ErrorKind::Unsupported, "DERIVE or INVERSE attribute"));
-                }
-            }
-            chain.push(attributes);
-            match supertypes {
-                [] => break,
-                [parent] => id = *parent,
-                _ => return Err(self.error(ErrorKind::Unsupported, "multiple inheritance mapping")),
-            }
-        }
-        let mut result = Vec::new();
-        for local in chain.into_iter().rev() {
-            for attr in local {
-                self.tick()?;
-                result.push(attr);
-            }
-        }
-        Ok(result)
-    }
-    fn bound(&mut self, expression: Expression) -> Result<i64, Error> {
-        self.tick()?;
-        expression
-            .text
-            .trim()
-            .parse()
-            .map_err(|_| self.error(ErrorKind::Unsupported, "nonliteral EXPRESS bound or width"))
     }
     fn value(
         &mut self,
@@ -418,12 +376,6 @@ impl<'a> Context<'a> {
                 unique,
                 element,
             } => {
-                if unique || kind == AggregateKind::Set {
-                    return Err(self.error(
-                        ErrorKind::Unsupported,
-                        "aggregate value equality/uniqueness",
-                    ));
-                }
                 let ValueKind::Aggregate(values) = &value.kind else {
                     return Err(self.error(ErrorKind::TypeMismatch, "expected aggregate value"));
                 };
@@ -461,16 +413,33 @@ impl<'a> Context<'a> {
                 for item in values {
                     self.value(element, item, optional, depth + 1)?;
                 }
+                if unique || kind == AggregateKind::Set {
+                    for (index, item) in values.iter().enumerate() {
+                        // Unset OPTIONAL ARRAY elements have no known value to duplicate.
+                        if matches!(item.kind, ValueKind::Null) {
+                            continue;
+                        }
+                        for previous in &values[..index] {
+                            if self.equal(element, previous, item, depth + 1)? {
+                                self.source = Some(item.source);
+                                return Err(self.error(
+                                    ErrorKind::DuplicateValue,
+                                    "aggregate requires unique values",
+                                ));
+                            }
+                        }
+                    }
+                }
                 Ok(())
             }
-            Domain::Select(_) => Err(self.error(ErrorKind::Unsupported, "SELECT decoding")),
+            Domain::Select(alternatives) => self.select_value(alternatives, value, depth + 1),
         }
     }
     fn reference(&mut self, expected: DeclarationId, value: &StepValue) -> Result<(), Error> {
         let ValueKind::Reference(target) = value.kind else {
             return Err(self.error(ErrorKind::TypeMismatch, "expected entity reference"));
         };
-        let Some(mut actual) = self.types.get(&target).copied() else {
+        let Some(actual) = self.types.get(&target) else {
             for external in self.document.external_references() {
                 self.tick()?;
                 if external.id == tessstep_part21::Occurrence::Entity(target) {
@@ -485,36 +454,15 @@ impl<'a> Context<'a> {
                 "entity reference target is missing",
             ));
         };
-        for _ in 0..self.limits.max_depth.min(128) {
+        for index in 0..actual.len() {
             self.tick()?;
-            if actual == expected {
+            if self.types[&target][index] == expected {
                 return Ok(());
-            }
-            let DeclarationKind::Entity { supertypes, .. } = self.declaration(actual)? else {
-                return Err(self.error(
-                    ErrorKind::InvalidMetadata,
-                    "reference target is not an entity",
-                ));
-            };
-            match supertypes {
-                [] => {
-                    return Err(self.error(
-                        ErrorKind::ReferenceType,
-                        "target is not assignable to entity domain",
-                    ));
-                }
-                [parent] => actual = *parent,
-                _ => {
-                    return Err(self.error(
-                        ErrorKind::Unsupported,
-                        "multiple inheritance reference compatibility",
-                    ));
-                }
             }
         }
         Err(self.error(
-            ErrorKind::ResourceLimit,
-            "reference inheritance depth budget",
+            ErrorKind::ReferenceType,
+            "target is not assignable to entity domain",
         ))
     }
 }

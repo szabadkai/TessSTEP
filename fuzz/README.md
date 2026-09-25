@@ -40,3 +40,9 @@ They are not represented by fake targets now.
 
 The [Rust Fuzz Book](https://rust-fuzz.github.io/book/cargo-fuzz/tutorial.html)
 describes the cargo-fuzz driver and crash-minimization workflow.
+
+`schema_decoder` uses generated metadata from `corpus/schema/sample.exp` and the shared
+bounded harness in `support/decoder.rs`. Seed with `corpus/schema`; stable mutations run
+in the model crate's `decoder_fuzz` test. Regenerate `support/decoder_schema.rs` with
+`cargo run -p expressc -- --rust corpus/schema/sample.exp` when the schema changes; the
+codegen test checks this exact output. Nightly CI instruments the decoder target.

@@ -2,7 +2,7 @@
 //!
 //! This release exposes physical parsing, generic storage, the EXPRESS frontend,
 //! deterministic Rust generation and static schema reflection.
-//! A first structural instance decoder is available in `model::decode`.
+//! A bounded structural instance decoder is available in `model::decode`.
 //! No full schema conformance, CAD interpretation or tessellation is implemented.
 //!
 //! ```

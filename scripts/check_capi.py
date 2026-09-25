@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SYMBOLS = {
@@ -31,11 +32,26 @@ def check_symbols(library, consumer_build):
         output = subprocess.check_output([str(dumpbin), "/EXPORTS", str(library)], text=True)
         exported = set(re.findall(r"^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)", output, re.M))
     else:
-        import sys
         flags = ["-gUj"] if sys.platform == "darwin" else ["-D", "--defined-only", "--format=posix"]
         output = subprocess.check_output(["nm", *flags, str(library)], text=True)
         exported = {line.split()[0].removeprefix("_") if sys.platform == "darwin"
                     else line.split()[0] for line in output.splitlines() if line.strip()}
+    if sys.platform == "darwin":
+        identity = subprocess.check_output(["otool", "-D", str(library)], text=True).splitlines()[1:]
+        if identity != ["@rpath/libtessstep_capi.dylib"]:
+            raise RuntimeError(f"Nonrelocatable library identity: {identity}")
+        dependencies = subprocess.check_output(["otool", "-L", str(library)], text=True)
+    elif sys.platform.startswith("linux"):
+        dependencies = subprocess.check_output(["readelf", "-d", str(library)], text=True)
+        if not re.search(r"\(SONAME\).*\[libtessstep_capi.so\]", dependencies):
+            raise RuntimeError("Missing relocatable ELF SONAME")
+    else:
+        dependencies = subprocess.check_output([str(dumpbin), "/DEPENDENTS", str(library)], text=True)
+    # A native runtime may depend on OS/runtime libraries, never source/build paths
+    # or a Rust toolchain. The exact platform dependency list is retained in CI logs.
+    if str(ROOT) in "\n".join(dependencies.splitlines()[1:]):
+        raise RuntimeError("Runtime dependency leaks a source-tree path")
+    print(dependencies, flush=True)
     if exported != SYMBOLS:
         raise RuntimeError(f"ABI export mismatch: missing={SYMBOLS-exported}, extra={exported-SYMBOLS}")
     print(f"ABI: exactly {len(SYMBOLS)} C symbols exported; no Rust exports", flush=True)
@@ -61,17 +77,22 @@ def verify_installed(package, *, sanitizers=False):
         env["PATH"] = os.pathsep.join([str(guards), str(relocated / "bin"), env.get("PATH", "")])
         env.pop("CARGO_HOME", None)
         env.pop("RUSTUP_HOME", None)
-        for config in ("Debug", "Release"):
-            build = work / config
+        for config, c_only in (("Debug", False), ("Release", False), ("Release", True)):
+            build = work / (config + ("-C-only" if c_only else ""))
             run(["cmake", "-S", source, "-B", build, f"-DCMAKE_PREFIX_PATH={relocated}",
-                 f"-DCMAKE_BUILD_TYPE={config}", f"-DTESSSTEP_SANITIZERS={'ON' if sanitizers else 'OFF'}"], env=env, cwd=work)
+                 f"-DCMAKE_BUILD_TYPE={config}", f"-DTESSSTEP_C_ONLY={'ON' if c_only else 'OFF'}", f"-DTESSSTEP_SANITIZERS={'ON' if sanitizers else 'OFF'}"], env=env, cwd=work)
             run(["cmake", "--build", build, "--config", config], env=env, cwd=work)
             run(["ctest", "--test-dir", build, "-C", config, "--output-on-failure"], env=env, cwd=work)
-            if config == "Release":
+            if config == "Release" and not c_only:
                 libraries = [p for p in relocated.rglob("*tessstep_capi*") if p.suffix in {".dll", ".dylib", ".so"}]
                 if len(libraries) != 1:
                     raise RuntimeError(f"Expected exactly one shared ABI library: {libraries}")
                 check_symbols(libraries[0], build)
+                if sys.platform == "darwin":
+                    for app in ("c_consumer", "cpp_consumer"):
+                        linked = subprocess.check_output(["otool", "-L", str(build / app)], text=True)
+                        if "@rpath/libtessstep_capi.dylib" not in linked or str(ROOT) in linked:
+                            raise RuntimeError(f"Consumer can load a build-tree library: {linked}")
     print("C/C++ installed package: relocation, Debug/Release, ABI, ownership and concurrent consumers passed", flush=True)
 
 

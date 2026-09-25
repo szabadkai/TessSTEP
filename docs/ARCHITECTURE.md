@@ -171,3 +171,24 @@ process aborts are recoverable. The C++ wrapper knows only the C protocol. Insta
 consumer, layout, exported-symbol, relocation and sanitizer checks are release gates.
 The initial package contains a shared library; static linkage and mesh storage remain
 unimplemented. The dependency checker now covers cdylib and rlib targets explicitly.
+
+## Milestone 4 structural decoder review
+
+No new crate or production dependency is introduced. Model decoding now resolves complete
+inheritance memberships before attribute validation. Iterative postorder traversal preserves
+parent order and deduplicates diamonds; active-path tracking rejects cycles. External
+mappings preserve partial-entity owners and check component completeness/order/connectivity.
+Reference compatibility uses precomputed memberships and never expands instance graphs.
+
+SELECT traversal is iterative and depth/work bounded. Aggregate comparisons use checked
+numeric equivalence and budgeted ordered/unordered matching; worst-case uniqueness is
+quadratic. Integer bound parsing is private to the decoder, depth-bounded, overflow-checked
+and explicitly smaller than an EXPRESS evaluator. Recognized expression spans reconcile
+frontend unsupported diagnostics without mutating or suppressing the source metadata.
+
+The generator emits a validator driver as bounded source text; filesystem/CLI behavior
+lives only in that generated application. It adds no model dependency to the compiler
+runtime. The corpus runner optionally invokes a snapshot of this executable, validates
+its bounded JSON protocol and keeps schema outcomes separate from physical/reference
+outcomes. The schema stage and validator identity are recorded without altering the
+reviewed physical baseline. C ABI layouts, symbols and ownership contracts are unchanged.

@@ -78,14 +78,10 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
 partial corpora should use a separate output directory and baseline. The large
 external corpus is not required for ordinary `cargo test --workspace` runs.
 
-Milestone 2 adds a separate schema-source check, `python3 scripts/check_express.py`,
-over original `corpus/express` fixtures. It verifies declaration parsing, basic schema
-compilation and explicitly unsupported expression semantics. The external STEP runner's
-`schema` stage still means validation of physical instances against a supplied schema;
-that stage cannot run until Milestone 4 and remains `not_implemented`. Milestone 3
-generation/reflection is tested separately by compiling and running generated Rust
-consumers; it does not advance the external STEP corpus schema stage. No `.exp` source
-compilation is inferred from a STEP header or from physical parsing success.
+Schema-source checks and physical-instance checks are separate. `check_express.py`
+checks original source declarations; generated-consumer tests verify Rust bindings.
+`check_schema.py` now verifies structural instance outcomes with supplied metadata.
+No source compilation or schema success is inferred from a STEP header.
 
 ## GitHub Actions
 
@@ -95,9 +91,18 @@ JSON and JUnit artifacts. CI has 3,230 paths because local duplicate directory
 copies are omitted. Unique content coverage is identical. See
 [CI and releases](RELEASING.md) for downloads, retention and release gates.
 
-Milestone 4's initial library decoder is checked against authored schemas/instances,
-including a freshly generated metadata consumer. The external corpus has no configured
-AP schema metadata and `stepdump` does not yet expose that decoder. Therefore the external
-runner's schema stage still reports `not_implemented`; that is a runner capability status,
-not a statement that the structural library decoder is absent. Geometry and tessellation
-also remain unsupported. Do not promote physical outcomes to schema acceptance.
+## Configured schema stage (Milestone 4)
+
+`--schema-validator EXE --schema-name NAME` enables structural checks using a validator
+compiled from `expressc --validator` output. See [DECODING.md](DECODING.md) for building
+and invoking one. Both flags are required together. Validators run only after physical
+acceptance, with a separate timeout and 64 KiB output cap; JSON/exit/count inconsistencies
+are runner errors. Executable hash and schema identity are recorded, and the validator
+is snapshotted before the run. Schema acceptance regressions now fail `--check`.
+
+Use a separate output/baseline for a configured schema corpus. Without these options,
+the existing physical baseline and `schema: not_implemented` observations remain unchanged.
+`python3 scripts/check_schema.py` builds an original tiny schema validator and checks six
+reviewed positive/negative/unsupported fixtures through the real runner. Expected outcomes
+and provenance are in `corpus/manifest.json`; the per-file report is `reports/schema/`.
+This establishes a structural schema stage, not AP conformance or geometry support.

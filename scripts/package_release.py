@@ -64,6 +64,9 @@ def main():
         generated = subprocess.check_output([str(package / "bin" / ("expressc" + suffix)), "--rust", str(package / "examples/express/valid/base.exp")], cwd=temporary, stderr=subprocess.PIPE)
         if b"pub static SCHEMA_SET" not in generated:
             raise ValueError("Packaged expressc failed Rust generation smoke test")
+        validator = subprocess.check_output([str(package / "bin" / ("expressc" + suffix)), "--validator", str(package / "examples/express/valid/base.exp")], cwd=temporary, stderr=subprocess.PIPE)
+        if b"schema-structure" not in validator:
+            raise ValueError("Packaged expressc failed validator generation smoke test")
         install_package(Path(temporary) / "cmake-build", package, library_dir=build)
         verify_installed(package)
         (package / "PACKAGE.json").write_text(json.dumps({"version": version, "target": args.target,

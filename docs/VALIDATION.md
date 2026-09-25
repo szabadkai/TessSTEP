@@ -1,3 +1,109 @@
+# Milestone 4 structural decoder validation — 2026-09-25
+
+Milestone 4 now delivers the supported structural-decoding scope described in
+[DECODING.md](DECODING.md). Full EXPRESS rule/algorithm evaluation and AP conformance
+remain unsupported. Milestone 5 product/representation/unit/assembly semantics is next.
+
+Observed on macOS arm64, rustc/cargo 1.95.0:
+
+| Check | Observed result |
+|---|---|
+| Workspace locked debug and release tests | passed; final model changes also passed focused debug/release tests |
+| Decoder regression tests | 13 passed, including complex/diamond membership, SELECT tags, numeric/enum/logical equality, bounds, limits and malformed metadata |
+| Generated metadata and validator consumers | compiled and ran; valid/invalid instances, JSON status/exit policy and exact generation output budgets passed |
+| Authored schema corpus through generated executable | all six reviewed outcomes matched: 2 accepted, 3 rejected, 1 unsupported |
+| Shared decoder mutation smoke | 11,354 bounded cases passed |
+| Decoder libFuzzer driver smoke | built offline; 1,000 runs completed without crashes |
+| Workspace and fuzz formatting/Clippy, warnings denied | passed |
+| Workspace rustdoc, warnings denied | passed |
+| Architecture, conformance, fixture provenance and CLI checks | passed; 9 packages, 33 authored fixtures |
+| Python corpus/CI tests | 19 passed |
+| Relocated release package | passed; generated-validator flag, C/C++ consumers and ABI checks included |
+
+The libFuzzer driver used stable Rust without coverage/sanitizer instrumentation; runtime
+warnings confirmed this limitation. Nightly CI now includes the instrumented decoder
+target, but its hosted run, extended fuzzing, other operating systems and the MSRV were
+not observed locally. These are regression checks, not industrial-hardening claims.
+
+## Corpus stages and outcomes
+
+`python3 scripts/corpus.py --check` passed. Final run
+`2026-09-25T16-59-17-593268Z` examined **6,438 paths / 3,227 unique contents** in
+32.041 seconds. All per-file stage counts, representative cases and prior/baseline
+comparisons were inspected in [the report](../reports/corpus/index.html).
+
+- 2,821 inputs: physical syntax accepted and references resolved.
+- 38 inputs: physical syntax accepted with missing references.
+- 368 inputs: structured rejection.
+- Zero crashes, timeouts or runner errors.
+
+**No outcome or diagnostic changes** from the preceding run or reviewed baseline.
+`corpus/baseline.json` remains unchanged. Without supplied AP metadata, all external
+inputs still show schema/geometry/tessellation as `not_implemented` in this default run.
+
+The separate authored [schema report](../reports/schema/index.html), run
+`2026-09-25T16-44-26-716422Z`, verifies the real configured schema stage: `simple.step`
+and `complex.step` are accepted; bad SELECT, duplicate aggregate and missing-reference
+fixtures are rejected with the expected typed errors; parameterized DATA is unsupported.
+All six physically parse. These schema outcomes are checked against reviewed expectations
+in `corpus/manifest.json`, not inferred from physical success. Configured-validator hash,
+schema identity, structured errors and per-file stages are retained in the report.
+
+## Decoder benchmark
+
+`cargo bench -p tessstep-model --bench decoder --locked` used the same 486,831-byte /
+20,000-entity cyclic-reference fixture after physical parsing, with one warmup and a
+two-second sample. Result: **158 iterations / 2.011 s / 12.730 ms per input /
+1,571,033 entities per second**. View/index allocation and destruction are included.
+The earlier simple-decoder observation was 5.242 ms; the expanded hierarchy/membership
+checks and storage add measurable cost. This single local run is not a statistical
+performance guarantee or an AP-scale benchmark. Optimization and memory profiling
+remain future work; no linear complexity or exact RSS claim is made.
+
+---
+
+# Public C/C++ document interface validation — 2026-09-25
+
+Observed on macOS arm64 with Rust 1.95.0 and Apple Clang 21. ABI 1 exposes physical
+buffer parsing, document inspection and independent reference diagnostics only.
+
+| Check | Observed result |
+|---|---|
+| Workspace locked tests and warnings-denied Clippy | Passed |
+| Bridge debug/release tests | 5 passed: ownership/report lifetime, all ten budgets, cleared outputs, frozen layouts, Send/Sync and panic containment |
+| Installed C11/C++17 consumers | Passed Debug and Release after relocation; Cargo/rustc/rustup invocations blocked |
+| C-only CMake project | Passed without enabling C++ |
+| Native consumer ASan/UBSan | Passed; Rust library itself was not sanitizer-instrumented |
+| ABI exports and native runtime | Exactly 12 C symbols, no Rust exports; macOS identity uses @rpath and runtime dependency is libSystem |
+| Architecture/conformance/Python tests | Passed; 16 Python tests |
+| Release packaging | macOS arm64 archive and checksum built with relocated consumer gates |
+
+C consumers exercise null/empty arguments, parse/unsupported/limit/not-found statuses,
+independent reports after document release, retained document text pointer stability,
+source-order inspection and frozen ABI layouts. C++ consumers exercise moves, destruction,
+owned diagnostics, construction failures, typed results and simultaneous immutable reads.
+Runtime identity inspection caught and fixed a build-path install name; the check now
+requires a relocatable macOS identity and an ELF SONAME on Linux.
+
+`python3 scripts/corpus.py --check` covered 6,438 paths / 3,227 unique inputs:
+2,821 clean, 38 reference errors, 368 rejected; **no baseline changes**, crashes or
+timeouts. The per-file progress report was inspected, including clean, missing-reference
+and rejected examples. Schema/AP validation, geometry and tessellation are not established
+by this physical-parser corpus run. This public interface does not expose those stages.
+The corpus baseline was not refreshed.
+
+Verification scope: the workspace test/Clippy pass above preceded concurrent changes
+in the decoder. The final `cargo fmt --all -- --check` was blocked because that work
+references `crates/tessstep-model/src/decode/select.rs`, which was not yet present.
+Bridge-only formatting, architecture/conformance checks, and relocated package tests
+passed afterward. No concurrent decoder edits were reverted or filled in here.
+
+Linux/Windows and macOS Intel consumers are wired into existing CI/release packaging;
+they were not run locally. Static linkage, public schema decoding and zero-copy mesh
+views remain unimplemented. No cross-platform or industrial-hardening result is claimed.
+
+---
+
 # Milestone 4 initial decoder validation — 2026-09-25
 
 Milestone 4 is in progress. This slice adds structural decoding against explicitly

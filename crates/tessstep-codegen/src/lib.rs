@@ -1,7 +1,8 @@
 //! Deterministic Rust generation from the EXPRESS frontend's successful compilation.
 //!
 //! Output depends on ordered inputs, including source names and spans. It uses only
-//! `std` and `tessstep-schema`; it never reads files, invokes tools, or evaluates EXPRESS.
+//! `std` and `tessstep-schema` for bindings; generated validator applications also
+//! use `tessstep-model`. Generation never reads files, invokes tools, or evaluates EXPRESS.
 #![forbid(unsafe_code)]
 use std::{
     collections::BTreeSet,
@@ -615,4 +616,18 @@ impl<'a> Generator<'a> {
         emit!(self, "]\n}};\n");
         Ok(())
     }
+}
+
+/// Generate a standalone, bounded schema-checking CLI using this schema set.
+/// Its runtime dependencies are `tessstep-schema` and `tessstep-model`.
+/// Invoke the compiled executable as `validator SCHEMA FILE.step`; stdout is JSON.
+pub fn generate_validator(compilation: &Compilation, mut limits: Limits) -> Result<String, Error> {
+    const DRIVER: &str = include_str!("validator.rs.txt");
+    limits.max_output_bytes = limits
+        .max_output_bytes
+        .checked_sub(DRIVER.len())
+        .ok_or(Error::OutputLimit)?;
+    let mut source = generate(compilation, limits)?;
+    source.push_str(DRIVER);
+    Ok(source)
 }

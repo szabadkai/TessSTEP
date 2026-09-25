@@ -101,3 +101,33 @@ fn expressc_rust_output_and_failure_policy() {
         Some(2)
     );
 }
+
+#[test]
+fn expressc_validator_generation_policy() {
+    let a = run(&["--validator", "corpus/express/valid/base.exp"]);
+    assert!(a.status.success());
+    assert_eq!(
+        a.stdout,
+        run(&["--validator", "corpus/express/valid/base.exp"]).stdout
+    );
+    assert!(String::from_utf8_lossy(&a.stdout).contains("schema-structure"));
+    for args in [
+        vec!["--validator", "--strict", "corpus/express/valid/base.exp"],
+        vec![
+            "--validator",
+            "--max-output-bytes",
+            "1",
+            "corpus/express/valid/base.exp",
+        ],
+    ] {
+        let result = run(&args);
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+    }
+    assert_eq!(
+        run(&["--validator", "--rust", "corpus/express/valid/base.exp"])
+            .status
+            .code(),
+        Some(2)
+    );
+}
