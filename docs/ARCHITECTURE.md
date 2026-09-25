@@ -212,6 +212,9 @@ reviewed physical baseline. C ABI layouts, symbols and ownership contracts are u
 
 ## Milestone 5 initial product architecture review
 
+This historical snapshot is superseded by the Milestone 5 completion review below
+and the current [product contract](PRODUCT_MODEL.md).
+
 `tessstep-product` has no dependencies and exposes validated immutable graphs built
 from caller-owned inputs. Its typed IDs are sparse identities, not offsets. Unit values
 are immutable positive SI scales; no STEP interpretation or geometry evaluator lives

@@ -1,3 +1,57 @@
+# Milestone 5 product placement completion — 2026-09-25
+
+Completed the bounded local 3D product slice: evaluated item-defined and Cartesian
+placements, mapped reuse, indirect item/context membership, shape associations,
+SI-normalized uncertainties and iterative nested assembly expansion. See
+[PRODUCT_MODEL.md](PRODUCT_MODEL.md) for transform direction, selection rules and
+unsupported forms. No public C/C++ product interface or automatic STEP-to-mesh
+binding is claimed.
+
+Observed locally on macOS arm64:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace tests and doctests, isolated build directory | passed |
+| Focused product/adapter debug and release tests | 17 passed |
+| Workspace formatting, Clippy and rustdoc with warnings denied | passed |
+| Authored product corpus and numerical assertions | 11 fixtures passed |
+| Deterministic mutation and depth checks | 1,500 adapter/expansion cases; 2,000-level assembly |
+| Product fuzz target | build and warnings-denied checks passed; 1,000 seeded driver runs without crashes |
+| Python tests, provenance, architecture and generated conformance | 21 tests, 45 fixtures, 18 packages; passed |
+
+The final workspace run used `cargo test --workspace --locked --target-dir
+/tmp/tessstep-m5-verification`; the same isolated directory was used sequentially for
+Clippy and rustdoc. The stable fuzz driver run had no coverage or sanitizer
+instrumentation and is not an instrumented fuzz campaign. No new hosted cross-platform
+CI or MSRV run was observed here.
+
+Authored corpus run `2026-09-25T20-52-32-308996Z` accepted physical syntax and schema
+decoding for all 11 fixtures. Product adaptation accepted six, correctly rejected four
+(degenerate axis, cycle, missing units and negative uncertainty), and reported the 2D
+context fixture as unsupported. Numerical assertions cover mixed-unit translations,
+reflections/nonuniform scaling and uncertainty normalization. The per-file report's
+17 changed entries reflect replacing six earlier fixture contents with actual
+placements and adding five fixtures; their manifest hashes and expected outcomes were
+reviewed. Geometry and tessellation remain `not_implemented` for these product inputs.
+
+External corpus run `2026-09-25T20-57-11-044411Z` inspected **6,438 paths / 3,227 unique
+contents** in 35.91 seconds: **2,821 clean, 38 reference-error, 368 structured rejections**;
+no crashes, timeouts or runner errors. `python3 scripts/corpus.py --check` passed.
+The per-file progress report and both comparison sets were inspected: **zero changes**
+from the prior run or baseline. Representative outcomes remain clean `Ctl019.stp`,
+reference-error `Pf037.stp` (TS1103), and rejected `Ctl001.stp` (TS1010).
+`corpus/baseline.json` was not refreshed. External schema, product, geometry and
+tessellation stages remain `not_implemented` without configured AP validators;
+physical parsing success does not establish semantic or tessellation success.
+
+The optimized product benchmark adapted 30,037 entities (1,520,210 bytes) in
+16.230 ms/input and expanded 10,003 instances in 3.494 ms/input. These are local
+observations, not statistical comparisons; the expanded fixture differs from the
+earlier benchmark. Full AP adaptation, external assembly resolution, non-immediate
+usage forms, 2D contexts and automatic geometry binding remain outside this slice.
+
+The records below describe earlier verification snapshots.
+
 # Milestone 19 appearance — 2026-09-25
 
 Implemented an independent retained appearance layer with validated linear RGBA
