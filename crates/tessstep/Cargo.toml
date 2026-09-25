@@ -1,0 +1,14 @@
+[package]
+name = "tessstep"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tessstep-express.workspace = true
+tessstep-part21.workspace = true
+tessstep-model.workspace = true
+
+[lints]
+workspace = true

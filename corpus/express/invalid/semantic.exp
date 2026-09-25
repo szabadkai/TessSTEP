@@ -1,0 +1,8 @@
+SCHEMA bad;
+TYPE cycle_a = cycle_b; END_TYPE;
+TYPE cycle_b = cycle_a; END_TYPE;
+ENTITY item SUBTYPE OF (missing_parent);
+  a : missing_type;
+  a : REAL;
+END_ENTITY;
+END_SCHEMA;

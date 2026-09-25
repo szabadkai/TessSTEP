@@ -1,0 +1,42 @@
+[package]
+name = "tessstep-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+tessstep-express = { path = "../crates/tessstep-express" }
+libfuzzer-sys = "0.4"
+tessstep-part21 = { path = "../crates/tessstep-part21" }
+tessstep-model = { path = "../crates/tessstep-model" }
+
+[[bin]]
+name = "part21_parser"
+path = "fuzz_targets/part21_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "part21_lexer"
+path = "fuzz_targets/part21_lexer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "entity_database"
+path = "fuzz_targets/entity_database.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "express_frontend"
+path = "fuzz_targets/express_frontend.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,30 @@
+(* Original TessSTEP fixture. MIT OR Apache-2.0. Not an ISO/AP schema. *)
+SCHEMA base;
+TYPE measure = REAL;
+END_TYPE;
+TYPE tone = ENUMERATION OF (warm, cool);
+END_TYPE;
+ENTITY item ABSTRACT SUPERTYPE OF (ONEOF(part));
+  name : STRING(64) FIXED;
+INVERSE
+  links : SET [0:?] OF link FOR target;
+WHERE
+  named : LENGTH(name) > 0;
+END_ENTITY;
+ENTITY part SUBTYPE OF (item);
+  samples : ARRAY [1:3] OF OPTIONAL UNIQUE measure;
+  tint : OPTIONAL tone;
+DERIVE
+  total : measure := samples[1] + samples[2];
+UNIQUE
+  unique_name : name;
+END_ENTITY;
+ENTITY link;
+  target : item;
+END_ENTITY;
+TYPE choice = SELECT (part, measure);
+END_TYPE;
+CONSTANT
+  factor : measure := 2.5;
+END_CONSTANT;
+END_SCHEMA;

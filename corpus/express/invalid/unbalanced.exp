@@ -1,0 +1,3 @@
+SCHEMA broken;
+CONSTANT value_test : REAL := (1 + 2]; END_CONSTANT;
+END_SCHEMA;

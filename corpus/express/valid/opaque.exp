@@ -1,0 +1,15 @@
+SCHEMA algorithms;
+FUNCTION twice (x : REAL) : REAL;
+  RETURN (x * 2);
+END_FUNCTION;
+PROCEDURE noop;
+END_PROCEDURE;
+RULE has_members FOR (member);
+WHERE count_members : SIZEOF(member) > 0;
+END_RULE;
+SUBTYPE_CONSTRAINT partition FOR member;
+  ABSTRACT SUPERTYPE;
+END_SUBTYPE_CONSTRAINT;
+ENTITY member;
+END_ENTITY;
+END_SCHEMA;

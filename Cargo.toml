@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "tools/*"]
+exclude = ["fuzz"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+tessstep-express = { path = "crates/tessstep-express" }
+tessstep-part21 = { path = "crates/tessstep-part21" }
+tessstep-model = { path = "crates/tessstep-model" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+overflow-checks = true
+
+[profile.bench]
+overflow-checks = true

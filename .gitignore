@@ -1,0 +1,9 @@
+/target/
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/coverage/
+/corpus/private/
+.DS_Store
+/reports/
+/dist/
+__pycache__/

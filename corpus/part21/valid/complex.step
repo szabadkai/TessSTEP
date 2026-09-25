@@ -1,0 +1,11 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('TessSTEP authored fixture'),'2;1');
+FILE_NAME('fixture.step','2026-09-25T00:00:00',('TessSTEP'),('TessSTEP'),'TessSTEP','','');
+FILE_SCHEMA(('TESSSTEP_TEST'));
+ENDSEC;
+DATA;
+#9=(A(1)B(#4)C(*));
+#4=A(2);
+ENDSEC;
+END-ISO-10303-21;

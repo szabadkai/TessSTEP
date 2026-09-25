@@ -1,0 +1,15 @@
+[package]
+name = "tessstep-part21"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
+
+[[bench]]
+name = "parser"
+harness = false

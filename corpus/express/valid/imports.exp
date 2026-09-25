@@ -1,0 +1,15 @@
+-- Original TessSTEP fixture, MIT OR Apache-2.0.
+SCHEMA consumer;
+USE FROM base (part AS component, choice);
+REFERENCE FROM base (factor);
+ENTITY assembly;
+  children : LIST [0:?] OF UNIQUE component;
+  selected : choice;
+END_ENTITY;
+END_SCHEMA;
+SCHEMA downstream;
+USE FROM consumer (component);
+ENTITY container;
+  child : component;
+END_ENTITY;
+END_SCHEMA;

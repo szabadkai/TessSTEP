@@ -1,0 +1,3 @@
+SCHEMA truncated;
+ENTITY item;
+  name : STRING;

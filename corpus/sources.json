@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "sources": [
+    {
+      "name": "dodgy-step-files",
+      "url": "https://github.com/zellyn/dodgy-step-files",
+      "revision": "2a27aed219fbf930218aac5f24b07c131411b3de",
+      "license": "MIT; see upstream LICENSE"
+    },
+    {
+      "name": "opencascade-dataset",
+      "url": "https://github.com/a-betenev/opencascade-dataset",
+      "revision": "d78a7a9e6de57699261fa03641ec1b5bafac39a1",
+      "license": "Upstream OCCT test data and public issue attachments; no blanket license declared. Download for testing only; do not redistribute with TessSTEP."
+    },
+    {
+      "name": "stepcode",
+      "url": "https://github.com/stepcode/stepcode",
+      "revision": "ed686ee1d9cb8bf763ab8d61ef6d417c3b45c146",
+      "license": "BSD-3-Clause collective work; see upstream COPYING and INTENT.md"
+    },
+    {
+      "name": "foxtrot",
+      "url": "https://github.com/Formlabs/foxtrot",
+      "revision": "69fb37688892246e670fc08eb60b7d3a92d70d3f",
+      "license": "MIT OR Apache-2.0; see upstream LICENSE-MIT and LICENSE-APACHE"
+    },
+    {
+      "name": "nist-pmi",
+      "url": "https://www.nist.gov/document/nist-pmi-step-files",
+      "sha256": "8fa78429e6d8d9b0d7681d223b6aa9ec98c3772185c55b1a0e3679b21c181911",
+      "license": "NIST permits unrestricted use of these test cases; no endorsement implied.",
+      "provenance": "https://www.nist.gov/ctl/smart-connected-systems-division/smart-connected-manufacturing-systems-group/mbe-pmi-0"
+    }
+  ]
+}

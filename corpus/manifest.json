@@ -1,0 +1,213 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "part21/invalid/binary-padding.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "1adb5f5f2017d6ac8f09235f319b4dd4a5ff6d409dc3329967d2f7157f586f92",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/comment.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "87031a1e6b78a6d7bf7877c7d30183505855a652e9f69453811e29b116fa6f9c",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/duplicate.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "08899dc30c2cc4821e1aacf6f5a56a186683229addf3288406bb77127df6144d",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/header.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "248c8638a0fb1ce5fa82110e56928ed2f9f1daeb181a862f5feba3769ef16b97",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/overflow.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "8d59b818c0dfa1aabd747775d1c7776b7091bc39f8928294f450881cf020b944",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/scope.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "50dd581ae64a28c56938cb97a42a4c089567f1bdb8f502ba634a9ff4b4950d35",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/section-order.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "8aa14a51b1f33e24252974232c3197afbfb74d71927941d984842e3db6197478",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/trailing-comma.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "46516e93ea7fdf80990f24fe641b76bd04a9281db960a9a0abfe7344247bddb5",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/truncated.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "b3bf9f9fef7f668917ffc69bba6592265f28ff26e8e9152ba27f1baec71526fe",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/typed-arity.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "0f2583fe671b3a574f4a3656aed8029aeaf0b56d072899c11d8838ee7c008b0f",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/unicode-surrogate.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "bb5b7feda1f508bbe6c4d984399129ed836c5134a7de806e9b2e7f8a8c5eb70b",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/invalid/zero-id.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "e577b12932ca3ff06e3a813f8c2855eff6a377be3d8bd5057e7b248b28a0cbc2",
+      "syntax": "invalid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/valid/complex.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "bb8b314ee9ec2a4e6d323bf697b17fde549f8cd21a25ef8e6f1b4b931e99ac57",
+      "syntax": "valid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/valid/cycle.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "dec46ee6bdd0ed62026a6b2c8d937f8c877ba01c823ae1bfe1a6890d4f9955f7",
+      "syntax": "valid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/valid/empty.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "cd72febae24f01bcfac8e788f6b1d7e39b449450cc407a2d25f97f89b5b4c4c6",
+      "syntax": "valid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/valid/extended.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "c6af8b792bda756a284e91d84e1224f2c9f46e8b8de0011c88d85495aa5bac56",
+      "syntax": "valid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/valid/missing.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "0680cfd4d99f9d64858e5ba575b1f162abb03ae8c06c8f0b4322e627b4beea3d",
+      "syntax": "valid",
+      "references": "missing"
+    },
+    {
+      "path": "part21/valid/multiple.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "062f9b847b455dadc6498d54442e6016083a1c898763eaec8a7f1b84b1380ef3",
+      "syntax": "valid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/valid/unicode.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "081232c4ba23c7b2342bf548f17d2af8049c1b011c040ca4dd4a0d902d0cfe97",
+      "syntax": "valid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "part21/valid/values.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied.",
+      "license": "MIT",
+      "sha256": "b810139631fcbd2114d61b43d06117e8add65e40331f47f3793063700b55fb15",
+      "syntax": "valid",
+      "references": "not-applicable-or-local/external"
+    },
+    {
+      "path": "express/invalid/semantic.exp",
+      "source": "Authored for TessSTEP EXPRESS frontend tests; synthetic, no ISO/AP schema or standards example copied.",
+      "license": "MIT",
+      "sha256": "068bbb8e84278252b1c87addb565b03d2dfd5e86e31c930426bcbce641beb1e8",
+      "syntax": "valid",
+      "schema": "invalid"
+    },
+    {
+      "path": "express/invalid/truncated.exp",
+      "source": "Authored for TessSTEP EXPRESS frontend tests; synthetic, no ISO/AP schema or standards example copied.",
+      "license": "MIT",
+      "sha256": "4042975da5690689512146f831c0f4bc04bf8adcd269a7d8883a55620d10f28b",
+      "syntax": "invalid",
+      "schema": "basic-checks-only"
+    },
+    {
+      "path": "express/invalid/unbalanced.exp",
+      "source": "Authored for TessSTEP EXPRESS frontend tests; synthetic, no ISO/AP schema or standards example copied.",
+      "license": "MIT",
+      "sha256": "e5b7c83d22ff5343373895beeab8baf1a9e0f21795b6073681d413264e6ee6f5",
+      "syntax": "invalid",
+      "schema": "basic-checks-only"
+    },
+    {
+      "path": "express/valid/base.exp",
+      "source": "Authored for TessSTEP EXPRESS frontend tests; synthetic, no ISO/AP schema or standards example copied.",
+      "license": "MIT",
+      "sha256": "48aa268a04283288f0fd5071e6c9a6ec8dbaa68801faa2b45e5a6d8d9f82a9bf",
+      "syntax": "valid",
+      "schema": "basic-checks-only"
+    },
+    {
+      "path": "express/valid/imports.exp",
+      "source": "Authored for TessSTEP EXPRESS frontend tests; synthetic, no ISO/AP schema or standards example copied.",
+      "license": "MIT",
+      "sha256": "8fc83b76b88752ab50728dd70aee0501e2507ccfb74e946d9499a66f6c36e278",
+      "syntax": "valid",
+      "schema": "requires-base"
+    },
+    {
+      "path": "express/valid/opaque.exp",
+      "source": "Authored for TessSTEP EXPRESS frontend tests; synthetic, no ISO/AP schema or standards example copied.",
+      "license": "MIT",
+      "sha256": "362630f01bbb15bdedee7f86f19e3aba1da4c199faaa235712a1b4412224104a",
+      "syntax": "valid",
+      "schema": "basic-checks-only"
+    }
+  ]
+}

@@ -1,0 +1,186 @@
+{
+  "format_version": 1,
+  "scope": "Milestones 0–2 physical syntax and EXPRESS declaration frontend; no complete ISO edition or AP conformance claim",
+  "features": [
+    {
+      "feature": "streaming lexer",
+      "status": "implemented",
+      "test": "first_event_does_not_read_the_whole_file",
+      "limitations": "BufRead; no full input buffering"
+    },
+    {
+      "feature": "simple/complex records",
+      "status": "implemented",
+      "test": "complex_instances_and_user_defined_names",
+      "limitations": "schema hierarchy and component order validation deferred"
+    },
+    {
+      "feature": "generic parameter families",
+      "status": "implemented",
+      "test": "all_value_categories",
+      "limitations": "typed argument count enforced; schema type compatibility deferred"
+    },
+    {
+      "feature": "Unicode and legacy pages",
+      "status": "implemented",
+      "test": "strings_and_page_reset",
+      "limitations": "X2 scalar groups, not UTF-16 surrogate-pair compatibility"
+    },
+    {
+      "feature": "exact binary bit length",
+      "status": "implemented",
+      "test": "all_single_nibble_binary_encodings",
+      "limitations": "zero physical leading padding required"
+    },
+    {
+      "feature": "numeric bounds",
+      "status": "implemented",
+      "test": "numeric_boundaries_and_underflow",
+      "limitations": "i64/u64/f64 representation limits"
+    },
+    {
+      "feature": "headers and DATA sections",
+      "status": "implemented",
+      "test": "required_header_order_and_shape",
+      "limitations": "header structure checked; implementation-level/schema-population semantics deferred"
+    },
+    {
+      "feature": "reader chunks and source spans",
+      "status": "implemented",
+      "test": "every_reader_chunk_size_has_identical_result",
+      "limitations": "byte offsets; spans always retained"
+    },
+    {
+      "feature": "resource budgets",
+      "status": "implemented",
+      "test": "every_resource_budget_is_enforced",
+      "limitations": "finite logical budgets; not an exact RSS cap"
+    },
+    {
+      "feature": "generic storage / duplicate IDs",
+      "status": "implemented",
+      "test": "duplicate_ids_never_overwrite_even_across_sections_or_namespaces",
+      "limitations": "dense records, sparse ordered index"
+    },
+    {
+      "feature": "reference collection",
+      "status": "implemented",
+      "test": "unresolved_uses_retain_owner_and_exact_parameter_span",
+      "limitations": "existence only; schema reference compatibility deferred"
+    },
+    {
+      "feature": "anchors and external declarations",
+      "status": "syntax only",
+      "test": "anchor_parameters_differ_from_entity_parameters",
+      "limitations": "URI lexical checks; no fetching or anchor dereferencing"
+    },
+    {
+      "feature": "signature sections",
+      "status": "syntax only",
+      "test": "external_references_and_signatures_are_not_trusted",
+      "limitations": "payload retained with warning; no cryptographic/CMS validation"
+    },
+    {
+      "feature": "determinism and regression corpus",
+      "status": "implemented",
+      "test": "corpus_regression_and_determinism",
+      "limitations": "synthetic fixtures; external compatibility results in VALIDATION.md"
+    },
+    {
+      "feature": "fuzz smoke",
+      "status": "implemented",
+      "test": "fuzz_corpus_smoke",
+      "limitations": "bounded deterministic mutations; industrial fuzzing not claimed"
+    },
+    {
+      "feature": "legacy scopes",
+      "status": "unsupported",
+      "test": "parser_and_lexer_fuse_after_failure",
+      "limitations": "explicit TS1301 failure"
+    },
+    {
+      "feature": "archives / BOM / tolerant recovery",
+      "status": "unsupported",
+      "test": null,
+      "limitations": "clear-text input only; strict first-error behavior"
+    },
+    {
+      "feature": "EXPRESS lexer and source-located AST",
+      "status": "implemented",
+      "test": "express_ast_covers_declarations_and_retains_expressions",
+      "limitations": "declaration subset; expression grammar is opaque"
+    },
+    {
+      "feature": "EXPRESS imports and schema IR",
+      "status": "implemented",
+      "test": "express_import_resolution_and_reexports",
+      "limitations": "explicitly supplied sources; basic structural checks only"
+    },
+    {
+      "feature": "EXPRESS declaration and graph validation",
+      "status": "implemented",
+      "test": "express_semantic_checks_and_graph_cycles",
+      "limitations": "no full expression/type/cardinality semantics or AP claim"
+    },
+    {
+      "feature": "EXPRESS inverse target lookup",
+      "status": "implemented",
+      "test": "express_inverse_targets_are_checked",
+      "limitations": "forward type compatibility/cardinality explicitly unsupported"
+    },
+    {
+      "feature": "EXPRESS expressions and algorithms",
+      "status": "syntax preservation only",
+      "test": "express_opaque_semantics_are_never_silent",
+      "limitations": "verbatim source with unsupported diagnostics; bodies not semantically validated"
+    },
+    {
+      "feature": "EXPRESS budgets and malformed input",
+      "status": "implemented",
+      "test": "express_resource_limits_cover_parsing_and_resolution",
+      "limitations": "logical budgets; hard nesting ceiling 128; no recovery"
+    },
+    {
+      "feature": "EXPRESS expansion protection",
+      "status": "implemented",
+      "test": "express_expansion_budgets_are_enforced_before_copying",
+      "limitations": "work budgets; not an exact RSS cap"
+    },
+    {
+      "feature": "EXPRESS fuzz smoke",
+      "status": "implemented",
+      "test": "express_fuzz_smoke",
+      "limitations": "bounded deterministic mutations; industrial hardening not claimed"
+    },
+    {
+      "feature": "Generated bindings / schema-aware instances",
+      "status": "not implemented",
+      "test": null,
+      "limitations": "Milestones 3 and 4"
+    },
+    {
+      "feature": "AP242 / AP203 / AP214 schema conformance",
+      "status": "not implemented",
+      "test": null,
+      "limitations": "names and raw values can be retained without understanding them"
+    },
+    {
+      "feature": "products / units / geometry / topology / meshes",
+      "status": "not implemented",
+      "test": null,
+      "limitations": "no geometry or tessellation code started"
+    },
+    {
+      "feature": "public C ABI",
+      "status": "not implemented",
+      "test": null,
+      "limitations": "required supported interface; opaque handles, C-defined ABI, allocator and panic isolation; implementation pending"
+    },
+    {
+      "feature": "public C++ wrapper / CMake package",
+      "status": "not implemented",
+      "test": null,
+      "limitations": "required supported interface; RAII, typed errors, read-only mesh views and TessSTEP::TessSTEP; implementation pending"
+    }
+  ]
+}
