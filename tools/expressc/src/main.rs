@@ -21,6 +21,8 @@ fn run() -> Result<u8, String> {
     let mut json = false;
     let mut strict = false;
     let mut ast = false;
+    let mut rust = false;
+    let mut generation_limits = tessstep_codegen::Limits::default();
     let mut paths = Vec::new();
     let mut limits = Limits::default();
     let mut args = env::args().skip(1);
@@ -34,14 +36,16 @@ fn run() -> Result<u8, String> {
             "--" => positional = true,
             "--help" | "-h" => {
                 println!(
-                    "Usage: expressc [--json | --ast] [--strict] [--max-bytes N] [--max-tokens N] [--max-work N] [--max-nesting N] [--] FILE.exp ...\nCompile explicitly supplied schemas. Expressions remain opaque. --strict rejects unsupported semantics.\nExit: 0 structural success; 1 syntax/semantic/strict failure; 2 usage or I/O failure."
+                    "Usage: expressc [--json | --ast | --rust] [--strict] [--max-bytes N] [--max-tokens N] [--max-work N] [--max-nesting N] [--max-output-bytes N] [--] FILE.exp ...\nCompile explicitly supplied schemas. Expressions remain opaque. --rust emits bindings and reflection to stdout. --strict rejects unsupported semantics.\nExit: 0 structural success; 1 syntax/semantic/generation/strict failure; 2 usage or I/O failure."
                 );
                 return Ok(0);
             }
             "--json" => json = true,
             "--strict" => strict = true,
             "--ast" => ast = true,
-            "--max-bytes" | "--max-tokens" | "--max-work" | "--max-nesting" => {
+            "--rust" => rust = true,
+            "--max-bytes" | "--max-tokens" | "--max-work" | "--max-nesting"
+            | "--max-output-bytes" => {
                 let n = args
                     .next()
                     .ok_or_else(|| format!("{arg} requires a nonnegative integer"))?
@@ -50,7 +54,11 @@ fn run() -> Result<u8, String> {
                 match arg.as_str() {
                     "--max-bytes" => limits.max_input_bytes = n,
                     "--max-tokens" => limits.max_tokens = n,
-                    "--max-work" => limits.max_work = n,
+                    "--max-work" => {
+                        limits.max_work = n;
+                        generation_limits.max_work = n;
+                    }
+                    "--max-output-bytes" => generation_limits.max_output_bytes = n,
                     _ => limits.max_nesting = n,
                 }
             }
@@ -61,8 +69,8 @@ fn run() -> Result<u8, String> {
     if paths.is_empty() {
         return Err("supply one or more EXPRESS files; see --help".into());
     }
-    if json && ast {
-        return Err("--json and --ast are mutually exclusive".into());
+    if u8::from(json) + u8::from(ast) + u8::from(rust) > 1 {
+        return Err("--json, --ast and --rust are mutually exclusive".into());
     }
     if paths.len() > limits.max_schemas {
         return Err("source count exceeds schema limit".into());
@@ -89,7 +97,19 @@ fn run() -> Result<u8, String> {
         .collect();
     let result = compile(&sources, limits);
     let success = result.ir.is_some() && (!strict || result.diagnostics.is_empty());
-    let output = if json {
+    let output = if rust {
+        if success {
+            match tessstep_codegen::generate(&result, generation_limits) {
+                Ok(source) => source,
+                Err(e) => {
+                    eprintln!("expressc: {e}");
+                    return Ok(1);
+                }
+            }
+        } else {
+            String::new()
+        }
+    } else if json {
         json_output(&result, success)
     } else if ast {
         format!("{:#?}\n", result.schemas)

@@ -1,17 +1,27 @@
 # Architecture
 
-Status: repository foundation, Part 21 vertical slice and EXPRESS frontend. Architecture is a
+Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust generation
+and runtime reflection. Architecture is a
 contract for later work, not a declaration that the geometry kernel already exists.
 
 ## Implemented dependency graph
 
 ```text
-expressc ──→ tessstep-express
+expressc ──→ tessstep-codegen ──→ tessstep-express
+    └─────────────────────────→ tessstep-express
+
+generated consumer ──→ tessstep-schema (standard library only)
+
+tessstep-capi ──→ tessstep-model / tessstep-part21
+C++ wrapper ──→ public C ABI only
 
 stepdump ──→ tessstep-model ──→ tessstep-part21
+                  └─────────→ tessstep-schema
     └────────────────────────→ tessstep-part21
 
-tessstep ──→ tessstep-express
+tessstep ──→ tessstep-codegen
+    ├──────→ tessstep-schema
+    ├──────→ tessstep-express
     ├──────→ tessstep-model
     └──────→ tessstep-part21
 ```
@@ -44,7 +54,8 @@ produce explicit unsupported diagnostics even when structural checks pass.
 
 `expressc` owns bounded file reading, output formatting and exit policy. It never searches
 for schemas implicitly. Its JSON is an inspection summary; the library owns the full AST
-and IR. No physical instance schema-validation stage or code generation is introduced.
+and IR. It also selects Rust generation and its output/error policy; it does not decode
+physical instances against a schema.
 
 Milestone 2 architecture review: the new `expressc → tessstep-express` edge is isolated
 from the physical-parser graph. Ordered maps and source-order IDs keep results stable
@@ -56,6 +67,24 @@ attribute checks can be superlinear; they terminate with a resource diagnostic r
 than claiming linear complexity. Source/AST/IR retention is bounded by logical budgets,
 not an exact RSS cap. No new production dependency or unsafe code was introduced.
 
+## Milestone 3 architecture review
+
+`tessstep-codegen` depends only on `tessstep-express`. It traverses resolved domains and
+linked source AST constraints and emits Rust through a byte-bounded writer. Schema and
+declaration order follow the frontend; symbol maps are ordered. Ancestor expansion is
+iterative and work-bounded, with diamond deduplication. Expanding inherited fields can
+be superlinear; no linear-time or exact-memory guarantee is claimed. Nested domains
+have a hard depth cap. Invalid compilation, output, work and nesting failures are typed.
+
+`tessstep-schema` depends only on the standard library. Generated consumers need this
+runtime crate, not the compiler frontend. Metadata consists of static slices, strings
+and resolved IDs, with borrowed, allocation-free lookups. Owned records and nonzero typed
+references are unchecked representation types, separate from the generic physical model.
+Constraints and unsupported semantics remain visible in metadata; no EXPRESS expression
+is executed. No runtime source recompilation, global state, unsafe code or new external
+production dependency was added. Rust bindings are not the public C ABI; that boundary
+and the future C++ ownership contracts remain unchanged.
+
 ## Planned boundaries
 
 Only implemented crates are instantiated; empty geometry crates would imply capability
@@ -64,8 +93,6 @@ crate when its first tested vertical slice is implemented.
 
 | Crate | Responsibility |
 |---|---|
-| tessstep-codegen | deterministic Rust generation from supplied IR |
-| tessstep-schema | runtime schema reflection and binding interfaces |
 | tessstep-ap242 | generated bindings and explicit STEP-to-CAD adapters |
 | tessstep-product | normalized products, representations, assembly instances |
 | tessstep-math | STEP-independent units, spaces, transforms and tolerances |
@@ -76,7 +103,6 @@ crate when its first tested vertical slice is implemented.
 | tessstep-tessellate | tolerance-driven tessellation of normalized B-reps |
 | tessstep-validate | structured semantic, topology and mesh reports |
 | tessstep-io | exporters outside the kernel |
-| tessstep-capi | supported public C ABI with versioned opaque handles and panic containment |
 
 The supported public C++ wrapper sits above `tessstep-capi` and consumes only its
 C contract. It provides RAII ownership, typed errors, and zero-copy read-only mesh
@@ -84,8 +110,8 @@ views where possible. Its installed CMake package exports `TessSTEP::TessSTEP`.
 No Rust type, layout, allocator, panic, or ownership semantics may cross the ABI
 boundary. Mesh storage must accommodate stable public read-only buffer formats
 without exposing private kernel layouts. See [C_API.md](C_API.md) for ownership,
-view lifetime, compatibility and consumer-test requirements. Both interfaces are
-planned public deliverables; neither is implemented in the current parser slice.
+view lifetime, compatibility and consumer-test requirements. The physical-document subset of both interfaces is implemented; schema decoding
+and mesh views remain future work.
 
 The three data worlds remain separate: generic STEP instances, normalized CAD objects,
 and mesh assets. A tessellator must not inspect raw STEP parameters. Geometry must be
@@ -109,3 +135,39 @@ The streaming parser retains one record, reader buffer, bounded recursion and sy
 pool; the collector retains the full AST and indexes. Collection is not constant-memory.
 Each parse has finite input, token, value, nesting, entity, section and record budgets.
 There is no global mutable state, hidden healing, unsafe optimization, or CAD-kernel FFI.
+
+## Milestone 4 initial decoder review
+
+`tessstep-model → tessstep-schema` is now active; the physical parser and reflection
+runtime remain independent standard-library-only crates. Generic document storage is
+unchanged. An explicit `model::decode` phase borrows the physical document and supplied
+metadata, resolves identities before values, and publishes immutable views only on
+success. No schema compiler or generator is added to the runtime dependency graph.
+
+Hierarchy and reference-compatibility walks are iterative; nested domains/values have
+a hard recursion ceiling of 128. Work budgets cover metadata traversal and retained
+attribute expansion. References are checked by identity without graph recursion. Sparse
+ordered indexes and source-order output preserve deterministic behavior. Logical work
+limits do not promise exact RSS/time bounds; symbol searches and repeated inheritance
+expansion can be superlinear. Unsupported semantics are typed failures, not warnings
+attached to successful validation. See DECODING.md for the supported subset and lifetime
+contract. This addition contains no unsafe code or third-party dependency and exposes
+no Rust representation through C/C++ interfaces.
+
+## Public-interface slice architecture review
+
+`tessstep-capi` depends on the model and physical parser only, with no third-party
+production dependencies. It translates kernel data into explicitly C-defined records,
+keeps immutable documents behind retained opaque handles, and gives reports independent
+ownership. Source-order entity summaries add O(n) storage and permit O(1) index access;
+ID/component-name lookup uses the model's O(log n) index. Reference diagnostics are
+computed explicitly per request. Names are borrowed in C and explicitly copied in C++.
+
+Only this bridge permits unsafe code, with local SAFETY invariants and
+`deny(unsafe_op_in_unsafe_fn)`; all kernel crates still forbid it. Output slots are
+cleared before validation and handles published only after fallible work completes.
+An unwind guard contains unexpected panics without assuming allocator failures or
+process aborts are recoverable. The C++ wrapper knows only the C protocol. Installed
+consumer, layout, exported-symbol, relocation and sanitizer checks are release gates.
+The initial package contains a shared library; static linkage and mesh storage remain
+unimplemented. The dependency checker now covers cdylib and rlib targets explicitly.

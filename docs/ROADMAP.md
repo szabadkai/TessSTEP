@@ -1,7 +1,8 @@
 # Milestones
 
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
-vertical slice, and Milestone 2 EXPRESS frontend with explicit conformance limits.
+vertical slice, Milestone 2 EXPRESS frontend and Milestone 3 Rust bindings/reflection
+with explicit conformance limits.
 It does not start geometry or claim industrial hardening. Read ARCHITECTURE.md,
 CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
@@ -16,10 +17,23 @@ unsupported diagnostics. Malformed-input tests, limits, deterministic fuzz smoke
 a libFuzzer target and compiler benchmarks are included. See EXPRESS.md for the exact
 subset and VALIDATION.md for observed checks. No AP242 hierarchy was hand encoded.
 
-**Next: Milestone 3 — deterministic Rust bindings and reflection.**
+**Milestone 3 delivered:** `tessstep-codegen` generates deterministic owned Rust records,
+nominal types, enums, typed entity references and immutable `tessstep-schema` metadata
+from successful supplied compilations. `expressc --rust` emits source with explicit
+unsupported-semantic diagnostics. Consumer tests compile/run generated code and check
+that unrelated entity references cannot be assigned. Inheritance, import identity,
+anonymous domains, constraint preservation, generation budgets, fuzz smoke and a benchmark
+are covered. See SCHEMA.md for the contract and VALIDATION.md for observed checks.
 
-Milestone 3 adds deterministic Rust bindings and reflection with a generated-code compile
-test. Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
+**In progress: Milestone 4 — schema-aware instance decoding and validation.**
+
+The first slice adds borrowed structural decoding for simple entities, single inheritance,
+primitive/named domains, ARRAY/LIST/BAG bounds and compatible local references. Typed errors,
+resource limits, generated-metadata consumer coverage and mutation smoke are included.
+Complex mappings, SELECT, uniqueness and expression validation remain open; see
+[DECODING.md](DECODING.md). This is a milestone start, not completion.
+
+Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
 analytic curves/surfaces and NURBS. Milestones 11–12 establish topology validity states
 and UV trimming. Milestones 13–17 implement shared-edge sampling, planar and curved
@@ -33,4 +47,6 @@ target. Begin with the first usable document operations; add immutable zero-copy
 mesh views as the mesh pipeline becomes available. Design storage with that
 contract in mind. C/C++ installed-package consumer tests and ABI containment are
 release gates, not optional bindings work. See [C_API.md](C_API.md). This contract
-does not change the immediate next milestone or claim either interface exists yet.
+does not change the next schema-decoding milestone. The first physical-document
+slice now implements both interfaces, typed results and the shared CMake package;
+mesh views and public schema-decoding operations remain pending.

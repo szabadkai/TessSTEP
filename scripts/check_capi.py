@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Install, relocate, and test ABI 1 C/C++ consumers without Cargo in their PATH."""
+import argparse
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+SYMBOLS = {
+    "ts_api_version", "ts_parse_options_init", "ts_document_parse", "ts_document_retain",
+    "ts_document_release", "ts_document_get_info", "ts_document_entity_at",
+    "ts_document_record_name", "ts_document_diagnostics", "ts_diagnostics_release",
+    "ts_diagnostics_count", "ts_diagnostics_get",
+}
+
+
+def run(command, **kwargs):
+    subprocess.run([str(c) for c in command], check=True, **kwargs)
+
+
+def check_symbols(library, consumer_build):
+    if os.name == "nt":
+        cache = (consumer_build / "CMakeCache.txt").read_text(encoding="utf-8")
+        linker = re.search(r"^CMAKE_LINKER:FILEPATH=(.+)$", cache, re.M)
+        if not linker:
+            raise RuntimeError("Cannot locate MSVC dumpbin for ABI export check")
+        dumpbin = Path(linker[1]).with_name("dumpbin.exe")
+        output = subprocess.check_output([str(dumpbin), "/EXPORTS", str(library)], text=True)
+        exported = set(re.findall(r"^\s+\d+\s+[0-9A-F]+\s+[0-9A-F]+\s+(\S+)", output, re.M))
+    else:
+        import sys
+        flags = ["-gUj"] if sys.platform == "darwin" else ["-D", "--defined-only", "--format=posix"]
+        output = subprocess.check_output(["nm", *flags, str(library)], text=True)
+        exported = {line.split()[0].removeprefix("_") if sys.platform == "darwin"
+                    else line.split()[0] for line in output.splitlines() if line.strip()}
+    if exported != SYMBOLS:
+        raise RuntimeError(f"ABI export mismatch: missing={SYMBOLS-exported}, extra={exported-SYMBOLS}")
+    print(f"ABI: exactly {len(SYMBOLS)} C symbols exported; no Rust exports", flush=True)
+
+
+def verify_installed(package, *, sanitizers=False):
+    """Only the copied package and standalone consumer sources are used here."""
+    with tempfile.TemporaryDirectory(prefix="tessstep-consumer-") as temporary:
+        work = Path(temporary)
+        relocated = work / "relocated package"
+        shutil.copytree(package, relocated)
+        source = work / "consumer"
+        shutil.copytree(ROOT / "tests/capi", source)
+        env = os.environ.copy()
+        # Stub executables make accidental Rust toolchain use an explicit failure,
+        # including on machines where Cargo shares a directory with C/C++ tools.
+        guards = work / "no-rust"
+        guards.mkdir()
+        for tool in ("cargo", "rustc", "rustup"):
+            stub = guards / (tool + (".cmd" if os.name == "nt" else ""))
+            stub.write_text("@exit /b 99\n" if os.name == "nt" else "#!/bin/sh\nexit 99\n", encoding="utf-8")
+            stub.chmod(0o755)
+        env["PATH"] = os.pathsep.join([str(guards), str(relocated / "bin"), env.get("PATH", "")])
+        env.pop("CARGO_HOME", None)
+        env.pop("RUSTUP_HOME", None)
+        for config in ("Debug", "Release"):
+            build = work / config
+            run(["cmake", "-S", source, "-B", build, f"-DCMAKE_PREFIX_PATH={relocated}",
+                 f"-DCMAKE_BUILD_TYPE={config}", f"-DTESSSTEP_SANITIZERS={'ON' if sanitizers else 'OFF'}"], env=env, cwd=work)
+            run(["cmake", "--build", build, "--config", config], env=env, cwd=work)
+            run(["ctest", "--test-dir", build, "-C", config, "--output-on-failure"], env=env, cwd=work)
+            if config == "Release":
+                libraries = [p for p in relocated.rglob("*tessstep_capi*") if p.suffix in {".dll", ".dylib", ".so"}]
+                if len(libraries) != 1:
+                    raise RuntimeError(f"Expected exactly one shared ABI library: {libraries}")
+                check_symbols(libraries[0], build)
+    print("C/C++ installed package: relocation, Debug/Release, ABI, ownership and concurrent consumers passed", flush=True)
+
+
+def install_package(build_dir, prefix, *, library_dir=None, target=None):
+    command = ["cmake", "-S", ROOT, "-B", build_dir, f"-DCMAKE_INSTALL_PREFIX={prefix}",
+               "-DCMAKE_INSTALL_LIBDIR=lib", "-DCMAKE_INSTALL_BINDIR=bin", "-DCMAKE_INSTALL_INCLUDEDIR=include"]
+    if library_dir:
+        command += [f"-DTESSSTEP_LIBRARY_DIR={Path(library_dir).resolve()}"]
+    if target:
+        command += [f"-DTESSSTEP_CARGO_TARGET={target}"]
+    run(command)
+    run(["cmake", "--build", build_dir, "--config", "Release"])
+    run(["cmake", "--install", build_dir, "--config", "Release"])
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--library-dir", type=Path, help="Reuse an existing release cdylib")
+    parser.add_argument("--sanitizers", action="store_true", help="ASan/UBSan on native consumers (Rust library is not instrumented)")
+    args = parser.parse_args()
+    with tempfile.TemporaryDirectory(prefix="tessstep-capi-") as temporary:
+        work = Path(temporary)
+        installed = work / "original install"
+        install_package(work / "build", installed, library_dir=args.library_dir)
+        # Move away from the original install path before testing relocation.
+        moved = work / "moved install"
+        installed.rename(moved)
+        verify_installed(moved, sanitizers=args.sanitizers)
+
+
+if __name__ == "__main__":
+    main()

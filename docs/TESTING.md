@@ -14,6 +14,7 @@ python3 scripts/check_express.py
 python3 scripts/conformance.py --check
 cargo bench -p tessstep-part21 --bench parser
 cargo bench -p tessstep-express --bench compiler
+cargo bench -p tessstep-codegen --bench generator
 cargo test -p tessstep-model --test fuzz_smoke -- --nocapture
 cargo test -p tessstep-express --test fuzz_smoke -- --nocapture
 ```
@@ -60,3 +61,38 @@ CLI JSON with Python's independent decoder, strict-policy exit status, resolved 
 source spans and byte determinism. The separate EXPRESS fuzz target shares its finite
 exercise function with stable mutation/prefix/random-input tests. Schema-source frontend
 success is separate from schema validation of STEP instances (Milestone 4).
+
+Milestone 3 tests compile generated Rust with an independent rustc consumer that links
+only `tessstep-schema`, run its reflection assertions, and require a nominal-reference
+assignment to fail compilation. Coverage includes repeated byte-identical generation,
+imports and aliases, recursive references, diamond inheritance, cross-schema inherited
+anonymous domains, enum/SELECT construction, scalar/aggregate/optional mappings, retained
+rules/constants/algorithms and exact output budget boundaries. Shared `schema_codegen`
+fuzz exercise code checks deterministic generation under finite budgets. Stable prefix,
+mutation and seeded arbitrary-input smoke runs are part of `cargo test --workspace`.
+The generator benchmark reports throughput for an already compiled 5,001-declaration IR.
+Public C/C++ consumer checks are described below.
+
+## Milestone 4 initial decoder
+
+`cargo test -p tessstep-model` includes borrowed views, inherited attributes, forward/cyclic
+references, domain/bounds checks, precise error context, unsupported cases, malformed
+metadata and deterministic decoder mutation smoke. `cargo test -p tessstep-codegen generated_metadata_decodes_physical_instances` compiles and runs a consumer of freshly
+generated metadata with the model runtime. See DECODING.md for supported-stage limits.
+
+## Public C/C++ package
+
+`cargo test -p tessstep-capi` checks bridge ownership, diagnostic mapping, frozen
+layouts, every exposed parse budget, cleared failure outputs, Send/Sync storage and
+panic containment (including a panic payload with a panicking destructor).
+`python3 scripts/check_capi.py` builds/installs the shared package, removes its original
+installation path and tests relocated standalone C11/C++17 consumers in Debug and
+Release. Consumers resolve only `TessSTEP::TessSTEP`, with Rust commands blocked.
+C tests check the independent ABI layouts, statuses, pointer stability under retained
+ownership and reports after document release. C++ tests check moves, typed failures,
+owned diagnostics and concurrent reads. Exact export checks reject Rust or accidental
+public symbols. Packaging invokes these tests on every CI/release target.
+
+Use `--library-dir target/release` to reuse a release build and `--sanitizers` to
+instrument native consumers with ASan/UBSan (Linux/macOS CI). Rust-library sanitizer
+instrumentation, static packages and mesh-view tests are not claimed by this slice.

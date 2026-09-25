@@ -2,8 +2,75 @@
 
 The C ABI and C++ wrapper are supported public interfaces. They carry the same
 compatibility, documentation and release-testing obligations as the public Rust
-API. This is a binding architectural requirement. Implementation status: neither
-interface is exported in the current Milestone 0–2 delivery.
+API. This is a binding architectural requirement. The first implementation exports
+ABI 1 physical-document operations, a C++17 wrapper and a shared CMake package.
+Schema decoding, geometry and meshes are not exposed through this interface yet.
+
+## Using the first slice
+
+The authoritative protocol is [tessstep.h](../include/tessstep/tessstep.h); the
+header-only C++ wrapper is [tessstep.hpp](../include/tessstep/tessstep.hpp).
+Build/install from source (Rust 1.85+, CMake 3.20+, C11/C++17 toolchain):
+
+```sh
+cmake -S . -B target/cmake -DCMAKE_INSTALL_PREFIX=/absolute/install/path
+cmake --build target/cmake --config Release
+cmake --install target/cmake --config Release
+```
+
+Consumers set `CMAKE_PREFIX_PATH` to that installation, then use:
+
+```cmake
+find_package(TessSTEP 0.1 CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE TessSTEP::TessSTEP)
+```
+
+Prebuilt consumers need only CMake and their C/C++ toolchain, not Cargo. This slice
+supports shared linkage on 64-bit Linux (GCC/Clang), Windows (MSVC 2022), and macOS
+(Apple Clang). Debug and Release consumers link the same release ABI library; no
+CRT allocation ownership crosses the boundary. Static linkage is not provided.
+Windows applications must make the installed `bin` directory available to the DLL
+loader (for example through PATH, or by placing the DLL beside the executable).
+Package relocation and compiler/platform behavior are CI gates; local verification
+is macOS arm64 only. See VALIDATION.md for observed results.
+
+```cpp
+#include <tessstep/tessstep.hpp>
+// bytes contains a complete physical STEP file, read by the application.
+auto parsed = tessstep::Document::parse(bytes);
+if (!parsed) {
+    // parsed.error().code and .diagnostics own their structured error details.
+    return 1;
+}
+auto document = std::move(parsed).value();
+auto info = document.info();
+auto report = document.diagnostics(); // Separate reference/trust analysis.
+```
+
+`ts_document_parse` borrows bytes only during the call, returns a complete immutable
+document or a typed failure, and accepts explicit budgets initialized by
+`ts_parse_options_init`. `ts_document_get_info`, `ts_document_entity_at`, and
+`ts_document_record_name` inspect counts, source-order IDs and component names.
+C names are borrowed without copying; C++ `record_name` explicitly returns owned
+text. Reference analysis returns an independent report that survives document
+release. A successful analysis can contain error diagnostics. Parse success never
+means schema or CAD validity.
+
+Each document acquisition/retain requires `ts_document_release`; every diagnostic
+report requires `ts_diagnostics_release`. C++ wraps both paths in RAII, including
+when C++ string/vector allocation throws. C++ document copies are disabled; moves
+and destructors are nonthrowing. Queries on moved-from documents return a typed
+invalid-argument result. Diagnostics and names returned by C++ are owned copies.
+There are no callbacks, global last-error slots, file access or mesh placeholders.
+
+ABI 1 freezes the header's fixed-width status values and record layouts. Options
+must have the exact size and ABI version initialized by the library; zero budgets
+mean zero. Future incompatible records receive new names, never appended fields.
+NULL, empty input, failure outputs, borrowed-text lifetimes and concurrent reads are
+specified in the header. C opaque handles never expose Rust storage layouts.
+Unwinding panics become internal failures; an unexpected panic payload is deliberately
+forgotten to prevent a panicking destructor from escaping. Aborts and allocation
+termination remain unrecoverable. Release paths have no expected panic sources.
 
 ## ABI boundary
 
@@ -109,5 +176,11 @@ parent destruction, and the absence of copies on documented zero-copy paths.
 Exercise relocation and `find_package` through `TessSTEP::TessSTEP` on all supported
 platforms, with sanitizer and ABI/layout checks where applicable.
 
-These are future implementation gates, not tests claimed by this documentation
-change. See [ARCHITECTURE.md](ARCHITECTURE.md) and [CONFORMANCE.md](CONFORMANCE.md).
+The document subset is exercised by `cargo test -p tessstep-capi` and
+`python3 scripts/check_capi.py`. The latter installs and relocates the package,
+compiles/runs independent C11 and C++17 consumers in Debug/Release with Rust tool
+invocations blocked, and verifies the exact exported symbol set. Release packaging
+runs those same consumers. Native consumer ASan/UBSan is available with
+`--sanitizers`; this does not instrument the Rust library. Mesh lifetime and zero-copy
+acceptance tests remain future gates. See [ARCHITECTURE.md](ARCHITECTURE.md) and
+[CONFORMANCE.md](CONFORMANCE.md).

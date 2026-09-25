@@ -6,24 +6,26 @@
 
 **A memory-safe STEP/EXPRESS geometry kernel and watertight adaptive tessellator for Rust.**
 
-This repository implements Milestones 0–2: repository infrastructure, streaming
+This repository implements Milestones 0–3: repository infrastructure, streaming
 physical-file parsing, generic entity storage, reference analysis, and an EXPRESS
-frontend with basic schema validation. The CLIs are `stepdump` and `expressc`.
-It does **not** yet generate bindings or interpret AP242 instances, products, units,
-geometry, or meshes. EXPRESS expression semantics remain explicitly unsupported.
+frontend with basic schema validation, deterministic Rust bindings and static schema
+reflection. Milestone 4 has begun with [structural instance decoding](docs/DECODING.md)
+against explicitly supplied metadata. The CLIs are `stepdump` and `expressc`.
+It does **not** yet interpret AP242, products, units, geometry, or meshes. EXPRESS expression semantics remain explicitly unsupported.
 A file parsing successfully is not evidence of schema or CAD conformance.
 
-The C ABI and C++ wrapper are supported public-interface commitments. Their
-[contract](docs/C_API.md) requires complete isolation from Rust implementation
-semantics, C++ RAII ownership, typed errors, zero-copy read-only mesh views where
-possible, and the CMake target `TessSTEP::TessSTEP`. Neither interface is implemented
-in this initial parser delivery.
+The [C ABI and C++17 wrapper](docs/C_API.md) now expose physical buffer parsing,
+immutable document inspection and structured reference diagnostics. The C++ wrapper
+provides move-only RAII ownership and typed results. Install the shared library and
+headers with CMake, then link `TessSTEP::TessSTEP`. Schema decoding and mesh views
+are not exposed by these interfaces yet.
 
 ```sh
 cargo build --workspace
 cargo run -p stepdump -- corpus/part21/valid/values.step
 cargo run -p stepdump -- --json corpus/part21/valid/extended.step
 cargo run -p expressc -- --json corpus/express/valid/base.exp corpus/express/valid/imports.exp
+cargo run -p expressc -- --rust corpus/express/valid/base.exp > bindings.rs
 cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
@@ -60,12 +62,13 @@ nested and typed parameters, exact binary bit lengths, Unicode encodings, multip
 DATA sections, anchors, external reference declarations, and signature payloads.
 See the generated [conformance table](docs/CONFORMANCE.md) for limitations.
 There is no tolerant syntax recovery, external fetching, cryptographic verification,
-legacy scope handling, archive reader, schema-aware instance validation, or AP support claim.
+legacy scope handling, archive reader, full schema validation, or AP support claim.
 
 - [Architecture and dependency boundaries](docs/ARCHITECTURE.md)
 - [Physical format and resource limits](docs/PART21.md)
 - [Tests, fuzzing, and benchmarks](docs/TESTING.md)
 - [EXPRESS frontend and limits](docs/EXPRESS.md)
-- [Next milestone: generated bindings](docs/ROADMAP.md)
+- [Generated bindings and reflection](docs/SCHEMA.md)
+- [Next milestone: schema-aware decoding](docs/ROADMAP.md)
 
 Licensed under [MIT](LICENSE-MIT).

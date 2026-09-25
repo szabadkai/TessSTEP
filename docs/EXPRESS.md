@@ -2,7 +2,7 @@
 
 Status: Milestone 2 implemented as a declaration frontend with basic structural semantic
 checks. This is not full ISO 10303-11 conformance, expression validation, AP support,
-generated bindings, or schema-aware validation of physical STEP instances.
+schema-aware validation of physical STEP instances.
 
 ## API and phases
 
@@ -140,6 +140,8 @@ full IR; use the Rust API for typed domains. `--ast` prints the complete debug A
 
 Exit 0: structural success under the selected policy; exit 1: parse/semantic/resource
 failure or strict-policy rejection; exit 2: usage/I/O/UTF-8/file-read budget failure.
-The CLI bounds file reads cumulatively before compiling. It never writes generated code.
+The CLI bounds file reads cumulatively before compiling. Milestone 3 adds `--rust`
+for deterministic bindings and reflection; see [SCHEMA.md](SCHEMA.md). The frontend
+validation limits above still apply independently of generated code.
 
 See TESTING.md, CONFORMANCE.md and VALIDATION.md for test evidence and observed results.

@@ -53,14 +53,17 @@ on every PR and main push and is required again by the release workflow.
    packages, then publish the draft. Manual dispatch must select an existing
    matching tag; dispatching on a branch fails safely.
 
-Release assets contain `stepdump`, `expressc`, documentation, MIT license, and
-authored examples. GitHub also provides the tagged source archive for Rust
+Release assets contain `stepdump`, `expressc`, the shared ABI 1 library, C/C++
+headers, relocatable CMake package, documentation, MIT license, and authored examples. GitHub also provides the tagged source archive for Rust
 library consumers. This workflow does not publish crates to crates.io.
 
-No C ABI, C++ wrapper, CMake package, geometry engine or tessellator is currently
-shipped. Before exporting those interfaces, extend the release matrix with the
-installed-package C/C++ consumer and compatibility tests in `C_API.md`. Merely
-having a release job does not establish implementation of those interfaces.
+Packaging installs and relocates the C/C++ SDK, compiles/runs standalone C11/C++17
+consumers in both Debug and Release, and checks the exact exported ABI symbol set.
+No Rust toolchain is used by those consumers. The existing Linux/Windows/macOS release
+matrix runs this gate before creating archives; Linux/macOS CI also instruments native
+consumers with ASan/UBSan. Shared linkage is the only packaged configuration. Schema
+operations, geometry and mesh views are not exposed by the public ABI yet. Local
+verification does not substitute for the cross-platform CI results in `C_API.md`.
 
 Local equivalents:
 

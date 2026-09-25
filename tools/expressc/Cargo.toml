@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+tessstep-codegen.workspace = true
 tessstep-express.workspace = true
 
 [lints]

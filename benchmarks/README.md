@@ -19,3 +19,9 @@ schema with 5,000 entities and one type before timing. Each phase has one warmup
 two-second sample; allocation and destruction are included. Assertions check declaration
 counts and compilation diagnostics. This measures local frontend throughput, not AP-scale
 schema compatibility or code generation.
+
+`cargo bench -p tessstep-model --bench decoder` measures the initial structural decoder
+on 20,000 simple entities with cyclic references and supplied reflection metadata.
+Physical parsing/fixture creation are outside timing. One warmup precedes a two-second
+sample; borrowed view/index allocation and destruction are included. This is a structural
+throughput observation, not AP conformance or a memory benchmark.

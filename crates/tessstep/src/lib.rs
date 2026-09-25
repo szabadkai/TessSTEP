@@ -1,7 +1,9 @@
 //! TessSTEP: a memory-safe STEP/EXPRESS geometry kernel and adaptive tessellator.
 //!
-//! This release exposes physical parsing, generic storage and the EXPRESS frontend.
-//! No schema-aware instance validation, CAD interpretation or tessellation is implemented.
+//! This release exposes physical parsing, generic storage, the EXPRESS frontend,
+//! deterministic Rust generation and static schema reflection.
+//! A first structural instance decoder is available in `model::decode`.
+//! No full schema conformance, CAD interpretation or tessellation is implemented.
 //!
 //! ```
 //! use tessstep::{parse, ParseLimits};
@@ -18,8 +20,10 @@
 //! ```
 #![forbid(unsafe_code)]
 
+pub use tessstep_codegen as codegen;
 pub use tessstep_express as express;
 pub use tessstep_model as model;
 pub use tessstep_model::{Document, parse};
 pub use tessstep_part21 as part21;
 pub use tessstep_part21::{Diagnostic, ParseLimits};
+pub use tessstep_schema as schema;

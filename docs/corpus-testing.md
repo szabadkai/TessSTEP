@@ -82,7 +82,9 @@ Milestone 2 adds a separate schema-source check, `python3 scripts/check_express.
 over original `corpus/express` fixtures. It verifies declaration parsing, basic schema
 compilation and explicitly unsupported expression semantics. The external STEP runner's
 `schema` stage still means validation of physical instances against a supplied schema;
-that stage cannot run until Milestone 4 and remains `not_implemented`. No `.exp` source
+that stage cannot run until Milestone 4 and remains `not_implemented`. Milestone 3
+generation/reflection is tested separately by compiling and running generated Rust
+consumers; it does not advance the external STEP corpus schema stage. No `.exp` source
 compilation is inferred from a STEP header or from physical parsing success.
 
 ## GitHub Actions
@@ -92,3 +94,10 @@ sources, runs the baseline check, and publishes an Actions summary plus HTML,
 JSON and JUnit artifacts. CI has 3,230 paths because local duplicate directory
 copies are omitted. Unique content coverage is identical. See
 [CI and releases](RELEASING.md) for downloads, retention and release gates.
+
+Milestone 4's initial library decoder is checked against authored schemas/instances,
+including a freshly generated metadata consumer. The external corpus has no configured
+AP schema metadata and `stepdump` does not yet expose that decoder. Therefore the external
+runner's schema stage still reports `not_implemented`; that is a runner capability status,
+not a statement that the structural library decoder is absent. Geometry and tessellation
+also remain unsupported. Do not promote physical outcomes to schema acceptance.

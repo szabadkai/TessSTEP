@@ -8,6 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+tessstep-codegen = { path = "../crates/tessstep-codegen" }
 tessstep-express = { path = "../crates/tessstep-express" }
 libfuzzer-sys = "0.4"
 tessstep-part21 = { path = "../crates/tessstep-part21" }
@@ -37,6 +38,13 @@ bench = false
 [[bin]]
 name = "express_frontend"
 path = "fuzz_targets/express_frontend.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "schema_codegen"
+path = "fuzz_targets/schema_codegen.rs"
 test = false
 doc = false
 bench = false

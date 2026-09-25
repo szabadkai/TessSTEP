@@ -82,6 +82,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "tessstep-codegen"
+version = "0.1.0"
+dependencies = [
+ "tessstep-express",
+]
+
+[[package]]
 name = "tessstep-express"
 version = "0.1.0"
 
@@ -90,6 +97,7 @@ name = "tessstep-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "tessstep-codegen",
  "tessstep-express",
  "tessstep-model",
  "tessstep-part21",

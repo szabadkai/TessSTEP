@@ -8,6 +8,7 @@ Stable deterministic regression smoke:
 ```sh
 cargo test -p tessstep-model --test fuzz_smoke -- --nocapture
 cargo test -p tessstep-express --test fuzz_smoke -- --nocapture
+cargo test -p tessstep-codegen --test generated codegen_fuzz_smoke -- --nocapture
 cargo check --manifest-path fuzz/Cargo.toml --locked
 ```
 
@@ -19,6 +20,7 @@ cargo +nightly fuzz run part21_parser corpus/part21/valid corpus/part21/invalid 
 cargo +nightly fuzz run part21_lexer corpus/part21/valid corpus/part21/invalid -- -max_total_time=120 -max_len=65536
 cargo +nightly fuzz run entity_database corpus/part21/valid corpus/part21/invalid -- -max_total_time=120 -max_len=65536
 cargo +nightly fuzz run express_frontend corpus/express/valid corpus/express/invalid -- -max_total_time=120 -max_len=8192
+cargo +nightly fuzz run schema_codegen corpus/express/valid corpus/express/invalid -- -max_total_time=120 -max_len=8192
 ```
 
 Copy seeds to a scratch corpus directory when running extended sessions: libFuzzer may
@@ -26,6 +28,9 @@ write new seeds into its first corpus directory. Do not commit unreviewed genera
 Artifacts are ignored under `fuzz/artifacts`; convert minimized failures to regression tests.
 Directly running a stable-built driver executes inputs but has no sanitizer/coverage
 instrumentation. Such runs must be reported as driver smoke only.
+
+The schema-codegen target compiles bounded EXPRESS input and checks deterministic
+generation/error handling and output size; it does not invoke rustc per fuzz case.
 
 The EXPRESS target exercises lexing and basic compilation under small finite budgets,
 checks deterministic results and valid diagnostic spans, and skips non-UTF-8 bytes

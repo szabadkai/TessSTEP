@@ -7,6 +7,11 @@ license.workspace = true
 
 [dependencies]
 tessstep-part21.workspace = true
+tessstep-schema.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "decoder"
+harness = false

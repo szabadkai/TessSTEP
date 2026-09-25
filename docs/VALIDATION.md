@@ -1,3 +1,120 @@
+# Milestone 4 initial decoder validation — 2026-09-25
+
+Milestone 4 is in progress. This slice adds structural decoding against explicitly
+supplied reflection metadata, with borrowed views, single inheritance, primitive and
+named domains, ARRAY/LIST/BAG bounds and local reference compatibility. It does not
+claim complete schema validation. See [DECODING.md](DECODING.md).
+
+Observed on macOS arm64 with rustc/cargo 1.95.0:
+
+- Workspace locked debug and release tests passed; seven decoder tests include
+  structural acceptance/rejection, exact source context, malformed metadata and
+  deterministic mutation smoke. The two latest decoder tests also passed in debug.
+- The generated-metadata consumer compiled and ran: EXPRESS source → generated Rust
+  reflection → physical instance decoding, with a negative type case.
+- Workspace Clippy (all targets/features, warnings denied), formatting, rustdoc with
+  warnings denied, architecture checker, conformance evidence and diff whitespace passed.
+- Decoder benchmark: 486,831 physical source bytes / 20,000 pre-parsed entities with
+  cyclic references; one warmup and 382 iterations over 2.003 seconds. Observed
+  **5.242 ms/input / 3,815,003 entities per second**. View/index allocation and destruction
+  are timed; physical parsing is excluded. This is a local observation, not a guarantee.
+
+`python3 scripts/corpus.py --check` passed: run `2026-09-25T12-19-02-233794Z`,
+**6,438 paths / 3,227 unique inputs**, 31.593 seconds. All per-file stages and both
+previous-run/baseline comparisons were inspected, including representative accepted,
+missing-reference and rejected inputs in the [progress report](../reports/corpus/index.html).
+
+| Unique inputs | Outcome |
+|---:|---|
+| 2,821 | physical syntax accepted, references resolved |
+| 38 | physical syntax accepted, missing references |
+| 368 | structured rejection |
+| 0 | crashes, timeouts or runner errors |
+
+**No outcome or diagnostic changes** versus the preceding run or reviewed baseline.
+`corpus/baseline.json` was not changed. All 3,227 external inputs still report
+`schema`, `geometry` and `tessellation` as `not_implemented`: the external runner has no
+supplied AP metadata or schema-decoding CLI integration. The authored generated consumer
+checks the new library stage separately; physical acceptance is not schema success.
+
+Complex/multiple-inheritance mappings, SELECT/typed values, uniqueness, expression
+semantics and generated owned-record conversion remain open for Milestone 4. Extended
+instrumented decoder fuzzing, hosted platform CI and the MSRV run were not observed.
+Concurrent C/C++ interface work in the shared workspace is outside this decoder slice.
+
+---
+
+# Milestone 3 validation — 2026-09-25
+
+Environment: macOS arm64, Homebrew rustc/cargo 1.95.0. Milestone 3 adds deterministic
+Rust generation and standalone static schema reflection. Generated records/references
+are unchecked owned representations; physical schema decoding remains Milestone 4.
+
+| Check | Observed result |
+|---|---|
+| Workspace debug and release tests, locked | passed; 50 integration tests and 2 doctests |
+| Generated Rust consumer | compiled and ran against only the reflection runtime; unrelated-reference assignment correctly failed compilation |
+| Generation determinism and limits | passed; repeat bytes, exact output boundary, invalid compilation and work limit |
+| Workspace debug/release builds | passed |
+| Workspace/fuzz formatting and Clippy, all targets, `-D warnings` | passed |
+| Rustdoc with warnings denied | passed |
+| Architecture checker | passed; 8 active packages, no third-party production dependencies |
+| Authored corpus provenance | passed; 26 fixtures |
+| Independent Part 21 / EXPRESS CLI checks | passed |
+| Conformance table and test evidence | passed |
+| Python corpus/CI runner tests | 16 passed |
+| Codegen stable fuzz smoke | passed; 9,395 bounded prefix/mutation/arbitrary-input cases |
+| Codegen libFuzzer driver smoke | built; 1,000 runs completed without crashes |
+| Relocated release package smoke | passed, including `expressc --rust` output |
+
+Consumer coverage includes imports/aliases, cross-schema inherited anonymous domains,
+diamond deduplication, recursive typed references and upcasts, enum/SELECT construction,
+aggregate/optional mappings, metadata identities/spans, abstract/supertype flags,
+WHERE/UNIQUE/DERIVE/INVERSE source, constants and opaque algorithms. No generated
+expression is executed. Architecture review is recorded in ARCHITECTURE.md.
+
+The local libFuzzer driver used stable Rust without coverage or sanitizer instrumentation;
+runtime warnings confirmed that limitation. Nightly CI now includes `schema_codegen`.
+Hosted Linux/Windows/macOS CI, Rust 1.85 MSRV, dependency audits and instrumented/extended
+fuzzing were not observed here; rustup is unavailable locally. These checks do not establish
+industrial hardening, full EXPRESS conformance or AP schema coverage.
+
+## Milestone 3 external corpus
+
+`python3 scripts/corpus.py --check` passed. Run `2026-09-25T12-03-06-207101Z` examined
+**6,438 paths / 3,227 unique contents** in 33.556 seconds. The per-input progress data,
+diagnostics, all stage counts and both prior-run/baseline comparisons were inspected.
+
+| Unique inputs | Outcome |
+|---:|---|
+| 2,821 | physical syntax accepted, references resolved |
+| 38 | physical syntax accepted, missing references |
+| 368 | structured rejection |
+| 0 | crashes, timeouts or runner errors |
+
+**No outcome or diagnostic changes** from the prior run or reviewed baseline.
+`corpus/baseline.json` was not changed. The local [per-file report](../reports/corpus/index.html)
+and [JSON](../reports/corpus/latest.json) retain every input result.
+
+The external `schema`, `geometry` and `tessellation` stages remain `not_implemented` on
+all 3,227 inputs. Generating schema-source bindings does not validate physical instances.
+EXPRESS expression/algorithm semantics, EXTENSIBLE/BASED_ON types, attribute redeclaration,
+AP support and the public C/C++ interfaces also remain unimplemented.
+
+## Milestone 3 generator benchmark
+
+`cargo bench -p tessstep-codegen --bench generator --locked`: optimized build, precompiled
+IR from **223,944 source bytes / 5,001 declarations**, one warmup and a two-second sample.
+Generation allocates and drops the output within the measurement; input construction and
+EXPRESS compilation are excluded. The final implementation produced **9,836,240 bytes**
+per iteration: **216 iterations, 9.29 ms/input, 1,009.54 generated MiB/s**. This measures
+source emission, not rustc throughput, AP-scale compatibility or memory usage. It is a
+local observation, not a statistical performance guarantee.
+
+**Next: Milestone 4 — schema-aware instance decoding and validation.**
+
+---
+
 # Milestone 2 validation — 2026-09-25
 
 Environment: macOS arm64, rustc/cargo 1.95.0. Milestone 2 adds the EXPRESS declaration

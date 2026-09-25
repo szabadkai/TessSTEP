@@ -1,0 +1,22 @@
+@PACKAGE_INIT@
+# The ABI 1 release packages support 64-bit consumers only.
+if(DEFINED CMAKE_SIZEOF_VOID_P AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(TessSTEP_FOUND FALSE)
+    set(TessSTEP_NOT_FOUND_MESSAGE "TessSTEP ABI 1 requires a 64-bit consumer")
+    return()
+endif()
+if(NOT TARGET TessSTEP::TessSTEP)
+    add_library(TessSTEP::TessSTEP SHARED IMPORTED)
+    set_target_properties(TessSTEP::TessSTEP PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@"
+        INTERFACE_COMPILE_FEATURES "cxx_std_17")
+    if(WIN32)
+        set_target_properties(TessSTEP::TessSTEP PROPERTIES
+            IMPORTED_LOCATION "@PACKAGE_CMAKE_INSTALL_BINDIR@/@TS_LIBRARY@"
+            IMPORTED_IMPLIB "@PACKAGE_CMAKE_INSTALL_LIBDIR@/@TS_IMPLIB@")
+    else()
+        set_target_properties(TessSTEP::TessSTEP PROPERTIES
+            IMPORTED_LOCATION "@PACKAGE_CMAKE_INSTALL_LIBDIR@/@TS_LIBRARY@")
+    endif()
+endif()
+check_required_components(TessSTEP)

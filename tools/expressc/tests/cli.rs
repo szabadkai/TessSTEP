@@ -66,3 +66,38 @@ fn expressc_exit_status_and_determinism() {
             .contains("Unsupported")
     );
 }
+
+#[test]
+fn expressc_rust_output_and_failure_policy() {
+    let args = [
+        "--rust",
+        "corpus/express/valid/base.exp",
+        "corpus/express/valid/imports.exp",
+    ];
+    let a = run(&args);
+    assert!(a.status.success());
+    assert_eq!(a.stdout, run(&args).stdout);
+    assert!(String::from_utf8_lossy(&a.stdout).contains("pub static SCHEMA_SET"));
+    assert!(!a.stderr.is_empty()); // opaque semantics remain explicit
+    for args in [
+        vec!["--rust", "--strict", "corpus/express/valid/base.exp"],
+        vec![
+            "--rust",
+            "--max-output-bytes",
+            "1",
+            "corpus/express/valid/base.exp",
+        ],
+        vec!["--rust", "corpus/express/invalid/semantic.exp"],
+    ] {
+        let result = run(&args);
+        assert_eq!(result.status.code(), Some(1));
+        assert!(result.stdout.is_empty());
+        assert!(!result.stderr.is_empty());
+    }
+    assert_eq!(
+        run(&["--rust", "--json", "corpus/express/valid/base.exp"])
+            .status
+            .code(),
+        Some(2)
+    );
+}

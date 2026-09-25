@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0–2 physical syntax and EXPRESS declaration frontend; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20133 plus initial Milestone 4 structural instance decoding; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -153,10 +153,28 @@
       "limitations": "bounded deterministic mutations; industrial hardening not claimed"
     },
     {
-      "feature": "Generated bindings / schema-aware instances",
-      "status": "not implemented",
-      "test": null,
-      "limitations": "Milestones 3 and 4"
+      "feature": "Deterministic Rust bindings and static reflection",
+      "status": "implemented",
+      "test": "generated_bindings_compile_and_reflect_deterministically",
+      "limitations": "unchecked owned records and typed references; supplied declaration subset; opaque constraints retained"
+    },
+    {
+      "feature": "Code generation budgets",
+      "status": "implemented",
+      "test": "generation_limits_and_invalid_compilation",
+      "limitations": "bounded output/work; hard domain depth 128; logical limits, not RSS or rustc resource limits"
+    },
+    {
+      "feature": "Code generation fuzz smoke",
+      "status": "implemented",
+      "test": "codegen_fuzz_smoke",
+      "limitations": "bounded deterministic mutations; compiler invocation covered separately by consumer test"
+    },
+    {
+      "feature": "Schema-aware physical instance decoding/validation",
+      "status": "partial",
+      "test": "schema_decode_borrows_attributes_and_checks_forward_subtype_references",
+      "limitations": "simple entities, single inheritance, primitive/named domains, ARRAY/LIST/BAG and local reference compatibility; complex/SELECT/uniqueness/expressions deferred"
     },
     {
       "feature": "AP242 / AP203 / AP214 schema conformance",
@@ -172,15 +190,15 @@
     },
     {
       "feature": "public C ABI",
-      "status": "not implemented",
-      "test": null,
-      "limitations": "required supported interface; opaque handles, C-defined ABI, allocator and panic isolation; implementation pending"
+      "status": "physical documents implemented",
+      "test": "c_abi_document_and_diagnostic_contract",
+      "limitations": "ABI 1 shared library; buffer parsing, inspection and reference reports; schema/geometry/mesh APIs pending"
     },
     {
       "feature": "public C++ wrapper / CMake package",
-      "status": "not implemented",
-      "test": null,
-      "limitations": "required supported interface; RAII, typed errors, read-only mesh views and TessSTEP::TessSTEP; implementation pending"
+      "status": "physical documents implemented",
+      "test": "tests/capi/consumer.cpp",
+      "limitations": "C++17 RAII and typed results; relocated shared package via TessSTEP::TessSTEP; mesh views and static linkage pending"
     }
   ]
 }

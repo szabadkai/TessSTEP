@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package implemented CLI tools with docs, checksums and relocated smoke tests."""
+"""Package CLI tools and the C/C++ SDK with relocated consumer tests."""
 import argparse
 import hashlib
 import json
@@ -11,6 +11,8 @@ import tarfile
 import tempfile
 import tomllib
 import zipfile
+
+from check_capi import install_package, verify_installed
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -59,9 +61,15 @@ def main():
         if json.loads(parsed)["document"] is None:
             raise ValueError("Packaged stepdump failed its fixture smoke test")
         subprocess.run([str(package / "bin" / ("expressc" + suffix)), "--json", str(package / "examples/express/valid/base.exp")], cwd=temporary, check=True, capture_output=True)
+        generated = subprocess.check_output([str(package / "bin" / ("expressc" + suffix)), "--rust", str(package / "examples/express/valid/base.exp")], cwd=temporary, stderr=subprocess.PIPE)
+        if b"pub static SCHEMA_SET" not in generated:
+            raise ValueError("Packaged expressc failed Rust generation smoke test")
+        install_package(Path(temporary) / "cmake-build", package, library_dir=build)
+        verify_installed(package)
         (package / "PACKAGE.json").write_text(json.dumps({"version": version, "target": args.target,
             "commit": os.environ.get("GITHUB_SHA", "local"), "tools": ["stepdump", "expressc"],
-            "c_abi": "not_implemented", "cpp_wrapper": "not_implemented", "tessellation": "not_implemented"}, indent=2) + "\n", encoding="utf-8")
+            "c_abi": {"version": 1, "scope": "physical_documents", "linkage": "shared"},
+            "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP"}, "tessellation": "not_implemented"}, indent=2) + "\n", encoding="utf-8")
         if suffix:
             archive = output / (name + ".zip")
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as stream:

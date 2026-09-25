@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {
     "tessstep-part21": set(),
     "tessstep-express": set(),
-    "tessstep-schema": {"tessstep-express"},
+    "tessstep-schema": set(),
     "tessstep-codegen": {"tessstep-express", "tessstep-schema"},
     "tessstep-model": {"tessstep-part21", "tessstep-schema"},
     "tessstep-math": set(),
@@ -22,20 +22,22 @@ ALLOWED = {
     "tessstep-ap242": {"tessstep-model", "tessstep-schema", "tessstep-product", "tessstep-topology", "tessstep-curves", "tessstep-surfaces", "tessstep-math"},
     "tessstep-product": {"tessstep-math", "tessstep-topology"},
     "tessstep-io": {"tessstep-mesh", "tessstep-product", "tessstep-math"},
-    "expressc": {"tessstep-express"},
+    "expressc": {"tessstep-express", "tessstep-codegen"},
     "stepdump": {"tessstep-part21", "tessstep-model"},
+    "tessstep-capi": {"tessstep-part21", "tessstep-model"},
 }
 metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version=1", "--no-deps"], cwd=ROOT))
 for package in metadata["packages"]:
     name = package["name"]
     internal = {d["name"] for d in package["dependencies"] if d["name"].startswith("tessstep-")}
-    if name not in {"tessstep", "tessstep-capi"}:
+    if name != "tessstep":
         assert name in ALLOWED, f"Declare an architectural boundary for {name}"
         assert internal <= ALLOWED[name], f"Forbidden dependencies in {name}: {internal - ALLOWED[name]}"
-    # Milestones 0–2 deliberately have no third-party production dependencies.
+    # Production crates deliberately have no third-party dependencies.
     assert all(d.get("path") for d in package["dependencies"]), f"Review new dependency in {name}"
     for target in package["targets"]:
-        if "lib" in target["kind"] or "bin" in target["kind"]:
+        if {"lib", "rlib", "cdylib", "staticlib", "bin"} & set(target["kind"]):
             source = Path(target["src_path"]).read_text(encoding="utf-8")
-            assert "#![forbid(unsafe_code)]" in source, f"Missing unsafe policy in {target['src_path']}"
+            policy = "#![deny(unsafe_op_in_unsafe_fn)]" if name == "tessstep-capi" else "#![forbid(unsafe_code)]"
+            assert policy in source, f"Missing unsafe policy in {target['src_path']}"
 print(f"architecture: {len(metadata['packages'])} packages; dependency and unsafe boundaries passed")

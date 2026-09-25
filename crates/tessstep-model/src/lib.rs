@@ -1,5 +1,7 @@
-//! Generic entity storage and reference analysis; no schema or CAD semantics.
+//! Generic entity storage, reference analysis and explicit schema decoding.
 #![forbid(unsafe_code)]
+
+pub mod decode;
 
 use std::{collections::BTreeMap, io::BufRead, ops::Range};
 use tessstep_part21::*;

@@ -6,6 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+tessstep-schema.workspace = true
+tessstep-codegen.workspace = true
 tessstep-express.workspace = true
 tessstep-part21.workspace = true
 tessstep-model.workspace = true

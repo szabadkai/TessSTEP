@@ -41,6 +41,9 @@ jobs:
       - run: python scripts/check_cli.py
       - run: python scripts/check_express.py
       - run: python scripts/conformance.py --check
+      - name: C/C++ consumer sanitizers
+        if: runner.os != 'Windows'
+        run: python scripts/check_capi.py --library-dir target/release --sanitizers
       - run: cargo doc --workspace --no-deps --locked
         env:
           RUSTDOCFLAGS: -D warnings
