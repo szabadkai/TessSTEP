@@ -82,3 +82,19 @@ are rejected during construction. Finite checks do not certify conditioning, con
 at a repeated knot or a global error bound. One-sided knot behavior and conservative
 intermediate-overflow failures are part of the contract. See [NURBS.md](NURBS.md) for
 published algorithm sources and [SURFACES.md](SURFACES.md) for surface parameterizations.
+
+## Topology and boundary numerical contracts
+
+Topology endpoint agreement uses explicit model distance tolerance; wire closure uses
+vertex identity. Normalization performs no numerical healing. UV tolerances are in the
+supplied parameter units, independent of model metres. UV intersection/containment uses
+finite f64 orientations and segment distances, not adaptive exact predicates. Near
+contacts are rejected according to the UV tolerance. Overflow fails explicitly.
+
+UV and 3D edge refinement use quarter/mid/three-quarter probes, with knot and periodic
+seeding. These are sampled criteria, not certified continuous/Hausdorff error bounds.
+Pcurve lifts are checked at probes, with affine parameter correspondence required.
+Resource/depth or floating-point-spacing exhaustion cannot return partial success.
+Shared edge endpoints use exact canonical vertex coordinates only when their curve
+displacement satisfies the chord tolerance. Normalization, boundary sampling and mesh
+watertightness are distinct claims; no solid triangle mesh exists yet.

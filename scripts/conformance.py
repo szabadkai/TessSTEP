@@ -23,7 +23,8 @@ for item in manifest['features']:
 lines += ['', 'The JSON manifest tracks physical syntax, the EXPRESS frontend and generated bindings.',
           'Structural schema decoding and product graph adaptation are separate checked stages.',
           'Independent analytic/NURBS curves and surfaces are tested separately from STEP geometry adaptation.',
-          'Full AP conformance, STEP geometry adaptation and tessellation remain future work.', '',
+          'Constructed topology, supplied-pcurve UV loops and shared-edge samples are independent stages.',
+          'Full AP conformance, STEP geometry adaptation and triangle tessellation remain future work.', '',
           'See [PART21.md](PART21.md), [ERROR_MODEL.md](ERROR_MODEL.md) and',
           '[VALIDATION.md](VALIDATION.md) for exact behavior and actual verification results.']
 content = '\n'.join(lines) + '\n'

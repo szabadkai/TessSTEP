@@ -1,7 +1,8 @@
 # Geometry foundation
 
 Status: Milestones 6–10 provide independent math, analytic curves/surfaces and NURBS
-curves/surfaces. STEP geometry adaptation and external geometry corpus validation remain
+curves/surfaces. Milestones 11–13 add independent topology, UV reconstruction and
+shared-edge sampling. STEP geometry adaptation and external geometry corpus validation remain
 pending. See [CURVES.md](CURVES.md), [SURFACES.md](SURFACES.md) and [NURBS.md](NURBS.md).
 
 `tessstep-math` (also `tessstep::math`) has no STEP or schema dependency. It provides

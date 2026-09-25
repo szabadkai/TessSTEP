@@ -1,3 +1,89 @@
+# Milestones 11–13 boundary pipeline validation — 2026-09-25
+
+The existing Milestones 8–10 work was checkpointed as `52c752c` after the workspace
+suite passed. This delivery adds independent structural topology states (11), bounded
+supplied-pcurve UV reconstruction (12), and shared-edge boundary sampling (13).
+Contracts and limits are in [TOPOLOGY.md](TOPOLOGY.md), [TRIMMING.md](TRIMMING.md),
+and [TESSELLATION.md](TESSELLATION.md). Planar face triangulation is next; no STEP
+geometry adaptation, triangle mesh or watertight-solid result is claimed.
+
+Observed locally on macOS arm64 with Rust 1.95.0:
+
+| Check | Result |
+| --- | --- |
+| Locked workspace debug tests | 146 passed, including doctests |
+| New topology/trim/tessellate release tests | 23 passed, including two compile-fail doctests |
+| Workspace/fuzz formatting and Clippy, warnings denied | passed |
+| Workspace rustdoc, warnings denied | passed |
+| Architecture/conformance/authored fixture provenance | passed; 17 packages and 40 fixtures |
+| Python corpus/CI tests | 21 passed |
+| Relocated C/C++ package consumers | passed; Debug/Release, ABI exports/layout, ownership and concurrency |
+| Stable combined boundary mutation harness | 3,000 random mutations plus 388 prefixes passed |
+| New libFuzzer driver | built; 1,000 smoke runs completed without crashes |
+
+Topology tests check shared identity without geometry edits, malformed references and
+ownership, endpoint mismatch, wire closure, closed/open/disconnected shells, conflicting
+orientations, excess edge incidence and pinched vertex links. UV tests exercise outer
+and hole classification, analytic and NURBS boundaries, full cylinder seams, integer
+chart shifts, reversed parameter intervals, one-sided discontinuities, singular surfaces,
+missing/mismatched pcurves, invalid winding and noncontractible loops. Resource limits
+are failure paths, not successful partial output.
+
+Sampling tests verify zero-copy reversed/shared/seam views, exact canonical vertex
+coordinates, circle sagitta/tangent criteria, tighter-tolerance refinement, rational
+arc dense-probe error, deterministic output, NURBS knot corners/discontinuities,
+collapsed curves, endpoint tolerance failures and face-specific UV mappings.
+These checks establish the documented constructed-input behavior, not global continuous
+error bounds, exact intersection predicates or AP conformance.
+
+The libFuzzer binary used stable Rust and four original 96-byte seeds. It warned about
+missing sanitizer/coverage instrumentation and no interesting coverage; the 1,000 runs
+are driver smoke evidence only. Full-size arbitrary mutations are covered separately by
+the stable harness. An instrumented nightly CI target is configured but was not observed
+here. Hosted cross-platform/MSRV CI and long numerical-hardening campaigns remain open.
+
+## External corpus
+
+Both `python3 scripts/corpus.py --check` runs passed; the reviewed baseline was unchanged:
+
+| Checkpoint | Run | Seconds |
+| --- | --- | ---: |
+| Initial integrated boundary pipeline | 2026-09-25T18-36-39-590816Z | 33.857 |
+| Final boundary pipeline | 2026-09-25T18-46-06-520711Z | 32.926 |
+
+Each report contains **6,438 paths / 3,227 unique inputs**: **2,821 clean**, **38 with
+reference errors**, and **368 structured rejections**. Outcome/diagnostic change lists
+against the previous run and reviewed baseline are empty. There were no crashes,
+timeouts or runner errors. Per-file stage counts and representative clean,
+reference-error and rejected entries were inspected in the final report.
+
+All 3,227 external inputs still report schema/product/geometry/tessellation as
+`not_implemented`: no AP validators are configured and no STEP geometry adapter/checker
+exists. Independent boundary tests are not relabeled as STEP geometry acceptance.
+See the generated [per-file HTML report](../reports/corpus/index.html) and
+[JSON results](../reports/corpus/latest.json). `corpus/baseline.json` was not refreshed.
+
+## Benchmark and architecture review
+
+`cargo bench -p tessstep-tessellate --bench boundaries --locked` uses an original
+cylinder-strip fixture, one warmup and one-second samples. Geometry construction is
+outside timing; raw-model cloning is included in validation timing.
+
+| Operation | Iterations | Microseconds/iteration |
+| --- | ---: | ---: |
+| Structural validation and normalization | 1,535,261 | 0.651 |
+| UV seam reconstruction | 265,717 | 3.763 |
+| Shared-edge sampling and face boundary mapping | 4,825 | 207.265 |
+
+These are local observations, not statistical comparisons or whole-model tessellation
+measurements. The architecture review confirms the reserved downward crate graph,
+immutable private validity states, explicit model/cache borrows, deterministic iterative
+walks, logical resource budgets and quadratic bounded polygon comparisons. No unsafe
+kernel code, third-party production dependency or C ABI symbol/layout was introduced.
+Public C/C++ geometry and mesh APIs remain pending under the existing release contract.
+
+---
+
 # Milestones 8–10 surface/NURBS validation — 2026-09-25
 
 The verified analytic-curve milestone was committed as `7758269`. This work implements

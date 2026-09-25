@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20134, the initial Milestone 5 product slice and independent geometry Milestones 6\u201310; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20134, the initial Milestone 5 product slice and independent geometry Milestones 6\u201313; no complete ISO edition or AP conformance claim",
   "features": [
     {
       "feature": "streaming lexer",
@@ -186,7 +186,7 @@
       "feature": "STEP geometry / topology / meshes",
       "status": "not implemented",
       "test": null,
-      "limitations": "independent analytic/NURBS curves and surfaces available; no STEP geometry adapter, topology or tessellation"
+      "limitations": "independent constructed geometry/topology, UV reconstruction and edge samples available; no STEP geometry adapter or triangle meshes"
     },
     {
       "feature": "public C ABI",
@@ -319,6 +319,48 @@
       "status": "implemented",
       "test": "surface_bounded_arbitrary_float_smoke",
       "limitations": "two 5,641-case stable harnesses; no extended instrumented numerical-hardening claim"
+    },
+    {
+      "feature": "Constructed topology validity states",
+      "status": "implemented",
+      "test": "topology_states_preserve_shared_identity_and_geometry",
+      "limitations": "bounded structural validity only; no intersection, outwardness, cavity nesting or volume proof"
+    },
+    {
+      "feature": "Shell incidence and vertex links",
+      "status": "implemented",
+      "test": "topology_rejects_nonmanifold_edges_and_pinched_vertices",
+      "limitations": "connected edge-manifold shell and vertex-link checks; open/unsewn shapes permitted"
+    },
+    {
+      "feature": "Supplied-pcurve UV reconstruction and holes",
+      "status": "implemented",
+      "test": "uv_trimming_reconstructs_outer_holes_and_classifies",
+      "limitations": "affine edge/pcurve parameter correspondence; f64 polygon checks; no missing-pcurve projection"
+    },
+    {
+      "feature": "Periodic chart shifts and seam uses",
+      "status": "implemented",
+      "test": "uv_trimming_aligns_wrapped_pcurve_charts_without_projection",
+      "limitations": "explicit contractible chart and hole placement; no automatic chart atlas"
+    },
+    {
+      "feature": "Canonical shared-edge sampling",
+      "status": "implemented",
+      "test": "shared_edge_circle_obeys_independent_sagitta_and_angle_checks",
+      "limitations": "measured chord/tangent criteria, not certified continuous error; no triangle meshes"
+    },
+    {
+      "feature": "Shared face boundary position views",
+      "status": "implemented",
+      "test": "shared_edge_face_boundaries_keep_identical_positions_and_distinct_seam_uv",
+      "limitations": "zero-copy position references with per-use UVs; constrained triangulation pending"
+    },
+    {
+      "feature": "Bounded boundary pipeline mutation smoke",
+      "status": "implemented",
+      "test": "topology_trim_sampling_bounded_mutation_smoke",
+      "limitations": "3,000 mutations and 388 prefixes; no extended instrumented hardening claim"
     }
   ]
 }

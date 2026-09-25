@@ -6,6 +6,7 @@ Milestone 4 structural schema decoding, each with explicit conformance limits.
 Milestone 5 now includes the initial structural product/representation/units/assembly slice.
 Milestone 6 now provides the independent checked math foundation.
 Milestones 7–10 add independent analytic curves/surfaces and NURBS curves/surfaces.
+Milestones 11–13 add structural topology states, supplied-pcurve UV trimming and shared-edge sampling.
 STEP geometry adaptation and industrial hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
 and architecture review before declaring work done.
@@ -88,8 +89,34 @@ See [NURBS.md](NURBS.md) for published algorithms and exact supported limits.
 The surface crate reuses the same knot basis, evaluates all first/second partials and
 inserts knots in either axis while retaining the common control-net weight scale.
 Rational patches, seams, mixed derivatives, refinement invariance and singular normals
-are covered. Topology validity states (Milestone 11) are next. STEP geometry adapters,
+are covered. STEP geometry adapters,
 NURBS editing beyond single insertion and the remaining Milestone 5 semantics are open.
+
+**Milestone 11 delivered — independent structural topology validity states.**
+
+`tessstep-topology` supplies distinct handles, Raw/Validated/Normalized B-reps,
+canonical incidence and bounded structural diagnostics. Wire closure, ownership,
+endpoint agreement, shell edge incidence/connectivity and vertex links are checked.
+Normalization is immutable and does not heal. See [TOPOLOGY.md](TOPOLOGY.md) for
+limits: no self-intersection, volume containment or general cavity-shell validation.
+
+**Milestone 12 delivered — bounded supplied-pcurve UV reconstruction.**
+
+`tessstep-trim` reconstructs analytic/NURBS boundaries, retains seam uses and period
+shifts, verifies sampled curve/surface agreement, checks outer/hole polygons and
+classifies UV points. Missing pcurves and singularities fail explicitly. General
+projection, nonlinear parameter correspondence, exact predicates and certified
+continuous error bounds remain open. See [TRIMMING.md](TRIMMING.md).
+
+**Milestone 13 delivered — canonical shared-edge boundary sampling.**
+
+`tessstep-tessellate` samples each normalized edge once and exposes zero-copy oriented
+views to its uses. Knot/period seeds, measured chord/tangent refinement, canonical
+vertex endpoints and explicit limits are tested independently. Face boundary mapping
+retains shared position references and distinct seam UVs. No triangle meshes are
+produced. See [TESSELLATION.md](TESSELLATION.md) for sampled-error limitations.
+Milestone 14 planar face triangulation is next. STEP adapters and the documented
+Milestone 5 semantics remain pending.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

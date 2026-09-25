@@ -2,7 +2,8 @@
 
 Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust generation
 and runtime reflection, plus a bounded product semantics slice, checked math and
-independent analytic/NURBS curves and surfaces. Architecture is a contract for later work, not a declaration that the geometry kernel already exists.
+independent analytic/NURBS curves and surfaces, structural topology, supplied-pcurve UV
+reconstruction and shared-edge sampling. Architecture is a contract for later work, not a declaration that the geometry kernel already exists.
 
 ## Implemented dependency graph
 
@@ -25,7 +26,13 @@ tessstep-ap242 ──→ tessstep-model / tessstep-schema / tessstep-part21
 tessstep-surfaces ──→ tessstep-curves ──→ tessstep-math (standard library only)
          └───────────────────────────→ tessstep-math
 
-tessstep ──→ tessstep-surfaces / tessstep-curves / tessstep-math / tessstep-ap242 / tessstep-product
+tessstep-tessellate ──→ tessstep-trim ──→ tessstep-topology
+        └────────────────────────────→ tessstep-topology
+        └────→ tessstep-math / tessstep-curves
+tessstep-trim / tessstep-topology ──→ tessstep-math / tessstep-curves / tessstep-surfaces
+
+tessstep ──→ tessstep-topology / tessstep-trim / tessstep-tessellate
+    └──────→ tessstep-surfaces / tessstep-curves / tessstep-math / tessstep-ap242 / tessstep-product
     ├──────→ tessstep-codegen
     ├──────→ tessstep-schema
     ├──────→ tessstep-express
@@ -105,10 +112,10 @@ crate when its first tested vertical slice is implemented.
 | tessstep-math (active) | STEP-independent units, spaces, transforms and tolerances |
 | tessstep-curves (active) | analytic/NURBS curves, bounded spline basis and insertion |
 | tessstep-surfaces (active) | analytic and tensor-product NURBS surface evaluation/refinement |
-| tessstep-topology | typed handles, builders and immutable validity states |
-| tessstep-trim | UV boundaries, periodic seams and trim reconstruction |
+| tessstep-topology (active) | typed handles, builders and immutable validity states |
+| tessstep-trim (active) | UV boundaries, periodic seams and trim reconstruction |
 | tessstep-mesh | mesh assets and mesh invariants |
-| tessstep-tessellate | tolerance-driven tessellation of normalized B-reps |
+| tessstep-tessellate (active) | shared-edge sampling now; normalized face/solid tessellation later |
 | tessstep-validate | structured semantic, topology and mesh reports |
 | tessstep-io | exporters outside the kernel |
 
@@ -293,3 +300,29 @@ normal results remain explicit. No finite result certifies topology, continuity 
 repeated knot, or industrial numerical robustness. External corpus stages stay unchanged
 until a schema adapter and real geometry checker exist. C/C++ geometry operations remain
 pending and must follow the existing public interface and release-testing contract.
+
+## Milestones 11–13 boundary pipeline architecture review
+
+The three new crates follow the reserved downward graph. Topology owns constructed
+curve/surface geometry and private validity states; trimming consumes normalized
+objects; tessellation consumes normalized objects and the trim chart contract.
+No layer reads raw STEP, schema records or product graphs. Typed model-local indices
+separate topology kinds. Public immutable access cannot mutate a checked model.
+The shared-edge cache borrows its normalized source; face boundaries borrow the
+cache's actual position samples, preventing independent per-face resampling cracks.
+
+Validation and refinement use iterative walks/stacks, ordered incidence maps and
+finite logical budgets. Canonical normalization preserves source geometry and index
+order, retaining the incidence cache computed at validation. UV intersection checks
+are quadratic with charged work. Refinement uses knot/period seeds and sampled errors;
+no global continuous accuracy bound or exact predicates are inferred. Curve geometry
+and validation allocations remain private Rust storage, not C buffer layouts.
+No unsafe code, mutable global state or third-party production dependency is added.
+
+Structural topology validity, sampled trim validity, shared-edge sample identity and
+future mesh validity are distinct contracts. Open/unsewn shapes remain explicit;
+solid handles currently mean a structurally closed single shell, not a certified
+volume. STEP adapters, triangle assets and C/C++ geometry APIs are still absent.
+The stable physical-document C ABI and installed C++ package remain release-tested;
+no new symbol, allocator or Rust representation crosses their boundary. External
+corpus stages remain unimplemented until real STEP adapters/checkers exist.

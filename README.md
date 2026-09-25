@@ -6,11 +6,12 @@
 
 TessSTEP is building toward a STEP geometry kernel and adaptive tessellator.
 Today it provides physical-file parsing, structural schema decoding, product and
-assembly graphs, and independent analytic and NURBS geometry evaluators.
+assembly graphs, independent analytic and NURBS geometry, structural B-rep validation,
+UV reconstruction, and shared-edge boundary sampling.
 
 **STEP-to-mesh conversion is not implemented.** The geometry evaluators operate on
 explicitly constructed geometry; they are not yet connected to STEP records.
-Topology, trimming, and tessellation remain under development. No AP203, AP214, or AP242
+Face triangulation and solid tessellation remain under development. No AP203, AP214, or AP242
 conformance is claimed, and successful parsing does not establish schema or CAD
 validity.
 
@@ -22,7 +23,8 @@ validity.
 | EXPRESS | Declaration parsing, import resolution, structural checks, deterministic Rust bindings, and static schema reflection | Schemas and their dependencies must be supplied explicitly; general expression and algorithm evaluation is unsupported |
 | Schema decoding | Structural validation of simple and complex instances, SELECTs, bounds, widths, aggregate uniqueness, and local references | Requires supplied schema metadata; does not implement full EXPRESS rules or application-protocol semantics |
 | Products and assemblies | Product/representation graphs, assembly occurrences, mapped reuse, and explicit unit scales | A structural subset; placement descriptions are preserved without evaluating geometric transforms |
-| Geometry | Typed coordinates, tolerances, affine transforms, analytic curves and surfaces, and NURBS evaluation with derivatives and knot insertion | Independent Rust APIs; no STEP geometry adapter, topology, trimming, or meshes |
+| Geometry | Typed coordinates, tolerances, affine transforms, analytic curves and surfaces, and NURBS evaluation with derivatives and knot insertion | Independent Rust APIs; no STEP geometry adapter or meshes |
+| B-rep boundaries | Typed topology validity states, supplied-pcurve UV loops, and canonical shared-edge samples | Constructed geometry only; sampled error checks, no triangle meshes or volume validity proof |
 | C and C++ | Shared C ABI library, C++17 RAII wrapper, typed errors, and an installable CMake package | Physical buffer parsing, immutable document inspection, and reference diagnostics only |
 
 The [conformance table](docs/CONFORMANCE.md) records supported behavior and test

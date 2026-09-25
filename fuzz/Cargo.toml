@@ -8,6 +8,9 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+tessstep-topology = { path = "../crates/tessstep-topology" }
+tessstep-trim = { path = "../crates/tessstep-trim" }
+tessstep-tessellate = { path = "../crates/tessstep-tessellate" }
 tessstep-surfaces = { path = "../crates/tessstep-surfaces" }
 tessstep-curves = { path = "../crates/tessstep-curves" }
 tessstep-math = { path = "../crates/tessstep-math" }
@@ -92,6 +95,13 @@ bench = false
 [[bin]]
 name = "surface_evaluators"
 path = "fuzz_targets/surface_evaluators.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "brep_pipeline"
+path = "fuzz_targets/brep_pipeline.rs"
 test = false
 doc = false
 bench = false

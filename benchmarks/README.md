@@ -25,3 +25,9 @@ on 20,000 simple entities with cyclic references and supplied reflection metadat
 Physical parsing/fixture creation are outside timing. One warmup precedes a two-second
 sample; borrowed view/index allocation and destruction are included. This is a structural
 throughput observation, not AP conformance or a memory benchmark.
+
+`cargo bench -p tessstep-tessellate --bench boundaries` measures structural validation /
+normalization, UV seam reconstruction, and shared-edge sampling with face UV mapping.
+It uses a constructed cylinder strip, one warmup and one-second samples. Raw cloning
+is included in validation timing; geometry construction is outside timing. This is a
+local throughput observation, not a face triangulation or whole-model benchmark.

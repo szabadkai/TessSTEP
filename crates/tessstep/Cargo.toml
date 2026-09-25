@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+tessstep-topology.workspace = true
+tessstep-trim.workspace = true
+tessstep-tessellate.workspace = true
 tessstep-surfaces.workspace = true
 tessstep-curves.workspace = true
 tessstep-math.workspace = true

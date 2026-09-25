@@ -70,3 +70,9 @@ harnesses. Run each with `-max_len=128`; nightly CI configures 120 seconds per t
 Inputs cover malformed knots/degrees, arbitrary finite/non-finite coordinates, weights,
 parameters, evaluation and refinement. Small logical limits bound allocations. Seeded
 stable mutation tests supplement arbitrary-bit inputs; none is an exact arithmetic oracle.
+
+`brep_pipeline` mutates original constructed topology fixtures, index references,
+orientations, memberships and arbitrary-bit edge/pcurve intervals. Successful structural
+validation feeds bounded trim reconstruction, shared-edge sampling and per-face UV
+mapping. Inputs are limited to 96 bytes; the stable test runs 3,000 random mutations
+plus 388 fixture prefixes. It has no STEP parser or external corpus dependency.

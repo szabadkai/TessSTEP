@@ -123,6 +123,9 @@ dependencies = [
  "tessstep-part21",
  "tessstep-schema",
  "tessstep-surfaces",
+ "tessstep-tessellate",
+ "tessstep-topology",
+ "tessstep-trim",
 ]
 
 [[package]]
@@ -155,4 +158,33 @@ version = "0.1.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
+]
+
+[[package]]
+name = "tessstep-tessellate"
+version = "0.1.0"
+dependencies = [
+ "tessstep-curves",
+ "tessstep-math",
+ "tessstep-topology",
+ "tessstep-trim",
+]
+
+[[package]]
+name = "tessstep-topology"
+version = "0.1.0"
+dependencies = [
+ "tessstep-curves",
+ "tessstep-math",
+ "tessstep-surfaces",
+]
+
+[[package]]
+name = "tessstep-trim"
+version = "0.1.0"
+dependencies = [
+ "tessstep-curves",
+ "tessstep-math",
+ "tessstep-surfaces",
+ "tessstep-topology",
 ]

@@ -1,0 +1,14 @@
+[package]
+name = "tessstep-topology"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tessstep-math.workspace = true
+tessstep-curves.workspace = true
+tessstep-surfaces.workspace = true
+
+[lints]
+workspace = true

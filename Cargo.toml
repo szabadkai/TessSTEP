@@ -10,6 +10,9 @@ rust-version = "1.85"
 license = "MIT"
 
 [workspace.dependencies]
+tessstep-topology = { path = "crates/tessstep-topology", version = "=0.1.0" }
+tessstep-trim = { path = "crates/tessstep-trim", version = "=0.1.0" }
+tessstep-tessellate = { path = "crates/tessstep-tessellate", version = "=0.1.0" }
 tessstep-surfaces = { path = "crates/tessstep-surfaces", version = "=0.1.0" }
 tessstep-curves = { path = "crates/tessstep-curves", version = "=0.1.0" }
 tessstep-math = { path = "crates/tessstep-math", version = "=0.1.0" }

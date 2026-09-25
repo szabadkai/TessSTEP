@@ -23,6 +23,7 @@ jobs:
       - run: cargo fuzz run express_frontend corpus/express/valid corpus/express/invalid -- -max_total_time=120 -max_len=8192
       - run: cargo fuzz run schema_codegen corpus/express/valid corpus/express/invalid -- -max_total_time=120 -max_len=8192
       - run: cargo fuzz run schema_decoder corpus/schema -- -max_total_time=120 -max_len=65536
+      - run: cargo fuzz run brep_pipeline -- -max_total_time=120 -max_len=96
       - run: cargo fuzz run nurbs_curves -- -max_total_time=120 -max_len=128
       - run: cargo fuzz run surface_evaluators -- -max_total_time=120 -max_len=128
       - run: cargo fuzz run analytic_curves -- -max_total_time=120 -max_len=128

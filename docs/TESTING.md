@@ -158,3 +158,21 @@ They are shared with `nurbs_curves` and `surface_evaluators` libFuzzer targets; 
 consumes at most 128 bytes and uses small finite construction limits. The benchmark
 reports separate 1,000-evaluation batches for analytic torus, rational curve and
 rational surface jets. Setup is outside timing; checked evaluation is inside.
+
+## Topology, UV trimming and shared-edge boundaries (Milestones 11–13)
+
+```sh
+cargo test -p tessstep-topology -p tessstep-trim -p tessstep-tessellate
+cargo test -p tessstep-topology -p tessstep-trim -p tessstep-tessellate --release
+cargo bench -p tessstep-tessellate --bench boundaries
+cargo fuzz run brep_pipeline -- -max_total_time=120 -max_len=96
+```
+
+Constructed fixtures cover invalid ownership/references, shell closure/connectivity,
+edge orientation and vertex-link defects, planar holes, curved boundaries, periodic
+seams, singularities, canonical position identity, knot corners and discontinuities.
+Compile-fail examples distinguish handle kinds and prevent bypassing validity states.
+A shared 3,388-case stable harness mutates bounded raw topology and arbitrary float
+intervals, then exercises each successful downstream stage with finite budgets.
+The same harness is a libFuzzer target in nightly CI. External STEP corpus acceptance
+continues to measure physical parsing until a real geometry adapter is implemented.
