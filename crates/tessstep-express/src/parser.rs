@@ -196,9 +196,8 @@ impl Parser<'_> {
     }
     fn declaration(&mut self) -> Result<Declaration, Diagnostic> {
         let start = self.span();
-        let kind;
         let name;
-        if self.eat("ENTITY") {
+        let kind = if self.eat("ENTITY") {
             name = self.name()?;
             let abstract_entity = self.eat("ABSTRACT");
             let supertype = if self.eat("SUPERTYPE") {
@@ -266,14 +265,14 @@ impl Parser<'_> {
             };
             self.expect("END_ENTITY")?;
             self.expect(";")?;
-            kind = DeclarationKind::Entity(Entity {
+            DeclarationKind::Entity(Entity {
                 abstract_entity,
                 supertype,
                 supertypes,
                 attributes,
                 unique,
                 where_rules,
-            });
+            })
         } else if self.eat("TYPE") {
             name = self.name()?;
             self.expect("=")?;
@@ -286,10 +285,10 @@ impl Parser<'_> {
             };
             self.expect("END_TYPE")?;
             self.expect(";")?;
-            kind = DeclarationKind::Type {
+            DeclarationKind::Type {
                 underlying,
                 where_rules,
-            };
+            }
         } else if ["FUNCTION", "PROCEDURE", "RULE", "SUBTYPE_CONSTRAINT"]
             .iter()
             .any(|k| self.at(k))
@@ -317,18 +316,18 @@ impl Parser<'_> {
             }
             self.expect(";")?;
             let span = self.finish_span(start);
-            kind = DeclarationKind::Unsupported {
+            DeclarationKind::Unsupported {
                 keyword,
                 body: Expression {
                     text: self.input[span.start..span.end].into(),
                     span,
                 },
-            };
+            }
         } else {
             return Err(
                 self.error("expected ENTITY, TYPE, CONSTANT, or a supported opaque declaration")
             );
-        }
+        };
         Ok(Declaration {
             name,
             span: self.finish_span(start),
@@ -410,8 +409,7 @@ impl Parser<'_> {
             return Err(limit(self.span(), "type nesting"));
         }
         let start = self.span();
-        let kind;
-        if ["ARRAY", "BAG", "LIST", "SET"].iter().any(|k| self.at(k)) {
+        let kind = if ["ARRAY", "BAG", "LIST", "SET"].iter().any(|k| self.at(k)) {
             let aggregate = match self.tokens[self.pos].text.as_str() {
                 "ARRAY" => AggregateKind::Array,
                 "BAG" => AggregateKind::Bag,
@@ -436,18 +434,18 @@ impl Parser<'_> {
             let unique = matches!(aggregate, AggregateKind::Array | AggregateKind::List)
                 && self.eat("UNIQUE");
             let element = Box::new(self.ty(depth + 1)?);
-            kind = TypeKind::Aggregate {
+            TypeKind::Aggregate {
                 kind: aggregate,
                 bounds,
                 optional,
                 unique,
                 element,
-            };
+            }
         } else if self.eat("ENUMERATION") {
             self.expect("OF")?;
-            kind = TypeKind::Enumeration(self.names()?);
+            TypeKind::Enumeration(self.names()?)
         } else if self.eat("SELECT") {
-            kind = TypeKind::Select(self.names()?);
+            TypeKind::Select(self.names()?)
         } else if [
             "BINARY", "BOOLEAN", "INTEGER", "LOGICAL", "NUMBER", "REAL", "STRING",
         ]
@@ -467,10 +465,10 @@ impl Parser<'_> {
             if fixed && width.is_none() {
                 return Err(self.error("FIXED requires a width"));
             }
-            kind = TypeKind::Builtin { name, width, fixed };
+            TypeKind::Builtin { name, width, fixed }
         } else {
-            kind = TypeKind::Named(self.name()?);
-        }
+            TypeKind::Named(self.name()?)
+        };
         Ok(TypeExpr {
             kind,
             span: self.finish_span(start),

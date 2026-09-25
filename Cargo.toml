@@ -10,9 +10,11 @@ rust-version = "1.85"
 license = "MIT"
 
 [workspace.dependencies]
-tessstep-express = { path = "crates/tessstep-express" }
-tessstep-part21 = { path = "crates/tessstep-part21" }
-tessstep-model = { path = "crates/tessstep-model" }
+tessstep-schema = { path = "crates/tessstep-schema" }
+tessstep-codegen = { path = "crates/tessstep-codegen" }
+tessstep-express = { path = "crates/tessstep-express", version = "=0.1.0" }
+tessstep-part21 = { path = "crates/tessstep-part21", version = "=0.1.0" }
+tessstep-model = { path = "crates/tessstep-model", version = "=0.1.0" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

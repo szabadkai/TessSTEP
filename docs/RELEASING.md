@@ -36,7 +36,8 @@ on every PR and main push and is required again by the release workflow.
 
 ## Create a release
 
-1. Update the workspace version and release documentation in a reviewed change.
+1. Update the workspace version, exact internal dependency versions in
+   `Cargo.toml`, lockfiles and release documentation in a reviewed change.
 2. Merge to `main` and check CI is green.
 3. Create and push a tag matching the version, for example:
 
