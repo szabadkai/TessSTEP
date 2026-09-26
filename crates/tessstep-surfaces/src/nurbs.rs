@@ -16,6 +16,7 @@ pub struct NurbsSurface<S: Space> {
     v: KnotVector,
     controls: Vec<Point3<S>>,
     weights: Vec<f64>,
+    periodic: [bool; 2],
 }
 impl<S: Space> NurbsSurface<S> {
     pub fn new(
@@ -52,7 +53,72 @@ impl<S: Space> NurbsSurface<S> {
             v,
             controls: controls.to_vec(),
             weights: weights.iter().map(|w| w / scale).collect(),
+            periodic: [false; 2],
         })
+    }
+    /// Declare parameter axes that wrap with period equal to their knot domain.
+    /// Each declared axis must close: the two boundary curves of that axis must agree
+    /// within `tolerance` metres at every knot and knot-span midpoint of the other
+    /// axis. Evaluation then accepts every finite parameter on that axis; the surface
+    /// may be only C0 across the seam, and geometry is otherwise unchanged.
+    pub fn with_periodic_axes(mut self, axes: [bool; 2], tolerance: f64) -> Result<Self, Error> {
+        if !tolerance.is_finite() || tolerance <= 0. {
+            return Err(Error::InvalidShape);
+        }
+        for (axis, &periodic) in axes.iter().enumerate() {
+            if !periodic {
+                continue;
+            }
+            let [lo, hi] = self.knot_vectors()[axis].domain();
+            let other = self.knot_vectors()[1 - axis];
+            let [olo, ohi] = other.domain();
+            let mut samples: Vec<f64> = other
+                .knots()
+                .iter()
+                .copied()
+                .filter(|&k| k >= olo && k <= ohi)
+                .collect();
+            samples.dedup();
+            let midpoints: Vec<f64> = samples.windows(2).map(|w| 0.5 * (w[0] + w[1])).collect();
+            samples.extend(midpoints);
+            for t in samples {
+                let at = |x: f64, side: KnotSide| {
+                    if axis == 0 {
+                        self.evaluate_on_sides(x, t, [side, KnotSide::Right])
+                    } else {
+                        self.evaluate_on_sides(t, x, [KnotSide::Right, side])
+                    }
+                };
+                let a = at(lo, KnotSide::Right)?.position;
+                let b = at(hi, KnotSide::Left)?.position;
+                if a.distance(b)? > tolerance {
+                    return Err(Error::InvalidShape);
+                }
+            }
+        }
+        self.periodic = axes;
+        Ok(self)
+    }
+    /// Axes declared periodic by [`Self::with_periodic_axes`].
+    pub fn periodic_axes(&self) -> [bool; 2] {
+        self.periodic
+    }
+    /// Map a parameter on a periodic axis into its knot domain. A Left-sided request
+    /// at a seam keeps the domain end, so one-sided limits survive wrapping.
+    fn wrap(&self, axis: usize, t: f64, side: KnotSide) -> f64 {
+        if !self.periodic[axis] || !t.is_finite() {
+            return t;
+        }
+        let [lo, hi] = self.knot_vectors()[axis].domain();
+        if t >= lo && t <= hi {
+            return t;
+        }
+        let wrapped = lo + (t - lo).rem_euclid(hi - lo);
+        if wrapped == lo && side == KnotSide::Left {
+            hi
+        } else {
+            wrapped.clamp(lo, hi)
+        }
     }
     pub fn shape(&self) -> [usize; 2] {
         [self.u.control_count(), self.v.control_count()]
@@ -75,8 +141,8 @@ impl<S: Space> NurbsSurface<S> {
         v: f64,
         sides: [KnotSide; 2],
     ) -> Result<Evaluation<S>, Error> {
-        let bu = self.u.basis_on_side(u, sides[0])?;
-        let bv = self.v.basis_on_side(v, sides[1])?;
+        let bu = self.u.basis_on_side(self.wrap(0, u, sides[0]), sides[0])?;
+        let bv = self.v.basis_on_side(self.wrap(1, v, sides[1]), sides[1])?;
         let a = [bu.values(), bu.first(), bu.second()];
         let b = [bv.values(), bv.first(), bv.second()];
         let orders = [(0, 0), (1, 0), (0, 1), (2, 0), (1, 1), (0, 2)];
@@ -210,14 +276,17 @@ impl<S: Space> NurbsSurface<S> {
         } else {
             [self.u.knots(), expanded.as_slice()]
         };
-        Self::new(
+        let mut refined = Self::new(
             [self.u.degree(), self.v.degree()],
             new_knots,
             shape,
             &controls,
             &weights,
             limits,
-        )
+        )?;
+        // Knot insertion preserves geometry, so a validated closure is retained.
+        refined.periodic = self.periodic;
+        Ok(refined)
     }
 }
 fn checked(x: f64) -> Result<f64, Error> {

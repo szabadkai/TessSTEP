@@ -57,10 +57,17 @@ impl SurfaceGeometry {
     pub fn domain(&self) -> [AxisDomain; 2] {
         match self {
             Self::Analytic(s) => s.domain(),
-            Self::Nurbs(s) => s.knot_vectors().map(|k| {
-                let [min, max] = k.domain();
-                AxisDomain::Closed { min, max }
-            }),
+            Self::Nurbs(s) => {
+                let periodic = s.periodic_axes();
+                let [u, v] = s.knot_vectors().map(|k| k.domain());
+                [(u, periodic[0]), (v, periodic[1])].map(|([min, max], periodic)| {
+                    if periodic {
+                        AxisDomain::Periodic { period: max - min }
+                    } else {
+                        AxisDomain::Closed { min, max }
+                    }
+                })
+            }
         }
     }
 }

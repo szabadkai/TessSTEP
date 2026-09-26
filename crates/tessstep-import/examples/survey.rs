@@ -1,11 +1,14 @@
 //! Usage: cargo run -p tessstep-import --example survey -- FILE METRES_PER_UNIT [MAX_ROOTS]
 //! Imports every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the
 //! matching selected-root profile and reports per-root stage outcomes as JSON.
-//! The unit scale is an explicit caller assumption; it is not read from the file.
+//! Each root uses the units of its representation context when discovery finds them,
+//! and the declared length uncertainty as its model tolerance, floored at 1e-8 m;
+//! METRES_PER_UNIT, radians and 1e-8 m are the explicit fallback. Each root reports
+//! which applied, the declared uncertainty and the tolerance and chord it used.
 #![forbid(unsafe_code)]
 use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
 use tessstep_import::*;
-use tessstep_math::{Angle, Length, LengthUnit, ModelTolerance};
+use tessstep_math::{Angle, AngleUnit, Length, LengthUnit, ModelTolerance};
 use tessstep_model::Document;
 use tessstep_part21::{EntityId, ParseLimits};
 
@@ -39,48 +42,73 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
-    let roots: Vec<(EntityId, &str)> = doc
-        .entities()
-        .iter()
-        .filter_map(|e| {
-            let names = e.kind.records().iter().map(|r| r.name.as_ref());
-            let mut found = None;
-            for name in names {
-                for root in ["BREP_WITH_VOIDS", "FACETED_BREP", "MANIFOLD_SOLID_BREP"] {
-                    if name.eq_ignore_ascii_case(root) && found.is_none_or(|f| f > root) {
-                        found = Some(root);
-                    }
-                }
-            }
-            found.map(|root| (e.id, root))
-        })
-        .collect();
-    let model = ModelTolerance::new(Length::metres(1e-8)?, Angle::radians(1e-8)?)?;
-    let tolerance = TessellationTolerance::new(Length::metres(1e-6)?, Angle::radians(0.1)?)?;
+    let roots = discover_solids(&doc, ImportOptions::default())?;
     write!(
         out,
         ",\"parse\":\"accepted\",\"root_count\":{},\"truncated\":{},\"roots\":[",
         roots.len(),
         roots.len() > max_roots
     )?;
-    for (index, &(id, kind)) in roots.iter().take(max_roots).enumerate() {
+    for (index, root) in roots.iter().take(max_roots).enumerate() {
         let started = Instant::now();
-        let faceted = kind == "FACETED_BREP";
-        let imported = if faceted {
-            import_faceted_solid(&doc, id, unit, model, ImportOptions::default())
-        } else {
-            import_planar_solid(&doc, id, unit, model, ImportOptions::default())
+        let (id, kind) = (root.entity, root.kind.step_name());
+        let faceted = root.kind == SolidKind::FacetedBrep;
+        // Context units when the file declares them; otherwise the explicit command-line
+        // length scale and radians. The model tolerance is the declared length
+        // uncertainty, but never below 1e-8 m: several exporters declare values their
+        // written coordinates cannot meet.
+        let (length, angle, declared, units) = match &root.units {
+            Ok(u) => (
+                u.length,
+                u.plane_angle,
+                u.distance_uncertainty,
+                if u.distance_uncertainty.is_some() {
+                    "context"
+                } else {
+                    "context_units"
+                },
+            ),
+            Err(_) => (unit, AngleUnit::RADIAN, None, "assumed"),
         };
-        let result =
-            imported.and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
+        let distance = declared.unwrap_or(1e-8).max(1e-8);
+        let model = ModelTolerance::new(Length::metres(distance)?, Angle::radians(1e-8)?)?;
+        let imported = if faceted {
+            import_faceted_solid(&doc, id, length, model, ImportOptions::default())
+        } else {
+            import_brep_solid(&doc, id, length, angle, model, ImportOptions::default())
+        };
+        // Chord 1e-3 of the solid's vertex bounding-box diagonal, within 1e-6..1e-3 m.
+        let mut chord = 1e-6;
+        let result = imported.and_then(|solid| {
+            let mut lo = [f64::INFINITY; 3];
+            let mut hi = [f64::NEG_INFINITY; 3];
+            for v in &solid.brep().data().vertices {
+                for (k, x) in v.position.coordinates().into_iter().enumerate() {
+                    lo[k] = lo[k].min(x);
+                    hi[k] = hi[k].max(x);
+                }
+            }
+            let diagonal = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+            if diagonal.is_finite() {
+                chord = (diagonal * 1e-3).clamp(1e-6, 1e-3);
+            }
+            let tolerance = TessellationTolerance::new(
+                Length::metres(chord).expect("finite chord"),
+                Angle::radians(0.1).expect("finite angle"),
+            )
+            .expect("valid tolerance");
+            solid.tessellate(tolerance, TessellationOptions::default())
+        });
         if index > 0 {
             out.push(',');
         }
         write!(
             out,
-            "{{\"id\":{},\"type\":\"{kind}\",\"profile\":\"{}\",",
+            "{{\"id\":{},\"type\":\"{kind}\",\"profile\":\"{}\",\"units\":\"{units}\",\"metres_per_unit\":{},\"model_tolerance_m\":{distance:e},\"declared_uncertainty_m\":{},",
             id.get(),
-            if faceted { "faceted" } else { "planar" }
+            if faceted { "faceted" } else { "brep" },
+            length.scale(),
+            declared.map_or("null".to_string(), |d| format!("{d:e}"))
         )?;
         match result {
             Ok(mesh) => write!(
@@ -92,7 +120,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )?,
             Err(e) => failure(&mut out, &doc, &e)?,
         }
-        write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
+        write!(
+            out,
+            ",\"chord_m\":{chord:e},\"seconds\":{:.6}}}",
+            started.elapsed().as_secs_f64()
+        )?;
     }
     out.push_str("]}");
     println!("{out}");

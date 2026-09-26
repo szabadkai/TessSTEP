@@ -367,9 +367,31 @@ fn decode_scope<'a>(
         }
     }
     let mut instances = Vec::new();
-    for entity in document.entities().iter() {
-        cx.tick()?;
-        if roots.is_none() || selected.contains(&entity.id) {
+    if roots.is_some() {
+        // Closure-sized work: selected-root decoding never scans unrelated records.
+        let mut positions = Vec::with_capacity(selected.len());
+        for id in &selected {
+            cx.tick()?;
+            positions.push(
+                document
+                    .entities()
+                    .position(*id)
+                    .expect("closure members were resolved"),
+            );
+        }
+        positions.sort_unstable();
+        for position in positions {
+            cx.tick()?;
+            instances.push(
+                document
+                    .entities()
+                    .at(position)
+                    .expect("positions come from the index"),
+            );
+        }
+    } else {
+        for entity in document.entities().iter() {
+            cx.tick()?;
             instances.push(entity);
         }
     }
@@ -430,7 +452,7 @@ fn decode_scope<'a>(
                         ));
                     }
                 } else if link {
-                    cx.link(value, attribute.optional)?;
+                    cx.link(&attribute.domain, value, attribute.optional)?;
                 } else {
                     cx.value(&attribute.domain, value, attribute.optional, 0)?;
                 }
@@ -712,22 +734,54 @@ impl<'a> Context<'a> {
             "target is not assignable to entity domain",
         ))
     }
-    fn link(&mut self, value: &StepValue, optional: bool) -> Result<(), Error> {
+    /// A link declared with an aggregate domain holds an aggregate of local references;
+    /// any other link holds one reference. Neither the bounds nor the targets are checked.
+    fn link(&mut self, domain: &Domain, value: &StepValue, optional: bool) -> Result<(), Error> {
         self.tick()?;
-        match value.kind {
-            ValueKind::Null if optional => Ok(()),
-            ValueKind::Null => Err(self.error(ErrorKind::RequiredValue, "required value is unset")),
-            ValueKind::Reference(target) if self.document.entities().get(target).is_some() => {
+        match (&value.kind, domain) {
+            (ValueKind::Null, _) if optional => Ok(()),
+            (ValueKind::Null, _) => {
+                Err(self.error(ErrorKind::RequiredValue, "required value is unset"))
+            }
+            (ValueKind::Aggregate(items), Domain::Aggregate { .. }) => {
+                for item in items {
+                    self.tick()?;
+                    self.source = Some(item.source);
+                    match item.kind {
+                        ValueKind::Reference(target) => self.link_target(target)?,
+                        _ => {
+                            return Err(self.error(
+                                ErrorKind::TypeMismatch,
+                                "profile link aggregate requires entity references",
+                            ));
+                        }
+                    }
+                }
                 Ok(())
             }
-            ValueKind::Reference(_) => Err(self.error(
-                ErrorKind::MissingReference,
-                "profile link target is missing",
-            )),
+            (ValueKind::Reference(target), domain)
+                if !matches!(domain, Domain::Aggregate { .. }) =>
+            {
+                self.link_target(*target)
+            }
             _ => Err(self.error(
                 ErrorKind::TypeMismatch,
-                "profile link requires an entity reference",
+                if matches!(domain, Domain::Aggregate { .. }) {
+                    "profile link requires an aggregate of entity references"
+                } else {
+                    "profile link requires an entity reference"
+                },
             )),
+        }
+    }
+    fn link_target(&self, target: EntityId) -> Result<(), Error> {
+        if self.document.entities().get(target).is_some() {
+            Ok(())
+        } else {
+            Err(self.error(
+                ErrorKind::MissingReference,
+                "profile link target is missing",
+            ))
         }
     }
 }

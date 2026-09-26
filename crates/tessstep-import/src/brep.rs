@@ -1,0 +1,1291 @@
+//! Edge-based B-rep solids with elementary and B-spline geometry.
+use super::*;
+use crate::pcurve::{
+    Chart, CurveShape, Frame, Inverter, PcurveError, V3, add, dot, nearest, norm, scale, sub,
+};
+use std::f64::consts::TAU;
+use tessstep_curves::spline::{NurbsCurve, SplineLimits};
+use tessstep_math::{Angle, AngleUnit, Length, ParameterSpace};
+use tessstep_surfaces::{NurbsSurface, Surface};
+
+/// Representation adaptations applied while importing. None changes geometry.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Adaptations {
+    /// Faces with several bounds and no FACE_OUTER_BOUND whose outer bound was
+    /// identified as the unique counterclockwise loop in the surface chart.
+    pub inferred_outer_bounds: usize,
+    /// Synthetic isoparametric seam edges that join the two loops of an annular face
+    /// on a periodic surface into one chart boundary. The seam lies on the surface
+    /// between existing vertices; it adds no mesh vertices except along itself.
+    pub inserted_seams: usize,
+}
+
+/// Import one selected MANIFOLD_SOLID_BREP whose faces lie on planes, cylinders,
+/// cones, spheres, ring tori or B-spline surfaces (including rational and
+/// quasi-uniform forms), bounded by LINE, CIRCLE, ELLIPSE or B-spline EDGE_CURVEs
+/// (directly or as the 3D curve of a SURFACE_CURVE, SEAM_CURVE or
+/// INTERSECTION_CURVE). Shared vertices/edges retain VERTEX_POINT/EDGE_CURVE identity.
+///
+/// Pcurves are computed from the 3D curves; supplied PCURVE geometry is retained as
+/// a link and never read. The outer bound of a face without FACE_OUTER_BOUND is its
+/// unique counterclockwise loop. An annular face whose two loops wind around a
+/// periodic surface direction is cut by an inserted isoparametric seam between two
+/// aligned vertices. Both adaptations are counted in [`ImportedSolid::adaptations`].
+///
+/// `angle` scales CONICAL_SURFACE semi-angles, the only plane-angle measure read.
+/// Vertex loops (surface poles and apices), faces that enclose a pole, cavity shells
+/// (BREP_WITH_VOIDS), degenerate/horn tori and swept surfaces are unsupported. No
+/// coordinate welding, healing or unit inference is performed. ORIENTED_EDGE
+/// endpoint slots must be `*`, or `$` unless `options.strict`.
+pub fn import_brep_solid(
+    document: &Document,
+    root: EntityId,
+    length: LengthUnit,
+    angle: AngleUnit,
+    tolerance: ModelTolerance,
+    options: ImportOptions,
+) -> Result<ImportedSolid, Error> {
+    use brep_profile::schema_tessstep_brep as s;
+    use tessstep_schema::EntityBinding;
+    let schema = &brep_profile::SCHEMA_SET;
+    let schema_name = "tessstep_brep";
+    let omitted = [
+        (s::Entity_ORIENTED_EDGE::DECLARATION, "EDGE_START"),
+        (s::Entity_ORIENTED_EDGE::DECLARATION, "EDGE_END"),
+        (s::Entity_ORIENTED_CLOSED_SHELL::DECLARATION, "CFS_FACES"),
+    ]
+    .map(|(entity, attribute)| decode::OmittedSlot {
+        entity,
+        attribute,
+        allow_unset: !options.strict,
+    });
+    let links = [decode::LinkSlot {
+        entity: s::Entity_SURFACE_CURVE::DECLARATION,
+        attribute: "ASSOCIATED_GEOMETRY",
+    }];
+    let decoded = decode::decode_reachable_profile_with_links(
+        document,
+        schema,
+        schema_name,
+        &[root],
+        &omitted,
+        &links,
+        decode::Limits {
+            max_work: options.max_work,
+            ..decode::Limits::default()
+        },
+    )
+    .map_err(|e| profile_error(document, schema, schema_name, e))?;
+    let mut c = Context {
+        decoded: &decoded,
+        raw: RawBrep::default(),
+        points: BTreeMap::new(),
+        point_entities: Vec::new(),
+        edges: BTreeMap::new(),
+        edge_entities: BTreeMap::new(),
+        remaining: options.max_work,
+        max_records: options.max_records.min(1_000_000),
+        records: 0,
+        current: root,
+        unit: length,
+        tolerance,
+    };
+    let mut b = Builder {
+        angle,
+        edges: Vec::new(),
+        edge_index: BTreeMap::new(),
+        faces: Vec::new(),
+        work: pcurve::Work {
+            remaining: options.max_work,
+        },
+        adaptations: Adaptations::default(),
+    };
+    let solid = c.view(root)?;
+    if c.is(solid, "BREP_WITH_VOIDS") {
+        return Err(c.error(
+            ErrorKind::Unsupported,
+            "BREP_WITH_VOIDS cavity shells are not supported",
+        ));
+    }
+    if !c.is(solid, "MANIFOLD_SOLID_BREP") {
+        return Err(c.error(
+            ErrorKind::Unsupported,
+            "selected root does not match the requested solid profile",
+        ));
+    }
+    let shell = c.reference(solid, "OUTER")?;
+    for face_ref in c.aggregate(shell, "CFS_FACES")? {
+        c.charge(1)?;
+        let face = c.target(face_ref)?;
+        b.face(&mut c, face)?;
+    }
+    b.build(&mut c, root, options)
+}
+
+fn profile_error(
+    document: &Document,
+    schema: &tessstep_schema::SchemaSet,
+    schema_name: &str,
+    e: decode::Error,
+) -> Error {
+    Error {
+        kind: match e.kind {
+            decode::ErrorKind::ResourceLimit => ErrorKind::ResourceLimit,
+            decode::ErrorKind::UnknownEntity | decode::ErrorKind::Unsupported => {
+                ErrorKind::Unsupported
+            }
+            decode::ErrorKind::MissingReference => ErrorKind::MissingEntity,
+            _ => ErrorKind::InvalidGeometry,
+        },
+        stage: Stage::Profile,
+        entity: e.entity,
+        source: e.source,
+        message: if e.kind == decode::ErrorKind::UnknownEntity {
+            outside_profile(document, schema, schema_name, e.entity)
+        } else {
+            e.to_string()
+        },
+    }
+}
+
+struct EdgeRecord {
+    entity: Option<EntityId>,
+    curve: CurveGeometry<ModelSpace, 3>,
+    shape: CurveShape,
+    /// Increasing curve parameter interval; `vertices[0]` is at `range[0]`.
+    range: [f64; 2],
+    vertices: [VertexId; 2],
+}
+/// One oriented use of an edge; `forward` follows the canonical edge direction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Use {
+    edge: usize,
+    forward: bool,
+}
+struct LoopRecord {
+    /// Uses oriented with the surface: the face lies to their left in the UV chart.
+    uses: Vec<Use>,
+    outer: bool,
+}
+struct FaceRecord {
+    entity: EntityId,
+    chart: Chart,
+    surface: SurfaceGeometry,
+    same: bool,
+    loops: Vec<LoopRecord>,
+}
+struct Builder {
+    angle: AngleUnit,
+    edges: Vec<EdgeRecord>,
+    edge_index: BTreeMap<EntityId, (usize, bool)>,
+    faces: Vec<FaceRecord>,
+    work: pcurve::Work,
+    adaptations: Adaptations,
+}
+
+impl<'d, 'a> Context<'d, 'a> {
+    fn real(&self, v: &'d EntityView<'a>, name: &str) -> Result<f64, Error> {
+        match self.attr(v, name)?.kind {
+            ValueKind::Real(x) => Ok(x),
+            ValueKind::Integer(x) => Ok(x as f64),
+            _ => Err(self.error(ErrorKind::InvalidGeometry, "expected a numeric value")),
+        }
+    }
+    fn integer(&self, v: &StepValue) -> Result<i64, Error> {
+        match v.kind {
+            ValueKind::Integer(x) => Ok(x),
+            _ => Err(self.error(ErrorKind::InvalidGeometry, "expected an integer")),
+        }
+    }
+    fn number(&self, v: &StepValue) -> Result<f64, Error> {
+        match v.kind {
+            ValueKind::Real(x) => Ok(x),
+            ValueKind::Integer(x) => Ok(x as f64),
+            _ => Err(self.error(ErrorKind::InvalidGeometry, "expected a numeric value")),
+        }
+    }
+    fn length(&self, v: &'d EntityView<'a>, name: &str) -> Result<f64, Error> {
+        let value = self.checked(self.unit.to_metres(self.real(v, name)?))?;
+        if value <= 0. {
+            return Err(self.error(
+                ErrorKind::InvalidGeometry,
+                format!("{name} must be a positive length"),
+            ));
+        }
+        Ok(value)
+    }
+    fn placement(&self, v: &'d EntityView<'a>) -> Result<PlaneFrame<ModelSpace, 3>, Error> {
+        self.frame(v)
+    }
+    fn points(&self, values: &'a [StepValue]) -> Result<Vec<Point<ModelSpace, 3>>, Error> {
+        values
+            .iter()
+            .map(|value| self.point(self.target(value)?))
+            .collect()
+    }
+}
+
+/// Expanded knot vector from STEP multiplicities, or the implicit quasi-uniform one.
+fn knot_vector<'d, 'a>(
+    c: &Context<'d, 'a>,
+    v: &'d EntityView<'a>,
+    prefix: &str,
+    degree: usize,
+    controls: usize,
+) -> Result<Vec<f64>, Error> {
+    let mut knots = Vec::new();
+    if c.is(v, "QUASI_UNIFORM_CURVE") || c.is(v, "QUASI_UNIFORM_SURFACE") {
+        let spans = controls
+            .checked_sub(degree)
+            .filter(|&n| n > 0)
+            .ok_or_else(|| c.error(ErrorKind::InvalidGeometry, "too few control points"))?;
+        knots.extend(std::iter::repeat_n(0., degree + 1));
+        knots.extend((1..spans).map(|i| i as f64));
+        knots.extend(std::iter::repeat_n(spans as f64, degree + 1));
+        return Ok(knots);
+    }
+    let (m, k) = if prefix.is_empty() {
+        ("KNOT_MULTIPLICITIES".to_string(), "KNOTS".to_string())
+    } else {
+        (
+            format!("{prefix}_MULTIPLICITIES"),
+            format!("{prefix}_KNOTS"),
+        )
+    };
+    let multiplicities = c.aggregate(v, &m)?;
+    let values = c.aggregate(v, &k)?;
+    if multiplicities.len() != values.len() {
+        return Err(c.error(
+            ErrorKind::InvalidGeometry,
+            "knot multiplicity and value counts differ",
+        ));
+    }
+    for (m, k) in multiplicities.iter().zip(values) {
+        let m = c.integer(m)?;
+        if !(1..=(degree as i64 + 1)).contains(&m) || knots.len() > 2 * HARD_KNOTS {
+            return Err(c.error(ErrorKind::InvalidGeometry, "invalid knot multiplicity"));
+        }
+        knots.extend(std::iter::repeat_n(c.number(k)?, m as usize));
+    }
+    if knots.len() != controls + degree + 1 {
+        return Err(c.error(
+            ErrorKind::InvalidGeometry,
+            "knot count does not match degree and control points",
+        ));
+    }
+    Ok(knots)
+}
+const HARD_KNOTS: usize = 100_034;
+fn degree<'d, 'a>(c: &Context<'d, 'a>, v: &'d EntityView<'a>, name: &str) -> Result<usize, Error> {
+    match c.attr(v, name)?.kind {
+        ValueKind::Integer(d) if (1..=16).contains(&d) => Ok(d as usize),
+        _ => Err(c.error(ErrorKind::Unsupported, "B-spline degree outside 1..=16")),
+    }
+}
+
+impl Builder {
+    fn curve<'d, 'a>(
+        &mut self,
+        c: &mut Context<'d, 'a>,
+        v: &'d EntityView<'a>,
+    ) -> Result<(CurveGeometry<ModelSpace, 3>, CurveShape), Error> {
+        c.charge(1)?;
+        c.current = v.id;
+        if c.is(v, "SURFACE_CURVE") {
+            let inner = c.reference(v, "CURVE_3D")?;
+            if c.is(inner, "SURFACE_CURVE") {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "nested SURFACE_CURVE 3D curves are not supported",
+                ));
+            }
+            return self.curve(c, inner);
+        }
+        if c.is(v, "LINE") {
+            let origin = c.point(c.reference(v, "PNT")?)?;
+            let vector = c.reference(v, "DIR")?;
+            let direction = c.direction(c.reference(vector, "ORIENTATION")?)?;
+            let magnitude = c.real(vector, "MAGNITUDE")?;
+            if magnitude <= 0. {
+                return Err(c.error(
+                    ErrorKind::InvalidGeometry,
+                    "LINE requires positive vector magnitude",
+                ));
+            }
+            let tangent = c.checked(direction.scaled(c.checked(c.unit.to_metres(magnitude))?))?;
+            let curve = c.checked(Curve::line(origin, tangent))?;
+            return Ok((
+                CurveGeometry::Analytic(curve),
+                CurveShape::Line {
+                    origin: origin.coordinates(),
+                    tangent: tangent.components(),
+                },
+            ));
+        }
+        if c.is(v, "CIRCLE") || c.is(v, "ELLIPSE") {
+            let frame = c.placement(c.reference(v, "POSITION")?)?;
+            let (a, b) = if c.is(v, "CIRCLE") {
+                let r = c.length(v, "RADIUS")?;
+                (r, r)
+            } else {
+                (c.length(v, "SEMI_AXIS_1")?, c.length(v, "SEMI_AXIS_2")?)
+            };
+            let curve = c.checked(Curve::ellipse(
+                frame,
+                c.checked(Length::metres(a))?,
+                c.checked(Length::metres(b))?,
+            ))?;
+            return Ok((
+                CurveGeometry::Analytic(curve),
+                CurveShape::Conic {
+                    frame: Frame::new(frame),
+                    a,
+                    b,
+                },
+            ));
+        }
+        if c.is(v, "B_SPLINE_CURVE") {
+            let degree = degree(c, v, "DEGREE")?;
+            let controls = c.points(c.aggregate(v, "CONTROL_POINTS_LIST")?)?;
+            c.charge(controls.len())?;
+            let knots = knot_vector(c, v, "", degree, controls.len())?;
+            let weights = if c.is(v, "RATIONAL_B_SPLINE_CURVE") {
+                c.aggregate(v, "WEIGHTS_DATA")?
+                    .iter()
+                    .map(|w| c.number(w))
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                vec![1.; controls.len()]
+            };
+            if !c.is(v, "B_SPLINE_CURVE_WITH_KNOTS") && !c.is(v, "QUASI_UNIFORM_CURVE") {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "B_SPLINE_CURVE needs explicit or quasi-uniform knots",
+                ));
+            }
+            let curve =
+                NurbsCurve::new(degree, &knots, &controls, &weights, SplineLimits::default())
+                    .map_err(|e| c.error(ErrorKind::InvalidGeometry, e))?;
+            return Ok((CurveGeometry::Nurbs(curve), CurveShape::Nurbs));
+        }
+        Err(c.error(
+            ErrorKind::Unsupported,
+            "edge curve type is not supported by the B-rep import profile",
+        ))
+    }
+
+    fn surface<'d, 'a>(
+        &mut self,
+        c: &mut Context<'d, 'a>,
+        v: &'d EntityView<'a>,
+    ) -> Result<(Chart, SurfaceGeometry), Error> {
+        c.charge(1)?;
+        c.current = v.id;
+        if c.is(v, "ELEMENTARY_SURFACE") {
+            let frame = c.placement(c.reference(v, "POSITION")?)?;
+            let f = Frame::new(frame);
+            let shape = |e: tessstep_surfaces::Error| c.error(ErrorKind::InvalidGeometry, e);
+            return if c.is(v, "PLANE") {
+                Ok((Chart::Plane(f), Surface::plane(frame)))
+            } else if c.is(v, "CYLINDRICAL_SURFACE") {
+                let r = c.length(v, "RADIUS")?;
+                Ok((
+                    Chart::Cylinder(f, r),
+                    Surface::cylinder(frame, c.checked(Length::metres(r))?).map_err(shape)?,
+                ))
+            } else if c.is(v, "CONICAL_SURFACE") {
+                let r = c.checked(c.unit.to_metres(c.real(v, "RADIUS")?))?;
+                let alpha = c
+                    .checked(self.angle.to_angle(c.real(v, "SEMI_ANGLE")?))?
+                    .as_radians();
+                if r < 0. || !(alpha > 0. && alpha < std::f64::consts::FRAC_PI_2) {
+                    return Err(c.error(
+                        ErrorKind::InvalidGeometry,
+                        "CONICAL_SURFACE needs a nonnegative radius and a semi-angle in (0, 90°)",
+                    ));
+                }
+                // The kernel cone is placed at its apex, on the axis below the placement.
+                let apex = sub(f.o, scale(f.z, r / alpha.tan()));
+                let apex_frame = c.checked(PlaneFrame::new(
+                    c.checked(Point::new(apex))?,
+                    frame.x(),
+                    frame.y(),
+                    NumericalTolerance::default(),
+                ))?;
+                Ok((
+                    Chart::Cone(Frame::new(apex_frame), alpha),
+                    Surface::cone(apex_frame, c.checked(Angle::radians(alpha))?).map_err(shape)?,
+                ))
+            } else if c.is(v, "SPHERICAL_SURFACE") {
+                let r = c.length(v, "RADIUS")?;
+                Ok((
+                    Chart::Sphere(f, r),
+                    Surface::sphere(frame, c.checked(Length::metres(r))?).map_err(shape)?,
+                ))
+            } else if c.is(v, "TOROIDAL_SURFACE") {
+                let major = c.length(v, "MAJOR_RADIUS")?;
+                let minor = c.length(v, "MINOR_RADIUS")?;
+                if major <= minor {
+                    return Err(c.error(
+                        ErrorKind::Unsupported,
+                        "horn and spindle tori (major radius <= minor radius) are not supported",
+                    ));
+                }
+                Ok((
+                    Chart::Torus(f, major, minor),
+                    Surface::torus(
+                        frame,
+                        c.checked(Length::metres(major))?,
+                        c.checked(Length::metres(minor))?,
+                    )
+                    .map_err(shape)?,
+                ))
+            } else {
+                Err(c.error(ErrorKind::Unsupported, "unsupported elementary surface"))
+            }
+            .map(|(chart, surface)| (chart, SurfaceGeometry::Analytic(surface)));
+        }
+        if c.is(v, "B_SPLINE_SURFACE") {
+            if !c.is(v, "B_SPLINE_SURFACE_WITH_KNOTS") && !c.is(v, "QUASI_UNIFORM_SURFACE") {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "B_SPLINE_SURFACE needs explicit or quasi-uniform knots",
+                ));
+            }
+            let degrees = [degree(c, v, "U_DEGREE")?, degree(c, v, "V_DEGREE")?];
+            let rows = c.aggregate(v, "CONTROL_POINTS_LIST")?;
+            let mut controls = Vec::new();
+            let mut nv = None;
+            for row in rows {
+                let ValueKind::Aggregate(row) = &row.kind else {
+                    return Err(c.error(ErrorKind::InvalidGeometry, "expected a control row"));
+                };
+                if nv.replace(row.len()).is_some_and(|n| n != row.len()) {
+                    return Err(c.error(ErrorKind::InvalidGeometry, "ragged control net"));
+                }
+                c.charge(row.len())?;
+                controls.extend(c.points(row)?);
+            }
+            let shape = [rows.len(), nv.unwrap_or(0)];
+            let knots = [
+                knot_vector(c, v, "U", degrees[0], shape[0])?,
+                knot_vector(c, v, "V", degrees[1], shape[1])?,
+            ];
+            let weights = if c.is(v, "RATIONAL_B_SPLINE_SURFACE") {
+                let mut weights = Vec::new();
+                for row in c.aggregate(v, "WEIGHTS_DATA")? {
+                    let ValueKind::Aggregate(row) = &row.kind else {
+                        return Err(c.error(ErrorKind::InvalidGeometry, "expected a weight row"));
+                    };
+                    if row.len() != shape[1] {
+                        return Err(c.error(ErrorKind::InvalidGeometry, "ragged weight net"));
+                    }
+                    for w in row {
+                        weights.push(c.number(w)?);
+                    }
+                }
+                weights
+            } else {
+                vec![1.; controls.len()]
+            };
+            let mut surface = NurbsSurface::new(
+                degrees,
+                [&knots[0], &knots[1]],
+                shape,
+                &controls,
+                &weights,
+                SplineLimits::default(),
+            )
+            .map_err(|e| c.error(ErrorKind::InvalidGeometry, e))?;
+            // A closed axis gets a periodic chart when its boundary curves agree within
+            // the model tolerance; the STEP flag alone is advisory.
+            let closed = [
+                matches!(&c.attr(v, "U_CLOSED")?.kind, ValueKind::Enumeration(e) if e.as_ref() == "T"),
+                matches!(&c.attr(v, "V_CLOSED")?.kind, ValueKind::Enumeration(e) if e.as_ref() == "T"),
+            ];
+            let mut periods = [None; 2];
+            for axis in 0..2 {
+                if !closed[axis] {
+                    continue;
+                }
+                let mut axes = surface.periodic_axes();
+                axes[axis] = true;
+                if let Ok(periodic) = surface
+                    .clone()
+                    .with_periodic_axes(axes, c.tolerance.distance().as_metres())
+                {
+                    let [lo, hi] = periodic.knot_vectors()[axis].domain();
+                    periods[axis] = Some(hi - lo);
+                    surface = periodic;
+                }
+            }
+            return Ok((Chart::Nurbs(periods), SurfaceGeometry::Nurbs(surface)));
+        }
+        Err(c.error(
+            ErrorKind::Unsupported,
+            "face surface type is not supported by the B-rep import profile",
+        ))
+    }
+
+    /// Curve parameter of a vertex. Closed B-splines resolve their shared end point
+    /// to the domain start or end as `at_end` requests.
+    fn parameter(
+        &self,
+        c: &Context<'_, '_>,
+        curve: &CurveGeometry<ModelSpace, 3>,
+        shape: &CurveShape,
+        p: V3,
+        at_end: bool,
+    ) -> Result<f64, Error> {
+        let t = match shape {
+            CurveShape::Line { origin, tangent } => {
+                dot(sub(p, *origin), *tangent) / dot(*tangent, *tangent)
+            }
+            CurveShape::Conic { frame, a, b } => {
+                let d = sub(p, frame.o);
+                (dot(d, frame.y) / b).atan2(dot(d, frame.x) / a)
+            }
+            CurveShape::Nurbs => {
+                let CurveGeometry::Nurbs(n) = curve else {
+                    unreachable!("NURBS shape");
+                };
+                nurbs_parameter(c, n, p, at_end)?
+            }
+        };
+        let q = c.checked(curve.evaluate(t))?.position.coordinates();
+        if norm(sub(q, p)) > c.tolerance.distance().as_metres() {
+            return Err(c.error(
+                ErrorKind::InvalidGeometry,
+                "EDGE_CURVE endpoint is off its declared curve",
+            ));
+        }
+        Ok(t)
+    }
+
+    fn edge<'d, 'a>(
+        &mut self,
+        c: &mut Context<'d, 'a>,
+        edge: &'d EntityView<'a>,
+    ) -> Result<(usize, bool), Error> {
+        if let Some(&found) = self.edge_index.get(&edge.id) {
+            return Ok(found);
+        }
+        let start = c.topological_vertex(c.reference(edge, "EDGE_START")?)?;
+        let end = c.topological_vertex(c.reference(edge, "EDGE_END")?)?;
+        c.current = edge.id;
+        let same = c.boolean(edge, "SAME_SENSE")?;
+        let geometry = c.reference(edge, "EDGE_GEOMETRY")?;
+        let (curve, shape) = self.curve(c, geometry)?;
+        c.current = edge.id;
+        let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
+        let closed = start == end;
+        let range = match (&curve, &shape) {
+            (_, CurveShape::Conic { .. }) => {
+                let ts = self.parameter(c, &curve, &shape, position(start), false)?;
+                if closed {
+                    [ts, ts + TAU]
+                } else {
+                    let te = self.parameter(c, &curve, &shape, position(end), true)?;
+                    let (a, b) = if same { (ts, te) } else { (te, ts) };
+                    let span = (b - a).rem_euclid(TAU);
+                    if span == 0. {
+                        return Err(c.error(
+                            ErrorKind::InvalidGeometry,
+                            "distinct EDGE_CURVE vertices coincide on a closed conic",
+                        ));
+                    }
+                    [a, a + span]
+                }
+            }
+            (CurveGeometry::Nurbs(n), _) if closed => {
+                let domain = n.knot_vector().domain();
+                self.parameter(c, &curve, &shape, position(start), false)?;
+                let ends = [domain[0], domain[1]].map(|t| curve.evaluate(t));
+                let [Ok(a), Ok(b)] = ends else {
+                    return Err(c.error(ErrorKind::InvalidGeometry, "curve evaluation failed"));
+                };
+                let tol = c.tolerance.distance().as_metres();
+                let p = c.raw.vertices[start.0].position;
+                if c.checked(a.position.distance(p))? > tol
+                    || c.checked(b.position.distance(p))? > tol
+                {
+                    return Err(c.error(
+                        ErrorKind::Unsupported,
+                        "closed B-spline edges must start and end at the curve domain ends",
+                    ));
+                }
+                domain
+            }
+            _ => {
+                if closed {
+                    return Err(c.error(
+                        ErrorKind::InvalidGeometry,
+                        "an open curve cannot bound a closed edge",
+                    ));
+                }
+                let ts = self.parameter(c, &curve, &shape, position(start), !same)?;
+                let te = self.parameter(c, &curve, &shape, position(end), same)?;
+                if (same && ts >= te) || (!same && ts <= te) {
+                    return Err(c.error(
+                        ErrorKind::InvalidGeometry,
+                        "EDGE_CURVE same_sense contradicts curve parameter direction",
+                    ));
+                }
+                [ts.min(te), ts.max(te)]
+            }
+        };
+        c.record()?;
+        let index = self.edges.len();
+        self.edges.push(EdgeRecord {
+            entity: Some(edge.id),
+            curve,
+            shape,
+            range,
+            vertices: if same { [start, end] } else { [end, start] },
+        });
+        self.edge_index.insert(edge.id, (index, same));
+        Ok((index, same))
+    }
+
+    fn face<'d, 'a>(
+        &mut self,
+        c: &mut Context<'d, 'a>,
+        face: &'d EntityView<'a>,
+    ) -> Result<(), Error> {
+        c.current = face.id;
+        let (chart, surface) = self.surface(c, c.reference(face, "FACE_GEOMETRY")?)?;
+        c.current = face.id;
+        let same = c.boolean(face, "SAME_SENSE")?;
+        let mut loops = Vec::new();
+        for bound_ref in c.aggregate(face, "BOUNDS")? {
+            c.charge(1)?;
+            let bound = c.target(bound_ref)?;
+            c.current = bound.id;
+            let orientation = c.boolean(bound, "ORIENTATION")?;
+            let wire = c.reference(bound, "BOUND")?;
+            if c.is(wire, "VERTEX_LOOP") {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "VERTEX_LOOP bounds (surface poles and apices) are not supported",
+                ));
+            }
+            let mut uses = Vec::new();
+            for value in c.aggregate(wire, "EDGE_LIST")? {
+                c.charge(1)?;
+                let oriented = c.target(value)?;
+                let forward = c.boolean(oriented, "ORIENTATION")?;
+                let (edge, edge_same) = self.edge(c, c.reference(oriented, "EDGE_ELEMENT")?)?;
+                uses.push(Use {
+                    edge,
+                    forward: forward == edge_same,
+                });
+            }
+            // Store every loop oriented with the surface; the face orientation restores
+            // STEP's same_sense in shell incidence and triangles.
+            if orientation != same {
+                uses.reverse();
+                for u in &mut uses {
+                    u.forward = !u.forward;
+                }
+            }
+            loops.push(LoopRecord {
+                uses,
+                outer: c.is(bound, "FACE_OUTER_BOUND"),
+            });
+        }
+        self.faces.push(FaceRecord {
+            entity: face.id,
+            chart,
+            surface,
+            same,
+            loops,
+        });
+        Ok(())
+    }
+
+    fn pcurve_error(&self, c: &Context<'_, '_>, edge: usize, e: PcurveError) -> Error {
+        let name = match self.edges[edge].entity {
+            Some(id) => format!("EDGE_CURVE #{}", id.get()),
+            None => "inserted seam".to_string(),
+        };
+        let (kind, message) = match e {
+            PcurveError::OffSurface {
+                parameter,
+                distance,
+            } => (
+                ErrorKind::InvalidGeometry,
+                format!(
+                    "{name} lies {distance:.3e} m from the face surface at curve parameter {parameter}"
+                ),
+            ),
+            PcurveError::Singular { parameter } => (
+                ErrorKind::Unsupported,
+                format!(
+                    "{name} crosses a singular point of the face surface at curve parameter {parameter}"
+                ),
+            ),
+            PcurveError::Unresolved => (
+                ErrorKind::Unsupported,
+                format!(
+                    "{name} pcurve did not meet the model tolerance within the subdivision limit"
+                ),
+            ),
+            PcurveError::Limit => (ErrorKind::ResourceLimit, "pcurve work budget".to_string()),
+            PcurveError::Geometry => (
+                ErrorKind::InvalidGeometry,
+                format!("{name} could not be mapped to the face surface"),
+            ),
+        };
+        c.error(kind, message)
+    }
+
+    fn build(
+        mut self,
+        c: &mut Context<'_, '_>,
+        root: EntityId,
+        options: ImportOptions,
+    ) -> Result<ImportedSolid, Error> {
+        let tolerance = c.tolerance.distance().as_metres();
+        let mut plans = Vec::new();
+        let faces = std::mem::take(&mut self.faces);
+        for face in &faces {
+            c.current = face.entity;
+            plans.push(self.plan(c, face, tolerance)?);
+        }
+        for e in &self.edges {
+            c.raw.edges.push(Edge {
+                vertices: e.vertices,
+                curve: e.curve.clone(),
+                range: e.range,
+            });
+        }
+        let mut face_entities = Vec::new();
+        for (face, plan) in faces.iter().zip(plans) {
+            c.current = face.entity;
+            let wire = |c: &mut Context<'_, '_>, uses: &[Use]| -> Result<WireId, Error> {
+                let mut coedges = Vec::new();
+                for u in uses {
+                    c.record()?;
+                    coedges.push(CoedgeId(c.raw.coedges.len()));
+                    c.raw.coedges.push(Coedge {
+                        edge: EdgeId(u.edge),
+                        orientation: if u.forward {
+                            Orientation::Forward
+                        } else {
+                            Orientation::Reversed
+                        },
+                        pcurve: Some(plan.pcurves[&u.edge].clone()),
+                    });
+                }
+                c.record()?;
+                c.raw.wires.push(Wire { coedges });
+                Ok(WireId(c.raw.wires.len() - 1))
+            };
+            let outer = wire(c, &plan.outer)?;
+            let mut holes = Vec::new();
+            for hole in &plan.holes {
+                holes.push(wire(c, hole)?);
+            }
+            c.record()?;
+            c.raw.faces.push(Face {
+                surface: face.surface.clone(),
+                outer,
+                holes,
+                orientation: if face.same {
+                    Orientation::Forward
+                } else {
+                    Orientation::Reversed
+                },
+            });
+            face_entities.push(face.entity);
+        }
+        c.current = root;
+        c.record()?;
+        c.record()?;
+        c.raw.shells.push(Shell {
+            faces: (0..face_entities.len()).map(FaceId).collect(),
+            closed: true,
+        });
+        c.raw.solids.push(Solid { shell: ShellId(0) });
+        let raw = std::mem::take(&mut c.raw);
+        let brep = raw
+            .validate(
+                c.tolerance,
+                ValidationLimits {
+                    max_records: options.max_records,
+                    max_work: options.max_work,
+                },
+            )
+            .map_err(|e| Error {
+                kind: if e.defect == Defect::ResourceLimit {
+                    ErrorKind::ResourceLimit
+                } else {
+                    ErrorKind::InvalidGeometry
+                },
+                stage: Stage::Topology,
+                entity: Some(root),
+                source: c.decoded.document().entities().get(root).map(|e| e.source),
+                message: e.to_string(),
+            })?
+            .normalize();
+        Ok(ImportedSolid {
+            brep,
+            faces: face_entities,
+            root,
+            adaptations: self.adaptations,
+        })
+    }
+}
+
+struct Plan {
+    outer: Vec<Use>,
+    holes: Vec<Vec<Use>>,
+    pcurves: BTreeMap<usize, Pcurve>,
+}
+/// UV endpoints and sampled chart polygon of one loop.
+struct LoopChart {
+    /// Start UV of each use, in the chart of that use's own pcurve.
+    starts: Vec<[f64; 2]>,
+    winding: [i64; 2],
+    polygon: Vec<[f64; 2]>,
+}
+
+impl Builder {
+    fn chart_loop(
+        &self,
+        face: &FaceRecord,
+        uses: &[Use],
+        pcurves: &BTreeMap<usize, Pcurve>,
+    ) -> Result<LoopChart, PcurveError> {
+        let periods = face.chart.periods();
+        let at = |u: &Use, s: f64| -> Result<[f64; 2], PcurveError> {
+            let p = &pcurves[&u.edge];
+            let s = if u.forward { s } else { 1. - s };
+            let t = if s == 0. {
+                p.range[0]
+            } else if s == 1. {
+                p.range[1]
+            } else {
+                p.range[0] + s * (p.range[1] - p.range[0])
+            };
+            Ok(p.curve
+                .evaluate(t)
+                .map_err(|_| PcurveError::Geometry)?
+                .position
+                .coordinates())
+        };
+        let mut starts = Vec::new();
+        let mut displacement = [0.; 2];
+        let mut polygon: Vec<[f64; 2]> = Vec::new();
+        let mut previous: Option<[f64; 2]> = None;
+        for u in uses {
+            let first = at(u, 0.)?;
+            let last = at(u, 1.)?;
+            starts.push(first);
+            for k in 0..2 {
+                displacement[k] += last[k] - first[k];
+            }
+            // Translate each use by whole periods to continue from the previous end.
+            let shift = previous.map_or([0.; 2], |end| {
+                [0, 1].map(|k| match periods[k] {
+                    Some(p) => ((end[k] - first[k]) / p).round() * p,
+                    None => 0.,
+                })
+            });
+            for i in 0..8 {
+                let uv = at(u, i as f64 / 8.)?;
+                polygon.push([uv[0] + shift[0], uv[1] + shift[1]]);
+            }
+            previous = Some([last[0] + shift[0], last[1] + shift[1]]);
+        }
+        let winding = [0, 1].map(|k| match periods[k] {
+            Some(p) => (displacement[k] / p).round() as i64,
+            None => 0,
+        });
+        Ok(LoopChart {
+            starts,
+            winding,
+            polygon,
+        })
+    }
+
+    fn plan(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        face: &FaceRecord,
+        tolerance: f64,
+    ) -> Result<Plan, Error> {
+        let inverter = Inverter {
+            chart: &face.chart,
+            surface: &face.surface,
+            tolerance,
+        };
+        let mut pcurves = BTreeMap::new();
+        for l in &face.loops {
+            for u in &l.uses {
+                if pcurves.contains_key(&u.edge) {
+                    continue;
+                }
+                let e = &self.edges[u.edge];
+                let p = pcurve::pcurve(&inverter, &e.shape, &e.curve, e.range, &mut self.work)
+                    .map_err(|err| self.pcurve_error(c, u.edge, err))?;
+                pcurves.insert(u.edge, p);
+            }
+        }
+        let charts: Vec<LoopChart> = face
+            .loops
+            .iter()
+            .map(|l| self.chart_loop(face, &l.uses, &pcurves))
+            .collect::<Result<_, _>>()
+            .map_err(|e| self.pcurve_error(c, face.loops[0].uses[0].edge, e))?;
+        let wrapping: Vec<usize> = (0..charts.len())
+            .filter(|&i| charts[i].winding != [0, 0])
+            .collect();
+        if wrapping.is_empty() {
+            let explicit: Vec<usize> = (0..face.loops.len())
+                .filter(|&i| face.loops[i].outer)
+                .collect();
+            let outer = match explicit.len() {
+                1 => explicit[0],
+                0 if face.loops.len() == 1 => 0,
+                0 => {
+                    let ccw: Vec<usize> = (0..charts.len())
+                        .filter(|&i| signed_area(&charts[i].polygon) > 0.)
+                        .collect();
+                    if ccw.len() != 1 {
+                        return Err(c.error(
+                            ErrorKind::InvalidGeometry,
+                            format!(
+                                "ambiguous outer bound: no FACE_OUTER_BOUND and {} of {} loops are counterclockwise in the surface chart",
+                                ccw.len(),
+                                charts.len()
+                            ),
+                        ));
+                    }
+                    self.adaptations.inferred_outer_bounds += 1;
+                    ccw[0]
+                }
+                _ => return Err(c.error(ErrorKind::InvalidGeometry, "multiple outer bounds")),
+            };
+            return Ok(Plan {
+                outer: face.loops[outer].uses.clone(),
+                holes: (0..face.loops.len())
+                    .filter(|&i| i != outer)
+                    .map(|i| face.loops[i].uses.clone())
+                    .collect(),
+                pcurves,
+            });
+        }
+        let periodic = |k: usize| face.chart.periods()[k].is_some();
+        let pair = match wrapping.as_slice() {
+            &[a, b] => {
+                let (wa, wb) = (charts[a].winding, charts[b].winding);
+                let axis = (0..2).find(|&k| wa[k] != 0);
+                match axis {
+                    Some(k)
+                        if wa[1 - k] == 0
+                            && wb[1 - k] == 0
+                            && wa[k].abs() == 1
+                            && wb[k] == -wa[k] =>
+                    {
+                        Some(if wa[k] == 1 { (a, b, k) } else { (b, a, k) })
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        let Some((a, b, k)) = pair else {
+            return Err(c.error(
+                ErrorKind::Unsupported,
+                format!(
+                    "{} face loops wind around a periodic surface direction; faces that enclose a pole or apex, or wrap more than once, are not supported",
+                    wrapping.len()
+                ),
+            ));
+        };
+        let holes: Vec<usize> = (0..face.loops.len())
+            .filter(|&i| i != a && i != b)
+            .collect();
+        let (seam, ia, ib, range_j, forward) = self.seam(
+            c,
+            face,
+            &charts,
+            a,
+            b,
+            k,
+            &holes,
+            periodic(1 - k),
+            tolerance,
+        )?;
+        let rotate = |uses: &[Use], start: usize| -> Vec<Use> {
+            uses[start..]
+                .iter()
+                .chain(&uses[..start])
+                .copied()
+                .collect()
+        };
+        let index = self.edges.len();
+        self.edges.push(seam);
+        let mut outer = rotate(&face.loops[a].uses, ia);
+        outer.push(Use {
+            edge: index,
+            forward,
+        });
+        outer.extend(rotate(&face.loops[b].uses, ib));
+        outer.push(Use {
+            edge: index,
+            forward: !forward,
+        });
+        let origin = if k == 0 {
+            [charts[a].starts[ia][0], 0.]
+        } else {
+            [0., charts[a].starts[ia][1]]
+        };
+        let tangent = if k == 0 { [0., 1.] } else { [1., 0.] };
+        pcurves.insert(
+            index,
+            Pcurve {
+                curve: CurveGeometry::Analytic(c.checked(Curve::line(
+                    c.checked(Point::<ParameterSpace, 2>::new(origin))?,
+                    c.checked(Vector::new(tangent))?,
+                ))?),
+                range: range_j,
+            },
+        );
+        self.adaptations.inserted_seams += 1;
+        Ok(Plan {
+            outer,
+            holes: holes.iter().map(|&i| face.loops[i].uses.clone()).collect(),
+            pcurves,
+        })
+    }
+
+    /// An isoparametric seam from a vertex of loop `a` (winding +1 along axis `k`) to an
+    /// aligned vertex of loop `b`, on the side where the face lies (left of `a`).
+    #[allow(clippy::too_many_arguments)]
+    fn seam(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        face: &FaceRecord,
+        charts: &[LoopChart],
+        a: usize,
+        b: usize,
+        k: usize,
+        holes: &[usize],
+        j_periodic: bool,
+        tolerance: f64,
+    ) -> Result<(EdgeRecord, usize, usize, [f64; 2], bool), Error> {
+        let j = 1 - k;
+        let direction = if k == 0 { 1. } else { -1. };
+        let period = face.chart.periods()[k].expect("wrapping axis is periodic");
+        let vertex = |l: usize, i: usize| {
+            let u = face.loops[l].uses[i];
+            let e = &self.edges[u.edge];
+            if u.forward {
+                e.vertices[0]
+            } else {
+                e.vertices[1]
+            }
+        };
+        for (ia, ua) in charts[a].starts.iter().enumerate() {
+            for (ib, ub) in charts[b].starts.iter().enumerate() {
+                c.charge(1)?;
+                let mut bj = ub[j];
+                if j_periodic {
+                    bj = ua[j] + direction * (direction * (ub[j] - ua[j])).rem_euclid(TAU);
+                }
+                let span = direction * (bj - ua[j]);
+                if span <= 0. {
+                    continue;
+                }
+                let crosses = holes.iter().any(|&h| {
+                    let hk: Vec<f64> = charts[h].polygon.iter().map(|p| p[k]).collect();
+                    let hj: Vec<f64> = charts[h].polygon.iter().map(|p| p[j]).collect();
+                    let (kmin, kmax) = minmax(&hk);
+                    let (jmin, jmax) = minmax(&hj);
+                    let seam_k = nearest(ua[k], 0.5 * (kmin + kmax), period);
+                    let (lo, hi) = (ua[j].min(bj), ua[j].max(bj));
+                    seam_k >= kmin && seam_k <= kmax && hi >= jmin && lo <= jmax
+                });
+                if crosses {
+                    continue;
+                }
+                let Some((curve, shape)) = seam_curve(&face.chart, k, ua[k]) else {
+                    continue;
+                };
+                let (va, vb) = (vertex(a, ia), vertex(b, ib));
+                let at = |t: f64| curve.evaluate(t).map(|e| e.position.coordinates());
+                let (Ok(pa), Ok(pb)) = (at(ua[j]), at(bj)) else {
+                    continue;
+                };
+                let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
+                if norm(sub(pa, position(va))) > tolerance
+                    || norm(sub(pb, position(vb))) > tolerance
+                {
+                    continue;
+                }
+                let forward = direction > 0.;
+                let range = [ua[j].min(bj), ua[j].max(bj)];
+                c.record()?;
+                return Ok((
+                    EdgeRecord {
+                        entity: None,
+                        curve,
+                        shape,
+                        range,
+                        vertices: if forward { [va, vb] } else { [vb, va] },
+                    },
+                    ia,
+                    ib,
+                    range,
+                    forward,
+                ));
+            }
+        }
+        Err(c.error(
+            ErrorKind::Unsupported,
+            "annular face on a periodic surface has no pair of aligned loop vertices for a seam that avoids its holes",
+        ))
+    }
+}
+
+fn minmax(values: &[f64]) -> (f64, f64) {
+    values
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &x| {
+            (lo.min(x), hi.max(x))
+        })
+}
+fn signed_area(polygon: &[[f64; 2]]) -> f64 {
+    let n = polygon.len();
+    (0..n)
+        .map(|i| {
+            let (p, q) = (polygon[i], polygon[(i + 1) % n]);
+            p[0] * q[1] - q[0] * p[1]
+        })
+        .sum::<f64>()
+        * 0.5
+}
+
+/// The isoparametric curve with fixed coordinate `k` = `value`, parameterized by the
+/// other surface coordinate, so its pcurve is an axis-aligned UV line.
+fn seam_curve(
+    chart: &Chart,
+    k: usize,
+    value: f64,
+) -> Option<(CurveGeometry<ModelSpace, 3>, CurveShape)> {
+    let point = |p: V3| Point::<ModelSpace, 3>::new(p).ok();
+    let vector = |v: V3| Vector::<ModelSpace, 3>::new(v).ok();
+    let circle =
+        |o: V3, x: V3, y: V3, r: f64| -> Option<(CurveGeometry<ModelSpace, 3>, CurveShape)> {
+            let frame = PlaneFrame::new(
+                point(o)?,
+                vector(x)?,
+                vector(y)?,
+                NumericalTolerance::default(),
+            )
+            .ok()?;
+            let curve = Curve::circle(frame, Length::metres(r).ok()?).ok()?;
+            Some((
+                CurveGeometry::Analytic(curve),
+                CurveShape::Conic {
+                    frame: Frame::new(frame),
+                    a: r,
+                    b: r,
+                },
+            ))
+        };
+    let line = |o: V3, t: V3| -> Option<(CurveGeometry<ModelSpace, 3>, CurveShape)> {
+        Some((
+            CurveGeometry::Analytic(Curve::line(point(o)?, vector(t)?).ok()?),
+            CurveShape::Line {
+                origin: o,
+                tangent: t,
+            },
+        ))
+    };
+    match (chart, k) {
+        (Chart::Cylinder(f, r), 0) => {
+            let radial = add(scale(f.x, value.cos()), scale(f.y, value.sin()));
+            line(add(f.o, scale(radial, *r)), f.z)
+        }
+        (Chart::Cone(f, alpha), 0) => {
+            let radial = add(scale(f.x, value.cos()), scale(f.y, value.sin()));
+            line(
+                f.o,
+                add(scale(radial, alpha.sin()), scale(f.z, alpha.cos())),
+            )
+        }
+        (Chart::Sphere(f, r), 0) => {
+            let radial = add(scale(f.x, value.cos()), scale(f.y, value.sin()));
+            circle(f.o, radial, f.z, *r)
+        }
+        (Chart::Torus(f, major, minor), 0) => {
+            let radial = add(scale(f.x, value.cos()), scale(f.y, value.sin()));
+            circle(add(f.o, scale(radial, *major)), radial, f.z, *minor)
+        }
+        (Chart::Torus(f, major, minor), 1) => circle(
+            add(f.o, scale(f.z, minor * value.sin())),
+            f.x,
+            f.y,
+            major + minor * value.cos(),
+        ),
+        _ => None,
+    }
+}
+
+/// Closest-parameter inversion on a NURBS curve: sampled seed plus Newton iteration.
+fn nurbs_parameter(
+    c: &Context<'_, '_>,
+    n: &NurbsCurve<ModelSpace, 3>,
+    p: V3,
+    at_end: bool,
+) -> Result<f64, Error> {
+    let [lo, hi] = n.knot_vector().domain();
+    let mut breaks: Vec<f64> = n
+        .knot_vector()
+        .knots()
+        .iter()
+        .copied()
+        .filter(|&t| t >= lo && t <= hi)
+        .collect();
+    breaks.dedup();
+    let eval = |t: f64| {
+        n.evaluate(t)
+            .map_err(|e| c.error(ErrorKind::InvalidGeometry, e))
+    };
+    let mut best = (f64::INFINITY, lo);
+    for w in breaks.windows(2) {
+        for i in 0..=8 {
+            let t = w[0] + (w[1] - w[0]) * i as f64 / 8.;
+            let d = norm(sub(eval(t)?.position.coordinates(), p));
+            // Prefer the requested end on closed curves: ties go to the later sample.
+            if d < best.0 || (at_end && d <= best.0) {
+                best = (d, t);
+            }
+        }
+    }
+    let mut t = best.1;
+    for _ in 0..32 {
+        let e = eval(t)?;
+        let r = sub(e.position.coordinates(), p);
+        let d1 = e.first.components();
+        let d2 = e.second.components();
+        let f = dot(r, d1);
+        let df = dot(d1, d1) + dot(r, d2);
+        if df.is_nan() || df <= 0. {
+            break;
+        }
+        let next = (t - f / df).clamp(lo, hi);
+        if next == t {
+            break;
+        }
+        let closer = norm(sub(eval(next)?.position.coordinates(), p)) <= norm(r);
+        if !closer {
+            break;
+        }
+        t = next;
+    }
+    Ok(t)
+}

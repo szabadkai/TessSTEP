@@ -39,3 +39,12 @@ checks closure, triangle count and volume, then imports repeat for two seconds.
 Timing includes selected-root decoding, index/normal validation, mesh construction
 and owned-mesh validation. This is a local throughput observation, not a memory
 benchmark or a comparison with B-rep tessellation.
+
+`cargo bench -p tessstep-import --bench brep` times curved B-rep import and
+tessellation of the authored washer (two inferred outer bounds, two inserted seams)
+at a 1e-5 m chord, then imports roots from documents holding 1, 16 and 128
+renumbered washer copies. Parsing is outside timing; each sample runs for one
+second. Per-root import time staying flat as the document grows is the evidence that
+selected-root decoding is closure-sized. Observed locally on macOS arm64: about 103 µs
+per import at 82, 1,312 and 10,496 entities, and 7.6 ms per 1,024-triangle
+tessellation. This is a local observation, not a memory benchmark.

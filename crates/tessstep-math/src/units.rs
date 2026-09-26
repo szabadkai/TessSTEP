@@ -55,6 +55,22 @@ impl LengthUnit {
         Ok(result)
     }
 }
+/// Explicit positive source plane-angle scale. This type interprets no STEP entities.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AngleUnit(f64);
+impl AngleUnit {
+    pub const RADIAN: Self = Self(1.);
+    pub const DEGREE: Self = Self(std::f64::consts::PI / 180.);
+    pub fn radians_per_unit(value: f64) -> Result<Self, Error> {
+        Ok(Self(positive(value)?))
+    }
+    pub fn scale(self) -> f64 {
+        self.0
+    }
+    pub fn to_angle(self, value: f64) -> Result<Angle, Error> {
+        Angle::radians(convert(value, self.0)?)
+    }
+}
 fn convert(value: f64, scale: f64) -> Result<f64, Error> {
     finite(value)?;
     let result = finite(value * scale)?;

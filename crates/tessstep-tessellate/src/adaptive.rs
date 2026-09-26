@@ -122,6 +122,46 @@ impl Work {
         ))
     }
 }
+impl Work {
+    /// Parametric speeds |S_u| and |S_v| at a UV point.
+    fn speeds(&mut self, surface: &SurfaceGeometry, uv: [f64; 2]) -> Result<[f64; 2], Failure> {
+        self.charge(1)?;
+        self.evaluations = self
+            .evaluations
+            .checked_sub(1)
+            .ok_or(Failure::ResourceLimit)?;
+        let jet = surface.evaluate(uv).map_err(|_| Failure::Geometry)?;
+        Ok([
+            jet.du.norm().map_err(|_| Failure::Geometry)?,
+            jet.dv.norm().map_err(|_| Failure::Geometry)?,
+        ])
+    }
+}
+/// Per-face diagonal UV metric: RMS parametric speeds over (at most 64) boundary
+/// vertices. Scaling UV by it approximates arc length to first order, so edge
+/// selection and flips do not create needles when one parameter spans much more
+/// surface than the other. Degenerate speeds fall back to the unscaled chart.
+fn face_metric(
+    surface: &SurfaceGeometry,
+    vertices: &[Vertex],
+    work: &mut Work,
+) -> Result<[f64; 2], Failure> {
+    let step = vertices.len().div_ceil(64).max(1);
+    let mut sum = [0.; 2];
+    let mut count = 0.;
+    for v in vertices.iter().step_by(step) {
+        let s = work.speeds(surface, v.uv)?;
+        sum[0] += s[0] * s[0];
+        sum[1] += s[1] * s[1];
+        count += 1.;
+    }
+    let metric = sum.map(|x| (x / count).sqrt());
+    if metric.iter().all(|m| m.is_finite() && *m > 0.) {
+        Ok(metric)
+    } else {
+        Ok([1.; 2])
+    }
+}
 /// Tessellate selected constructed faces and weld positions only by topology/cache
 /// identity. Surface normals and UVs remain per corner, preserving seams and creases.
 pub fn tessellate_faces(
@@ -359,10 +399,11 @@ fn face_mesh(
         boundaries.push(poly);
     }
     let uv: Vec<_> = vertices.iter().map(|v| v.uv).collect();
-    let mut triangles = crate::planar::triangulate_uv(&uv, &boundaries, options.planar)
+    let metric = face_metric(surface, &vertices, work)?;
+    let mut triangles = crate::planar::triangulate_uv(&uv, &boundaries, options.planar, metric)
         .map_err(Failure::Polygon)?;
     for round in 0..=options.max_rounds {
-        improve(&vertices, &mut triangles, &constraints, work)?;
+        improve(&vertices, &mut triangles, &constraints, metric, work)?;
         let mut split = BTreeSet::new();
         let mut requests = Vec::new();
         for &tri in &triangles {
@@ -374,7 +415,7 @@ fn face_mesh(
             for k in 0..3 {
                 let a = vertices[tri[k] as usize].uv;
                 let b = vertices[tri[(k + 1) % 3] as usize].uv;
-                let length = (a[0] - b[0]).hypot(a[1] - b[1]);
+                let length = ((a[0] - b[0]) * metric[0]).hypot((a[1] - b[1]) * metric[1]);
                 if !length.is_finite() {
                     return Err(Failure::Geometry);
                 }
@@ -465,22 +506,23 @@ fn probe(
     work: &mut Work,
 ) -> Result<bool, Failure> {
     let (position, n) = work.eval(surface, uv_at(vertices, weights), sides)?;
-    let p = Point3::new([0, 1, 2].map(|k| {
-        (0..3)
-            .map(|i| weights[i] * vertices[i].position.coordinates()[k])
-            .sum()
-    }))
-    .map_err(|_| Failure::Geometry)?;
-    Ok(
-        position.distance(p).map_err(|_| Failure::Geometry)? <= tolerance.chord().as_metres()
-            && n.angle_to(normal)
-                .map_err(|_| Failure::Geometry)?
+    // Geometric chord error: distance from the surface probe to the facet plane.
+    // A tangential parametric offset (for example across a cone generator) is not
+    // surface deviation, so the probe is not compared with its barycentric image;
+    // the normal-angle check below still rejects folded or misoriented facets.
+    let d = position
+        .difference(vertices[0].position)
+        .and_then(|v| v.dot(normal.vector()))
+        .map_err(|_| Failure::Geometry)?
+        .abs();
+    Ok(d <= tolerance.chord().as_metres()
+        && n.angle_to(normal)
+            .map_err(|_| Failure::Geometry)?
+            .as_radians()
+            <= tolerance
+                .normal_angle()
                 .as_radians()
-                <= tolerance
-                    .normal_angle()
-                    .as_radians()
-                    .min(std::f64::consts::FRAC_PI_2 - 1e-12),
-    )
+                .min(std::f64::consts::FRAC_PI_2 - 1e-12))
 }
 fn acceptable(
     surface: &SurfaceGeometry,
@@ -552,7 +594,29 @@ fn acceptable(
             let knots = s.knot_vectors()[axis].knots();
             work.charge(knots.len())?;
             cut.push(lo);
-            cut.extend(knots.iter().copied().filter(|&k| k > lo && k < hi));
+            if s.periodic_axes()[axis] {
+                // Unwrapped charts repeat the knot lines once per period.
+                let [a, b] = s.knot_vectors()[axis].domain();
+                let period = b - a;
+                let first = ((lo - a) / period).floor() as i64;
+                let last = ((hi - a) / period).ceil() as i64;
+                if last - first > 4 {
+                    return Ok(false);
+                }
+                for n in first..=last {
+                    work.charge(knots.len())?;
+                    let shift = n as f64 * period;
+                    cut.extend(
+                        knots
+                            .iter()
+                            .map(|&k| k + shift)
+                            .filter(|&k| k > lo && k < hi),
+                    );
+                }
+                cut.sort_by(f64::total_cmp);
+            } else {
+                cut.extend(knots.iter().copied().filter(|&k| k > lo && k < hi));
+            }
             cut.push(hi);
             cut.dedup();
         }
@@ -642,70 +706,106 @@ fn improve(
     vertices: &[Vertex],
     triangles: &mut [[u32; 3]],
     constraints: &BTreeMap<Key, (EdgeId, f64)>,
+    metric: [f64; 2],
     work: &mut Work,
 ) -> Result<(), Failure> {
-    // Bounded Lawson sweeps: improve UV triangle shape without touching constraints.
-    // A strict angular margin avoids cycling on cocircular floating-point inputs.
-    for _ in 0..64 {
-        work.charge(triangles.len().saturating_mul(3))?;
-        let mut edges = BTreeMap::<Key, Vec<(usize, u32, u32, u32)>>::new();
-        for (i, t) in triangles.iter().enumerate() {
-            for k in 0..3 {
-                let a = t[k];
-                let b = t[(k + 1) % 3];
-                edges
-                    .entry(key(a, b))
-                    .or_default()
-                    .push((i, a, b, t[(k + 2) % 3]));
-            }
-        }
-        let mut touched = BTreeSet::new();
-        let mut changed = false;
-        for (edge, uses) in edges {
-            work.charge(1)?;
-            if constraints.contains_key(&edge) || uses.len() != 2 {
-                continue;
-            }
-            let (i, a, b, c) = uses[0];
-            let (j, _, _, d) = uses[1];
-            if touched.contains(&i) || touched.contains(&j) || c == d {
-                continue;
-            }
-            let [pa, pb, pc, pd] = [a, b, c, d].map(|i| vertices[i as usize].uv);
-            let x = orient(pc, pd, pb);
-            let y = orient(pd, pc, pa);
-            if !x.is_finite() || !y.is_finite() {
-                return Err(Failure::Geometry);
-            }
-            if x <= 0. || y <= 0. {
-                continue;
-            }
-            let angle = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
-                let a = [p[0] - r[0], p[1] - r[1]];
-                let b = [q[0] - r[0], q[1] - r[1]];
-                let cross = a[0] * b[1] - a[1] * b[0];
-                let dot = a[0] * b[0] + a[1] * b[1];
-                if !cross.is_finite() || !dot.is_finite() {
-                    return Err(Failure::Geometry);
-                }
-                Ok(cross.abs().atan2(dot))
-            };
-            let sum = angle(pa, pb, pc)? + angle(pa, pb, pd)?;
-            if !sum.is_finite() {
-                return Err(Failure::Geometry);
-            }
-            if sum > std::f64::consts::PI + 1e-12 {
-                triangles[i] = [c, d, b];
-                triangles[j] = [d, c, a];
-                touched.insert(i);
-                touched.insert(j);
-                changed = true;
-            }
-        }
-        if !changed {
-            return Ok(());
+    // Queue-based Lawson flips in the metric-scaled UV chart: only edges around a
+    // flip are revisited, so an ear-clipping fan unwinds in one pass instead of one
+    // sweep per fan triangle. Constraints are never flipped. A strict angular margin
+    // avoids cycling on cocircular floating-point inputs, and the flip count is
+    // bounded; shape improvement is optional because the error checks still run.
+    let mut incident = BTreeMap::<Key, Vec<usize>>::new();
+    for (i, t) in triangles.iter().enumerate() {
+        work.charge(3)?;
+        for k in 0..3 {
+            incident
+                .entry(key(t[k], t[(k + 1) % 3]))
+                .or_default()
+                .push(i);
         }
     }
-    // Shape improvement is optional; the mandatory error/refinement checks still run.
+    let mut pending: Vec<Key> = incident
+        .iter()
+        .filter(|(edge, tris)| tris.len() == 2 && !constraints.contains_key(edge))
+        .map(|(&edge, _)| edge)
+        .collect();
+    let mut queued: BTreeSet<Key> = pending.iter().copied().collect();
+    let mut flips = 0usize;
+    let limit = triangles.len().saturating_mul(64).saturating_add(1024);
+    while let Some(edge) = pending.pop() {
+        work.charge(1)?;
+        queued.remove(&edge);
+        let Some(tris) = incident.get(&edge) else {
+            continue;
+        };
+        if tris.len() != 2 {
+            continue;
+        }
+        let (i, j) = (tris[0], tris[1]);
+        // Orient the shared edge a->b as it appears in triangle i.
+        let ti = triangles[i];
+        let Some(k) = (0..3).find(|&k| key(ti[k], ti[(k + 1) % 3]) == edge) else {
+            return Err(Failure::Geometry);
+        };
+        let (a, b, c) = (ti[k], ti[(k + 1) % 3], ti[(k + 2) % 3]);
+        let Some(&d) = triangles[j].iter().find(|&&v| v != a && v != b) else {
+            return Err(Failure::Geometry);
+        };
+        if c == d {
+            continue;
+        }
+        let [pa, pb, pc, pd] = [a, b, c, d].map(|i| {
+            let uv = vertices[i as usize].uv;
+            [uv[0] * metric[0], uv[1] * metric[1]]
+        });
+        let x = orient(pc, pd, pb);
+        let y = orient(pd, pc, pa);
+        if !x.is_finite() || !y.is_finite() {
+            return Err(Failure::Geometry);
+        }
+        if x <= 0. || y <= 0. {
+            continue;
+        }
+        let angle = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
+            let a = [p[0] - r[0], p[1] - r[1]];
+            let b = [q[0] - r[0], q[1] - r[1]];
+            let cross = a[0] * b[1] - a[1] * b[0];
+            let dot = a[0] * b[0] + a[1] * b[1];
+            if !cross.is_finite() || !dot.is_finite() {
+                return Err(Failure::Geometry);
+            }
+            Ok(cross.abs().atan2(dot))
+        };
+        let sum = angle(pa, pb, pc)? + angle(pa, pb, pd)?;
+        if !sum.is_finite() {
+            return Err(Failure::Geometry);
+        }
+        if sum <= std::f64::consts::PI + 1e-12 || incident.contains_key(&key(c, d)) {
+            continue;
+        }
+        if flips >= limit {
+            break;
+        }
+        flips += 1;
+        work.charge(8)?;
+        triangles[i] = [c, d, b];
+        triangles[j] = [d, c, a];
+        incident.remove(&edge);
+        incident.insert(key(c, d), vec![i, j]);
+        for (e, from, to) in [(key(d, b), j, i), (key(c, a), i, j)] {
+            if let Some(list) = incident.get_mut(&e) {
+                for t in list.iter_mut() {
+                    if *t == from {
+                        *t = to;
+                    }
+                }
+            }
+        }
+        for e in [key(b, c), key(c, a), key(a, d), key(d, b)] {
+            if !constraints.contains_key(&e) && queued.insert(e) {
+                pending.push(e);
+            }
+        }
+    }
     Ok(())
 }

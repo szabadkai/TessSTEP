@@ -17,6 +17,14 @@ impl EntityDatabase {
     pub fn get(&self, id: EntityId) -> Option<&EntityInstance> {
         self.by_id.get(&id).map(|&slot| &self.entities[slot])
     }
+    /// Zero-based declaration-order position of an entity, as yielded by `iter`.
+    pub fn position(&self, id: EntityId) -> Option<usize> {
+        self.by_id.get(&id).copied()
+    }
+    /// The entity at a declaration-order position.
+    pub fn at(&self, position: usize) -> Option<&EntityInstance> {
+        self.entities.get(position)
+    }
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &EntityInstance> {
         self.entities.iter()
     }

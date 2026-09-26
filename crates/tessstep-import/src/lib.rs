@@ -13,8 +13,19 @@ mod planar_profile;
 #[allow(dead_code)]
 #[rustfmt::skip]
 mod tessellated_profile;
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod brep_profile;
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod context_profile;
+mod brep;
+mod discovery;
+mod pcurve;
 mod planar;
 mod tessellated;
+pub use brep::{Adaptations, import_brep_solid};
+pub use discovery::{ContextUnits, SolidKind, SolidRoot, discover_solids};
 pub use planar::import_planar_solid;
 pub use tessellated::{ImportedTessellation, TessellatedFace, TessellatedKind, import_tessellated};
 
@@ -87,8 +98,13 @@ pub struct ImportedSolid {
     brep: NormalizedBrep,
     faces: Vec<EntityId>,
     root: EntityId,
+    adaptations: Adaptations,
 }
 impl ImportedSolid {
+    /// Representation adaptations applied by the importer; all zero for planar profiles.
+    pub fn adaptations(&self) -> Adaptations {
+        self.adaptations
+    }
     pub fn brep(&self) -> &NormalizedBrep {
         &self.brep
     }
@@ -396,7 +412,12 @@ fn import_solid(
             message: e.to_string(),
         })?
         .normalize();
-    Ok(ImportedSolid { brep, faces, root })
+    Ok(ImportedSolid {
+        brep,
+        faces,
+        root,
+        adaptations: Adaptations::default(),
+    })
 }
 struct Context<'d, 'a> {
     decoded: &'d DecodedDocument<'a>,

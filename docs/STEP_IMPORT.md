@@ -59,6 +59,9 @@ profile rather than as unknown to STEP.
 Curved edges/surfaces, `BREP_WITH_VOIDS`, enclosed cavity shells, multiple bounds
 without an explicit outer, assembly placement, automatic units, STEP appearance and
 healing remain outside these profiles. Profile rejection is not an AP validity verdict.
+The [curved B-rep profile](CURVED_IMPORT.md) is a superset of the edge-based profile
+with elementary and B-spline geometry, implicit outer bounds and root/unit discovery;
+it is Rust-only so far.
 
 ## Edge-based example
 

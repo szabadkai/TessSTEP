@@ -44,21 +44,21 @@ fn verify(mesh: &tessstep_mesh::Mesh, n: &NormalizedBrep, tolerance: Tessellatio
             normal = normal.vector().scaled(-1.).unwrap().normalized().unwrap();
         }
         // Independent dense barycentric probes, beyond the implementation's stencil.
+        // Chord error is the surface's distance from the facet plane; tangential
+        // parametric offsets are not surface deviation.
         for a in 0..=8 {
             for b in 0..=8 - a {
                 let weights = [a as f64 / 8., b as f64 / 8., (8 - a - b) as f64 / 8.];
                 let uv = [0, 1].map(|k| (0..3).map(|j| weights[j] * d.uvs[i][j][k]).sum());
-                let p = Point::new([0, 1, 2].map(|k| {
-                    (0..3)
-                        .map(|j| weights[j] * points[j].coordinates()[k])
-                        .sum()
-                }))
-                .unwrap();
                 let jet = face.surface.evaluate(uv).unwrap();
-                assert!(
-                    jet.position.distance(p).unwrap()
-                        <= tolerance.chord().as_metres() * 1.02 + 1e-12
-                );
+                let offset = jet
+                    .position
+                    .difference(points[0])
+                    .unwrap()
+                    .dot(normal.vector())
+                    .unwrap()
+                    .abs();
+                assert!(offset <= tolerance.chord().as_metres() * 1.02 + 1e-12);
                 assert!(
                     jet.normal(NumericalTolerance::default())
                         .unwrap()

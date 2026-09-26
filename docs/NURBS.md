@@ -74,8 +74,18 @@ claimed, and even a mathematically finite expression can fail on intermediate ov
 
 Periodic control/knot representations are accepted as supplied and tested at their seam;
 closure and continuity are not inferred or certified. Callers must supply the repeated
-controls/extended knots for their intended period. Automatic periodic construction,
-period detection and wrapping remain unsupported.
+controls/extended knots for their intended period. Automatic periodic construction and
+period detection remain unsupported for curves.
+
+`NurbsSurface::with_periodic_axes(axes, tolerance)` declares surface axes that wrap
+with period equal to their knot domain. Each declared axis must close: its two
+boundary curves must agree within `tolerance` metres at every knot and knot-span
+midpoint of the other axis, otherwise the call fails with `InvalidShape`. Evaluation
+then maps any finite parameter on that axis into the domain; a Left-sided request at
+the seam keeps the domain end, so one-sided limits survive. Only C0 closure is
+required, geometry is unchanged, and knot insertion preserves the declaration.
+`SurfaceGeometry::domain` reports such axes as periodic, so trimming chart shifts and
+tessellation periodic guards apply.
 
 ## Refinement
 

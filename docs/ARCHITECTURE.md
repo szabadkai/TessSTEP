@@ -4,8 +4,9 @@ Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust ge
 and runtime reflection, plus a bounded product semantics slice, checked math and
 independent analytic/NURBS curves and surfaces, structural topology, supplied-pcurve UV
 reconstruction, shared-edge sampling, adaptive regular-face tessellation and owned
-manifold shell/solid meshes and selected planar faceted STEP import. General curved
-STEP adaptation and industrial hardening remain pending.
+manifold shell/solid meshes, selected planar faceted STEP import, existing
+tessellation import and curved B-rep import with root/unit discovery. Pole/apex charts,
+cavity shells, swept surfaces and industrial hardening remain pending.
 
 ## Implemented dependency graph
 
@@ -502,3 +503,26 @@ planar profiles' reliance on STEP identity instead of proximity. It rejects rath
 than repairs: opposing normals, inverted solids and open solids fail with typed,
 located errors. Strip-stitching triangles are the only omitted input, and their count
 is reported. No new crate edge, unsafe code or production dependency is introduced.
+
+## Curved B-rep import architecture review
+
+Curved import stays inside the `tessstep-import` composition boundary. A fourth
+generated reduced profile (`tessstep_brep`) mirrors the physical supertype chains that
+complex B-spline records name. The adapter first builds an importer-side intermediate
+of canonical edges (curve, increasing range, vertex identity) and oriented face loops,
+then plans each face's chart before any kernel record is written. Pcurves are computed
+in a separate module from importer-side construction parameters (frames, radii,
+periods), so kernel surface types gain no accessors for STEP's benefit. Every
+adaptation that changes representation (inferred outer bounds, inserted seams) is
+counted; none edits coordinates, curves or surfaces.
+
+Three kernel changes are general rather than STEP-specific. NURBS surfaces can declare
+validated periodic axes, `SurfaceGeometry::domain` reports them, and trimming places
+holes by whole periods. The triangulator ranks ears in a per-face metric chart,
+unwinds fans with queue-based Lawson flips and measures chord error to the facet
+plane. The decoder's link slots accept aggregates of references, and selected-root
+decoding visits only the closure, so its work no longer depends on document size.
+Root discovery decodes representation contexts with its own bounded profile rather
+than the Milestone 5 test schema, whose physical layout differs from exported files.
+No new crate edge, unsafe code or production dependency is introduced; C/C++ entry
+points for curved import and discovery are pending under [C_API.md](C_API.md).

@@ -131,7 +131,9 @@ See [VALIDATION.md](VALIDATION.md) for actual checks and corpus observations.
 `decode_reachable(document, schemas, schema_name, roots, limits)` explicitly limits
 structural validation to the roots' local entity-reference closure. It shares a work
 budget between iterative cycle-safe traversal and decoding. Unrelated entities remain
-unchecked; whole-document `decode` retains its existing contract. Missing closure
+unchecked and are not visited: the closure is ordered by declaration position through
+the entity index, so work is proportional to the closure, not the document. Whole-document
+`decode` retains its existing contract. Missing closure
 references retain the referencing owner and value source span. This mode supports
 bounded import profiles and must not be presented as full-document validation.
 
@@ -151,9 +153,13 @@ declarations. Each resolves to exactly one declaring owner of the named attribut
 duplicates, absent attributes and overlap with an omitted slot are invalid metadata.
 Traversal does not follow a link slot, so its target and the target's closure are
 neither decoded nor type-checked and are absent from the result unless another
-decoded reference reaches them. The slot itself accepts only `$` (when optional) or a
-reference to a local entity; anything else is a type mismatch, and a missing target
-is a missing reference. When link slots are declared, traversal resolves each
+decoded reference reaches them. A slot whose declared domain is not an aggregate
+accepts only `$` (when optional) or a reference to a local entity; a slot declared
+with an aggregate domain accepts `$` (when optional) or an aggregate whose elements are
+all references to local entities, without applying its bounds or element domain.
+Anything else is a type mismatch, and a missing target is a missing reference. When link slots are declared, traversal resolves each
 record's type identities first, so parameter-count and name errors can be reported
 before closure expansion. Existing-tessellation import uses this for B-rep
-provenance links; see [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).
+provenance links; see [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). Curved
+B-rep import retains `SURFACE_CURVE.associated_geometry` and root discovery retains
+representation `items` as aggregate link slots; see [CURVED_IMPORT.md](CURVED_IMPORT.md).

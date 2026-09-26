@@ -5,8 +5,10 @@
 solid mesh is now available in Rust/C/C++. See [STEP_IMPORT.md](STEP_IMPORT.md) for
 explicit units, reduced-profile scope and evidence. Existing triangulated STEP
 tessellations import directly as owned meshes (Milestone 20, Rust only so far); see
-[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). The milestone records below
-describe their delivery-time scope; general curved STEP adaptation remains pending.
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). Curved `MANIFOLD_SOLID_BREP`
+import with elementary and B-spline geometry, computed pcurves and discovered context
+units is available in Rust; see [CURVED_IMPORT.md](CURVED_IMPORT.md). The milestone
+records below describe their delivery-time scope.
 
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
 vertical slice, Milestone 2 EXPRESS frontend, Milestone 3 Rust bindings/reflection and
@@ -207,6 +209,26 @@ C/C++ entry points, tessellated edges/vertices, presentation tessellations, corp
 survey integration and representation selection remain pending. The next numbered
 milestone is 21: systematic AP242 coverage.
 
+**Curved STEP adaptation — first slice delivered 2026-09-26.**
+
+`tessstep_import::import_brep_solid` imports `MANIFOLD_SOLID_BREP`s on planes,
+cylinders, cones, spheres, ring tori and (rational, quasi-uniform) B-spline surfaces,
+bounded by lines, circles, ellipses and B-spline curves, directly or as the 3D curve
+of surface, seam and intersection curves, in simple or complex encodings. Pcurves are
+computed from the 3D curves (exact where linear or conic, otherwise verified cubic
+Hermite fits); supplied PCURVEs are retained as aggregate link slots. Closed B-spline
+axes receive periodic kernel charts. Faces without `FACE_OUTER_BOUND` use their unique
+counterclockwise loop, and annular faces on periodic surfaces are cut by an inserted
+isoparametric seam; both adaptations are counted. `discover_solids` reads each root's
+context units and uncertainty. The tessellator gained metric-aware best-first ear
+clipping, queue-based Lawson flips and facet-plane chord error, and trimming places
+holes by whole periods.
+Eleven generated authored fixtures, three hash-pinned exporter files (ST-DEVELOPER,
+CATIA V5, I-DEAS) and the corpus survey cover this slice: 348 of 1,173 surveyed solid
+roots now pass every stage (22 before). See [CURVED_IMPORT.md](CURVED_IMPORT.md).
+C/C++ entry points, pole and apex charts, edge splitting for misaligned annuli, swept
+surfaces, cavity shells and anisotropic refinement remain pending.
+
 **Import hardening backlog — observed on third-party CAD exports.**
 
 Running the planar importers over every solid root of unmodified exports from
@@ -214,16 +236,20 @@ several CAD systems exposed the gaps below. They feed Milestones 21–22 and the
 pending curved STEP adaptation; none is a conformance claim. Each item needs
 authored fixtures, typed outcomes and corpus-stage evidence before delivery.
 
-- **Curved geometry is the dominant blocker.** Most solid roots in real exports
-  fail at the profile stage on curved entities, not on planar-profile defects.
-  Prioritize adapters by observed frequency: `CIRCLE`/`ELLIPSE` edges, cylindrical
-  and conical surfaces, then (rational) B-spline curves and surfaces, including
-  complex-instance encodings. `BREP_WITH_VOIDS` cavity shells follow.
-- **Implicit outer bounds.** Several exporters never emit `FACE_OUTER_BOUND`; faces
-  with holes use only plain `FACE_BOUND`s, which the schema allows. Otherwise
-  valid solids are rejected solely for this. Infer the outer loop from
-  plane/UV-projected containment and orientation, failing with a typed ambiguity
-  error rather than guessing. Apply the same rule to curved faces once supported.
+- **Curved geometry is the dominant blocker — elementary and B-spline adapters
+  delivered 2026-09-26.** `CIRCLE`/`ELLIPSE` edges, cylindrical, conical, spherical
+  and toroidal surfaces and (rational) B-spline curves and surfaces, including
+  complex-instance encodings, import through the curved profile. The remaining
+  corpus blockers, by frequency: open or inconsistently oriented shells (see below),
+  annular faces whose loop vertices are not aligned (needs reported edge splitting),
+  faces touching poles or apices (including `VERTEX_LOOP`), swept surfaces and
+  `BREP_WITH_VOIDS` cavity shells. Evidence: `brep_elementary_surfaces_close_with_expected_volumes`.
+- **Implicit outer bounds — delivered 2026-09-26 in the curved profile.** A face with
+  several bounds and no `FACE_OUTER_BOUND` uses its unique counterclockwise loop in
+  the surface chart and otherwise fails with "ambiguous outer bound"; holes on
+  periodic surfaces are placed by whole periods. The planar profile keeps its
+  explicit-outer rule. Evidence: `brep_elementary_surfaces_close_with_expected_volumes`
+  (washer) and `brep_rejections_are_typed_and_located`.
 - **Default parse budgets.** The defaults (4M total values, 1M entities, 2M records)
   reject well-formed exports of a few tens of megabytes. Size defaults against
   realistic industrial files, or derive them from input size, while keeping every
@@ -238,19 +264,24 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   share no edges or vertices. Strict rejection stays the default. Any sewing must be
   an explicit, opt-in, tolerance-bounded repair stage whose repairs are reported.
   Reports should classify this defect separately from other open-shell failures.
-- **Per-root import cost.** Importing many roots from one document appears to repeat
-  document-wide work, so the cost per root grows with document size. Share decoded
-  and index state across roots (a document-level import session). Add a benchmark
-  showing assembly import scales with total closure size, not roots × document size.
-- **Root and unit discovery.** Callers currently find solid roots and length units by
-  hand; files often carry hundreds of roots and more than one representation context.
-  Connect Milestone 5 product/unit semantics to root selection, with explicit
-  per-root units and no silent default.
+- **Per-root import cost — decoder part delivered 2026-09-26.** Selected-root decoding
+  used to scan and charge every document entity per root; it now visits only the
+  closure, ordered through the entity index, which also removed decode budget
+  exhaustion on large files. Sharing adapter state across roots (a document-level
+  import session) and a benchmark showing that assembly import scales with total
+  closure size, not roots × document size, remain.
+- **Root and unit discovery — delivered 2026-09-26.** `discover_solids` finds every
+  solid root, the shape representations containing it and their context's SI or
+  conversion-based length and plane-angle units and length uncertainty, through a
+  bounded context profile. Missing or conflicting units are per-root errors, never
+  defaults. Linking roots to product definitions and placements (Milestone 5 graphs)
+  remains. Evidence: `discovery_reads_context_units_and_uncertainty`.
 - **Corpus geometry stage — delivered 2026-09-26.** The corpus runner imports every
   solid root and reports per-root outcomes grouped by stage and error category; see
-  [corpus testing](corpus-testing.md#solid-import-stage). Units are still an explicit
-  runner assumption until root and unit discovery lands. The baseline was refreshed
-  with the new stage on 2026-09-26 after review.
+  [corpus testing](corpus-testing.md#solid-import-stage). Roots now use discovered
+  context units and uncertainty (floored at 1e-8 m) and the curved profile; the
+  baseline was refreshed again on 2026-09-26 after reviewing 234 changed inputs and
+  no regressions.
 - **Unset derived slots — delivered 2026-09-26.** `$` instead of `*` in derived
   `ORIENTED_EDGE` endpoint slots is accepted by default and rejected by an explicit
   strict switch (`ImportOptions::strict`, C `TS_IMPORT_STRICT`, C++ `ImportPolicy`).

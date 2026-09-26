@@ -115,3 +115,10 @@ path = "fuzz_targets/tessellated_import.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "brep_import"
+path = "fuzz_targets/brep_import.rs"
+test = false
+doc = false
+bench = false

@@ -367,3 +367,15 @@ fn math_seeded_affine_properties() {
         near3(id.translation(), [0.; 3]);
     }
 }
+#[test]
+fn math_plane_angle_units_are_explicit_positive_scales() {
+    let degree = AngleUnit::DEGREE;
+    assert!((degree.to_angle(180.).unwrap().as_radians() - std::f64::consts::PI).abs() < 1e-15);
+    assert_eq!(AngleUnit::RADIAN.to_angle(0.5).unwrap().as_radians(), 0.5);
+    assert_eq!(AngleUnit::radians_per_unit(2.).unwrap().scale(), 2.);
+    for bad in [0., -1.] {
+        assert_eq!(AngleUnit::radians_per_unit(bad), Err(Error::OutOfRange));
+    }
+    assert_eq!(AngleUnit::radians_per_unit(f64::NAN), Err(Error::NonFinite));
+    assert!(degree.to_angle(f64::INFINITY).is_err());
+}

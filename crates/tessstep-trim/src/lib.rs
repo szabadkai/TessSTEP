@@ -220,8 +220,10 @@ pub fn reconstruct(
         return Err(err(ErrorKind::WrongOrientation));
     }
     let mut holes = vec![];
+    let domains = f.surface.domain();
     for &wire in &f.holes {
-        let h = build_loop(brep, face, wire, options, &mut budget)?;
+        let mut h = build_loop(brep, face, wire, options, &mut budget)?;
+        place_hole(&outer, &mut h, domains, options.uv_tolerance, &mut budget)?;
         if h.signed_area >= 0. {
             return Err(err(ErrorKind::WrongOrientation));
         }
@@ -242,6 +244,73 @@ pub fn reconstruct(
         holes,
         tolerance: options.uv_tolerance,
     })
+}
+/// Translate a hole by whole periods of the periodic surface axes into the chart of
+/// the outer loop when its first point is not already inside. Candidate shifts are
+/// the nearest-center shift and its immediate neighbours; the geometry is unchanged.
+fn place_hole(
+    outer: &TrimLoop,
+    hole: &mut TrimLoop,
+    domains: [AxisDomain; 2],
+    eps: f64,
+    budget: &mut Budget,
+) -> Result<(), Error> {
+    let periods = domains.map(|d| match d {
+        AxisDomain::Periodic { period } => Some(period),
+        _ => None,
+    });
+    if periods == [None, None] {
+        return Ok(());
+    }
+    budget.work(outer.polygon.len())?;
+    if polygon::classify(&outer.polygon, hole.polygon[0], eps)? == Containment::Inside {
+        return Ok(());
+    }
+    let center = |p: &[[f64; 2]], k: usize| {
+        let (lo, hi) = p
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), q| {
+                (lo.min(q[k]), hi.max(q[k]))
+            });
+        0.5 * (lo + hi)
+    };
+    let base = [0, 1].map(|k| {
+        periods[k].map_or(0., |p| {
+            ((center(&outer.polygon, k) - center(&hole.polygon, k)) / p).round()
+        })
+    });
+    for du in [0., -1., 1.] {
+        for dv in [0., -1., 1.] {
+            let steps = [base[0] + du, base[1] + dv];
+            if (periods[0].is_none() && du != 0.) || (periods[1].is_none() && dv != 0.) {
+                continue;
+            }
+            let shift = [0, 1].map(|k| periods[k].map_or(0., |p| steps[k] * p));
+            if shift == [0., 0.] {
+                continue;
+            }
+            let first = [hole.polygon[0][0] + shift[0], hole.polygon[0][1] + shift[1]];
+            budget.work(outer.polygon.len())?;
+            if polygon::classify(&outer.polygon, first, eps)? != Containment::Inside {
+                continue;
+            }
+            budget.work(hole.polygon.len())?;
+            for p in &mut hole.polygon {
+                p[0] += shift[0];
+                p[1] += shift[1];
+            }
+            for u in &mut hole.uses {
+                for s in &mut u.samples {
+                    s.uv[0] += shift[0];
+                    s.uv[1] += shift[1];
+                }
+                u.period_shift[0] += shift[0];
+                u.period_shift[1] += shift[1];
+            }
+            return Ok(());
+        }
+    }
+    Ok(())
 }
 fn build_loop(
     brep: &NormalizedBrep,

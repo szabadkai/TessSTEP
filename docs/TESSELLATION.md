@@ -105,16 +105,27 @@ regular cone/sphere patches, ring tori and positive-weight tensor-product NURBS 
 share the supplied-pcurve chart and constrained UV triangulator. Face orientation is
 applied to both triangle winding and per-corner normals. Face IDs follow the input model.
 
-A bounded sequence of Lawson edge-flip sweeps improves UV triangle shape while keeping
-constraints fixed. Refinement measures surface-to-barycentric-position distance and the
-angle between the facet normal and evaluated surface normals. Vertex, edge midpoint,
-centroid and interior quarter-weight probes must pass. Periodic triangle extents are
-limited to a quarter period to avoid simple aliasing. NURBS checks clip each triangle
-against every intersected knot cell and probe the clipped corners, edge midpoints and
-center, with one-sided evaluations at cell boundaries. Narrow knot spans therefore
-receive checks even when ordinary triangle probes would miss them.
+Each face uses a diagonal UV metric: the RMS parametric speeds |S_u| and |S_v| over
+(at most 64) boundary samples. Scaling UV by it approximates arc length to first
+order, so a short, wide cylinder or a slow NURBS direction does not produce needles.
+The initial constrained triangulation clips ears best-first by their minimum angle in
+the metric chart (validity predicates use the unscaled chart), turning dense parallel
+boundaries into strips instead of fans. Queue-based Lawson flips in the metric chart
+then revisit only the edges around each flip while keeping constraints fixed; the
+flip count is bounded.
 
-Failing triangles request their longest UV edge midpoint. Each internal midpoint is
+Refinement measures the distance from evaluated surface probes to the facet plane
+(the geometric chord error) and the angle between the facet normal and evaluated
+surface normals. A tangential parametric offset, such as the skew of a UV diagonal
+across a cone generator, is not surface deviation and is not measured. Vertex, edge
+midpoint, centroid and interior quarter-weight probes must pass. Periodic triangle
+extents are limited to a quarter period to avoid simple aliasing. NURBS checks clip
+each triangle against every intersected knot cell (repeated per period on periodic
+axes) and probe the clipped corners, edge midpoints and center, with one-sided
+evaluations at cell boundaries. Narrow knot spans therefore receive checks even when
+ordinary triangle probes would miss them.
+
+Failing triangles request their longest metric UV edge midpoint. Each internal midpoint is
 allocated once and inserted into all incident triangles. No hanging nodes are permitted.
 When the edge is a boundary constraint, the face requests a canonical edge parameter
 midpoint instead. The driver combines requests from all selected faces, retains all
@@ -123,8 +134,10 @@ This also refines straight 3D boundaries where surface normals vary. Faces never
 independent boundary positions. Seams retain distinct UVs while sharing position identity.
 
 Fixed probes and f64 predicates are not certified continuous error bounds or exact
-Delaunay predicates. Edge flips have a strict angular margin and a 64-sweep ceiling;
-they improve shape without claiming a minimum-angle guarantee. Singular normals,
+Delaunay predicates. Edge flips have a strict angular margin and a flip ceiling of
+64 per triangle; they improve shape without claiming a minimum-angle guarantee.
+Refinement is isotropic in the metric chart, so doubly curved faces at very small
+chords can exceed the default vertex and work budgets. Singular normals,
 collapsed curves, missing/non-affine pcurve correspondence and unresolved tolerances
 fail explicitly. Pole/apex handling, automatic singular-edge repair, and explicit
 crease-aligned meshing within a nonsmooth NURBS face remain unsupported; smooth patches

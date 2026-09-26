@@ -1046,3 +1046,55 @@ fn physical_profile_links_are_retained_without_expanding_their_targets() {
         );
     }
 }
+#[test]
+fn physical_profile_aggregate_links_retain_every_reference_without_expanding() {
+    let refs = Domain::Aggregate {
+        kind: AggregateKind::List,
+        bounds: Some((expr("1"), expr("2"))),
+        optional: false,
+        unique: false,
+        element: &Domain::Named(DeclarationId(0)),
+    };
+    let attrs =
+        Box::leak(vec![attr("number", INT, false), attr("links", refs, true)].into_boxed_slice());
+    let schemas = SchemaSet {
+        declarations: Box::leak(vec![entity("BASE", &[], attrs)].into_boxed_slice()),
+        ..SCHEMAS
+    };
+    let link = decode::LinkSlot {
+        entity: DeclarationId(0),
+        attribute: "links",
+    };
+    let decode_links = |source: &str| {
+        decode::decode_reachable_profile_with_links(
+            &parse(source),
+            &schemas,
+            "TEST",
+            &[EntityId::new(1).unwrap()],
+            &[],
+            &[link],
+            Limits::default(),
+        )
+        .map(|d| d.entities().len())
+    };
+    // Targets outside the profile and aggregates beyond the declared bounds are retained
+    // as links: neither the element domain nor the bounds apply.
+    assert_eq!(
+        decode_links("#1=BASE(1,(#2,#3,#2));#2=FOREIGN(#4);#3=ALSO_FOREIGN();#4=X();"),
+        Ok(1)
+    );
+    assert_eq!(decode_links("#1=BASE(1,());"), Ok(1));
+    assert_eq!(decode_links("#1=BASE(1,$);"), Ok(1));
+    for (source, kind) in [
+        (
+            "#1=BASE(1,(#2,#9));#2=FOREIGN();",
+            ErrorKind::MissingReference,
+        ),
+        ("#1=BASE(1,(#2,3));#2=FOREIGN();", ErrorKind::TypeMismatch),
+        ("#1=BASE(1,((#2)));#2=FOREIGN();", ErrorKind::TypeMismatch),
+        ("#1=BASE(1,#2);#2=FOREIGN();", ErrorKind::TypeMismatch),
+        ("#1=BASE('x',(#2));#2=FOREIGN();", ErrorKind::TypeMismatch),
+    ] {
+        assert_eq!(decode_links(source).unwrap_err().kind, kind, "{source}");
+    }
+}

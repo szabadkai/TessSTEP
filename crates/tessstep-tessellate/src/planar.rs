@@ -1,5 +1,5 @@
 use crate::{BoundaryError, BoundarySample, SharedEdges};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BinaryHeap};
 use tessstep_surfaces::SurfaceKind;
 use tessstep_topology::{FaceId, SurfaceGeometry};
 
@@ -120,7 +120,7 @@ impl SharedEdges<'_> {
             boundaries.push(indices);
         }
         let uv: Vec<_> = vertices.iter().map(|s| s.uv).collect();
-        let mut triangles = triangulate_uv(&uv, &boundaries, options)?;
+        let mut triangles = triangulate_uv(&uv, &boundaries, options, [1.; 2])?;
         let jet = f
             .surface
             .evaluate(vertices[0].uv)
@@ -163,10 +163,13 @@ impl SharedEdges<'_> {
     }
 }
 
+/// Constrained triangulation of validated UV loops. `metric` scales UV axes when
+/// ranking ears by shape; validity predicates always use the unscaled chart.
 pub(crate) fn triangulate_uv(
     uv: &[[f64; 2]],
     boundaries: &[Vec<u32>],
     options: PlanarOptions,
+    metric: [f64; 2],
 ) -> Result<Vec<[u32; 3]>, PlanarError> {
     let polygons: Vec<Vec<_>> = boundaries
         .iter()
@@ -187,10 +190,26 @@ pub(crate) fn triangulate_uv(
     if expected > options.max_triangles {
         return Err(PlanarError::ResourceLimit);
     }
+    // Polygon validity is established above at the UV tolerance. Ear and bridge
+    // predicates only need to resolve floating-point sign ambiguity, so their
+    // threshold is relative to the polygon extent and coordinate magnitude; the
+    // join tolerance would reject every ear of a finely sampled smooth boundary.
+    let (mut lo, mut hi, mut magnitude) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2], 0_f64);
+    for &i in boundaries.iter().flatten() {
+        let p = uv[i as usize];
+        for k in 0..2 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+            magnitude = magnitude.max(p[k].abs());
+        }
+    }
+    let extent = (hi[0] - lo[0]).max(hi[1] - lo[1]);
+    let eps =
+        finite(1e-12 * extent + 16. * f64::EPSILON * magnitude)?.min(options.trim.uv_tolerance);
     let mut engine = Engine {
         uv: uv.to_vec(),
         loops: boundaries,
-        eps: options.trim.uv_tolerance,
+        eps,
         work: options.max_work,
     };
     let mut ring = boundaries[0].clone();
@@ -217,28 +236,72 @@ pub(crate) fn triangulate_uv(
         joined.extend_from_slice(&ring[ri..]);
         ring = joined;
     }
+    // Best-first ear clipping: the ear with the largest minimum angle in the metric
+    // chart is clipped next, so dense parallel boundaries become strips instead of
+    // fans. Ear status only changes at the clipped vertex's neighbours; a full rescan
+    // runs if the queue empties early, so no valid ear is ever missed.
+    let m = ring.len();
+    let mut prev: Vec<usize> = (0..m).map(|i| (i + m - 1) % m).collect();
+    let mut next: Vec<usize> = (0..m).map(|i| (i + 1) % m).collect();
+    let mut alive = vec![true; m];
+    let mut version = vec![0u32; m];
+    let mut remaining = m;
+    let mut heap = BinaryHeap::new();
+    let rank = |q: f64| q.to_bits();
+    for p in 0..m {
+        if let Some(q) = engine.ear_quality(&ring, &prev, &next, p, metric)? {
+            heap.push((rank(q), std::cmp::Reverse(p), 0u32));
+        }
+    }
     let mut triangles = Vec::with_capacity(expected);
-    while ring.len() > 3 {
-        let mut ear = None;
-        for i in 0..ring.len() {
-            if engine.ear(&ring, i)? {
-                ear = Some(i);
-                break;
+    while remaining > 3 {
+        let Some((_, std::cmp::Reverse(p), ver)) = heap.pop() else {
+            // Removals can expose ears away from the clipped vertex; rescan once.
+            let mut found = false;
+            for p in 0..m {
+                if !alive[p] {
+                    continue;
+                }
+                version[p] += 1;
+                if let Some(q) = engine.ear_quality(&ring, &prev, &next, p, metric)? {
+                    heap.push((rank(q), std::cmp::Reverse(p), version[p]));
+                    found = true;
+                }
+            }
+            if !found {
+                return Err(PlanarError::UnresolvedGeometry);
+            }
+            continue;
+        };
+        if !alive[p] || ver != version[p] {
+            continue;
+        }
+        let (a, b) = (prev[p], next[p]);
+        triangles.push([ring[a], ring[p], ring[b]]);
+        engine.charge(1)?;
+        alive[p] = false;
+        remaining -= 1;
+        next[a] = b;
+        prev[b] = a;
+        for x in [a, b] {
+            version[x] += 1;
+            if remaining > 3 {
+                if let Some(q) = engine.ear_quality(&ring, &prev, &next, x, metric)? {
+                    heap.push((rank(q), std::cmp::Reverse(x), version[x]));
+                }
             }
         }
-        let i = ear.ok_or(PlanarError::UnresolvedGeometry)?;
-        triangles.push([
-            ring[(i + ring.len() - 1) % ring.len()],
-            ring[i],
-            ring[(i + 1) % ring.len()],
-        ]);
-        engine.charge(ring.len())?;
-        ring.remove(i);
     }
-    if !engine.ear(&ring, 1)? {
+    let Some(first) = (0..m).find(|&p| alive[p]) else {
+        return Err(PlanarError::UnresolvedGeometry);
+    };
+    let last = [ring[prev[first]], ring[first], ring[next[first]]];
+    let [a, b, c] = last.map(|i| engine.p(i));
+    let lengths = [distance(a, b)?, distance(b, c)?, distance(c, a)?];
+    if orient(a, b, c)? <= engine.eps * lengths.into_iter().fold(0., f64::max) {
         return Err(PlanarError::UnresolvedGeometry);
     }
-    triangles.push([ring[0], ring[1], ring[2]]);
+    triangles.push(last);
     engine.verify(&triangles, expected)?;
     Ok(triangles)
 }
@@ -332,34 +395,51 @@ impl Engine<'_> {
         let q = self.p(b);
         self.inside([p[0] * 0.5 + q[0] * 0.5, p[1] * 0.5 + q[1] * 0.5])
     }
-    fn ear(&mut self, ring: &[u32], i: usize) -> Result<bool, PlanarError> {
+    /// Ear test at ring position `p` of the linked ring; returns the ear's minimum
+    /// angle in the metric chart (radians) when it is a valid ear.
+    fn ear_quality(
+        &mut self,
+        ring: &[u32],
+        prev: &[usize],
+        next: &[usize],
+        p: usize,
+        metric: [f64; 2],
+    ) -> Result<Option<f64>, PlanarError> {
         self.charge(1)?;
-        let ids = [
-            ring[(i + ring.len() - 1) % ring.len()],
-            ring[i],
-            ring[(i + 1) % ring.len()],
-        ];
+        let ids = [ring[prev[p]], ring[p], ring[next[p]]];
         let [a, b, c] = ids.map(|j| self.p(j));
         let lengths = [distance(a, b)?, distance(b, c)?, distance(c, a)?];
         if orient(a, b, c)? <= self.eps * lengths.into_iter().fold(0., f64::max) {
-            return Ok(false);
+            return Ok(None);
         }
         // Boundary points on a proposed diagonal block the ear: retaining them
         // prevents a T-junction instead of silently dropping collinear samples.
-        for &j in ring {
+        let mut q = next[next[p]];
+        while q != prev[p] {
             self.charge(1)?;
+            let j = ring[q];
+            q = next[q];
             if ids.contains(&j) {
                 continue;
             }
-            let p = self.p(j);
-            if orient(a, b, p)? >= -self.eps * lengths[0]
-                && orient(b, c, p)? >= -self.eps * lengths[1]
-                && orient(c, a, p)? >= -self.eps * lengths[2]
+            let x = self.p(j);
+            if orient(a, b, x)? >= -self.eps * lengths[0]
+                && orient(b, c, x)? >= -self.eps * lengths[1]
+                && orient(c, a, x)? >= -self.eps * lengths[2]
             {
-                return Ok(false);
+                return Ok(None);
             }
         }
-        Ok(true)
+        let [a, b, c] = [a, b, c].map(|v| [v[0] * metric[0], v[1] * metric[1]]);
+        let angle = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| -> Result<f64, PlanarError> {
+            let u = [q[0] - p[0], q[1] - p[1]];
+            let v = [r[0] - p[0], r[1] - p[1]];
+            let cross = finite(u[0] * v[1] - u[1] * v[0])?;
+            let dot = finite(u[0] * v[0] + u[1] * v[1])?;
+            Ok(cross.abs().atan2(dot))
+        };
+        let quality = angle(a, b, c)?.min(angle(b, c, a)?).min(angle(c, a, b)?);
+        Ok(Some(finite(quality)?))
     }
     fn verify(&mut self, triangles: &[[u32; 3]], expected: usize) -> Result<(), PlanarError> {
         if triangles.len() != expected {

@@ -315,3 +315,102 @@ fn uv_polygon_validation_checks_actual_resolution_and_limits() {
         ErrorKind::Geometry
     );
 }
+#[test]
+fn uv_trimming_places_holes_in_the_outer_chart_by_whole_periods() {
+    use std::f64::consts::{PI, TAU};
+    use tessstep_curves::{Curve, PlaneFrame};
+    use tessstep_math::{Length, NumericalTolerance, Point, Vector};
+    let mut r = cylinder_seam();
+    // A UV square hole around u=pi, whose pcurves are supplied one period lower.
+    let (u0, u1, z0, z1) = (PI - 0.2, PI + 0.2, 0.3, 0.7);
+    let at = |u: f64, z: f64| Point::new([u.cos(), u.sin(), z]).unwrap();
+    let first = r.vertices.len();
+    for (u, z) in [(u0, z0), (u0, z1), (u1, z1), (u1, z0)] {
+        r.vertices.push(Vertex { position: at(u, z) });
+    }
+    let v = |i: usize| VertexId(first + i);
+    let circle = |z: f64| {
+        let frame = PlaneFrame::new(
+            Point::new([0., 0., z]).unwrap(),
+            Vector::new([1., 0., 0.]).unwrap(),
+            Vector::new([0., 1., 0.]).unwrap(),
+            NumericalTolerance::default(),
+        )
+        .unwrap();
+        CurveGeometry::Analytic(Curve::circle(frame, Length::metres(1.).unwrap()).unwrap())
+    };
+    let line = |p: Point<tessstep_math::ModelSpace, 3>| {
+        CurveGeometry::Analytic(Curve::line(p, Vector::new([0., 0., 1.]).unwrap()).unwrap())
+    };
+    let e = r.edges.len();
+    r.edges.push(Edge {
+        vertices: [v(0), v(3)],
+        curve: circle(z0),
+        range: [u0, u1],
+    });
+    r.edges.push(Edge {
+        vertices: [v(1), v(2)],
+        curve: circle(z1),
+        range: [u0, u1],
+    });
+    r.edges.push(Edge {
+        vertices: [v(0), v(1)],
+        curve: line(at(u0, z0)),
+        range: [0., z1 - z0],
+    });
+    r.edges.push(Edge {
+        vertices: [v(3), v(2)],
+        curve: line(at(u1, z0)),
+        range: [0., z1 - z0],
+    });
+    let pcurve = |origin: [f64; 2], tangent: [f64; 2], range: [f64; 2]| {
+        Some(Pcurve {
+            curve: CurveGeometry::Analytic(
+                Curve::line(Point::new(origin).unwrap(), Vector::new(tangent).unwrap()).unwrap(),
+            ),
+            range,
+        })
+    };
+    let c = r.coedges.len();
+    // Clockwise in UV: up the left side, along the top, down the right, back along the bottom.
+    for (edge, orientation, pc) in [
+        (
+            e + 2,
+            Orientation::Forward,
+            pcurve([u0 - TAU, z0], [0., 1.], [0., z1 - z0]),
+        ),
+        (
+            e + 1,
+            Orientation::Forward,
+            pcurve([-TAU, z1], [1., 0.], [u0, u1]),
+        ),
+        (
+            e + 3,
+            Orientation::Reversed,
+            pcurve([u1 - TAU, z0], [0., 1.], [0., z1 - z0]),
+        ),
+        (
+            e,
+            Orientation::Reversed,
+            pcurve([-TAU, z0], [1., 0.], [u0, u1]),
+        ),
+    ] {
+        r.coedges.push(Coedge {
+            edge: EdgeId(edge),
+            orientation,
+            pcurve: pc,
+        });
+    }
+    r.wires.push(Wire {
+        coedges: (c..c + 4).map(CoedgeId).collect(),
+    });
+    r.faces[0].holes.push(WireId(r.wires.len() - 1));
+    let t = trimmed(r).unwrap();
+    assert_eq!(t.holes().len(), 1);
+    for u in t.holes()[0].uses() {
+        assert_eq!(u.period_shift, [TAU, 0.]);
+    }
+    assert!((t.holes()[0].signed_area() + 0.4 * 0.4).abs() < 1e-9);
+    assert_eq!(t.classify([PI, 0.5]).unwrap(), Containment::Outside);
+    assert_eq!(t.classify([PI + 1., 0.5]).unwrap(), Containment::Inside);
+}

@@ -84,3 +84,11 @@ identical results from two runs. Seed it with the authored fixtures:
 `cargo +nightly fuzz run tessellated_import corpus/geometry -- -max_total_time=120 -max_len=65536`.
 The stable `tessellated_budgets_order_and_mutation_smoke` test runs 300 seeded byte
 mutations of the tessellated box.
+
+`brep_import` parses bounded Part 21 input, runs root discovery, and imports and
+tessellates root `#1000` with the curved B-rep profile under small finite budgets,
+requiring deterministic outcomes and solid meshes. Seed it with the authored curved
+fixtures:
+`cargo +nightly fuzz run brep_import corpus/geometry -- -max_total_time=120 -max_len=65536`.
+The stable `brep_budgets_record_order_and_mutation_smoke` test runs 450 seeded byte
+mutations of three curved fixtures.

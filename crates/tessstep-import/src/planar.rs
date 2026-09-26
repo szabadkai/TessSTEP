@@ -16,7 +16,7 @@ pub fn import_planar_solid(
     import_solid(document, root, unit, tolerance, options, true)
 }
 impl<'d, 'a> Context<'d, 'a> {
-    fn topological_vertex(&mut self, v: &'d EntityView<'a>) -> Result<VertexId, Error> {
+    pub(super) fn topological_vertex(&mut self, v: &'d EntityView<'a>) -> Result<VertexId, Error> {
         if let Some(&id) = self.points.get(&v.id) {
             return Ok(id);
         }

@@ -1,0 +1,50 @@
+[
+  {
+    "path": "vendor/foxtrot/examples/cube_hole.step",
+    "sha256": "e94a62c2551e6758ffb60922599f365b603e07f2690866855e9b56e4448408cf",
+    "source": "foxtrot pinned revision in corpus/sources.json; unmodified ST-DEVELOPER v18.1 export",
+    "root": 141,
+    "metres_per_unit": 1.0,
+    "model_tolerance_m": 5e-06,
+    "chord_m": 1e-06,
+    "adaptations": [
+      2,
+      1
+    ],
+    "description": "50.8 x 25.4 x 25.4 mm block with an r=6.35 mm through-hole; planar faces without FACE_OUTER_BOUND and a seamless hole cylinder",
+    "volume_m3": 2.9556535507730888e-05,
+    "volume_tolerance": 0.00031496062992125983
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/bug3883_xr2-ct-214_rod.stp",
+    "sha256": "d54bd734b5442cc69e475105751c9356e3330261470ef4fa942695d92f56a91a",
+    "source": "opencascade-dataset pinned revision; unmodified CATIA V5 R13 AP214 export; not redistributed",
+    "root": 22,
+    "metres_per_unit": 0.001,
+    "model_tolerance_m": 5e-06,
+    "chord_m": 1e-05,
+    "adaptations": [
+      0,
+      0
+    ],
+    "description": "r=5 mm, 200 mm rod: B-spline cylindrical faces with degree-5 B-spline edges and planar caps",
+    "volume_m3": 1.5707963267948964e-05,
+    "volume_tolerance": 0.004
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/trj6_as1-id-214.stp",
+    "sha256": "11caa07a769aef8ef6e5726430b946305672b01ff77fd2947f51aaa3e465812c",
+    "source": "opencascade-dataset pinned revision; unmodified I-DEAS Master Series 8 export; not redistributed",
+    "root": 781,
+    "metres_per_unit": 0.001,
+    "model_tolerance_m": 1e-05,
+    "chord_m": 1e-05,
+    "adaptations": [
+      0,
+      0
+    ],
+    "description": "coaxial r=5 x 37 mm and r=7.5 x 3 mm cylinders as closed rational B-spline surfaces with seam edges (periodic NURBS charts)",
+    "volume_m3": 3.436116964863836e-06,
+    "volume_tolerance": 0.004
+  }
+]

@@ -13,16 +13,19 @@ subdivision. Quarter/mid/three-quarter probes measure UV chord error; each probe
 checks its surface lift against the corresponding 3D edge point using the model distance
 tolerance. Singular surface normals and evaluation failures are errors. One-sided knot
 sampling diagnoses discontinuous pcurves. General nonlinear parameter correspondence,
-missing-pcurve reconstruction and arbitrary 3D projection are not implemented.
+missing-pcurve reconstruction and arbitrary 3D projection are not implemented here;
+the [curved STEP importer](CURVED_IMPORT.md#computed-pcurves) computes pcurves before
+trimming.
 
 ## Periodic charts and loops
 
 Pcurve sweeps remain unwrapped, including full periods. At a coedge join, periodic
 surface axes permit translating the whole next use by an integer period to meet the
 previous endpoint. The shift is recorded and both uses of a seam remain distinct.
-Interior pcurve samples are never individually wrapped. Holes must be supplied in the
-same explicit chart as the outer boundary; automatic hole-chart placement is pending.
-A noncontractible loop that fails to close in the unwrapped plane is rejected. A full
+Interior pcurve samples are never individually wrapped. A hole whose first point is
+not inside the outer polygon is translated by whole periods of the periodic axes into
+the outer loop's chart (the nearest-center shift and its neighbours are tried); the
+shift is recorded in every use of the hole and no geometry changes. A noncontractible loop that fails to close in the unwrapped plane is rejected. A full
 cylinder strip works when its two explicit seam uses close the UV rectangle.
 
 Joining uses must agree within the UV tolerance. Per-use endpoint samples are retained;

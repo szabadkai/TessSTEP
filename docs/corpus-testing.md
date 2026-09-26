@@ -50,9 +50,10 @@ A stage blocked by an earlier failure is `not_run`. None of these are passes.
 
 After physical acceptance, the runner executes the `tessstep-import` `survey`
 example on each unique input. It imports every `MANIFOLD_SOLID_BREP`,
-`BREP_WITH_VOIDS` and `FACETED_BREP` root: faceted roots use the faceted
-profile, all others the edge-based planar profile, both with the tolerant default
-policy (see [STEP_IMPORT.md](STEP_IMPORT.md)). Each root reports profile,
+`BREP_WITH_VOIDS` and `FACETED_BREP` root found by `discover_solids`: faceted roots
+use the faceted profile, all others the curved B-rep profile, both with the tolerant
+default policy (see [STEP_IMPORT.md](STEP_IMPORT.md) and
+[CURVED_IMPORT.md](CURVED_IMPORT.md)). Each root reports profile,
 geometry/topology and tessellation outcomes independently, with the failing
 stage, error kind, entity, entity type and message.
 
@@ -63,10 +64,17 @@ the file has none, and otherwise the dominant root failure (`unsupported`,
 roots that reached it, and is `not_run` when none did. Profile rejection is not
 an AP validity verdict: the profiles are reduced, selected-root subsets.
 
-Files do not supply their unit yet: the survey assumes
-`--geometry-metres-per-unit` (default `0.001`, millimetres). The scale changes
-only absolute tolerance comparisons, not which entity types are supported.
-Each report records this assumption and the survey executable hash.
+Each root uses the length and plane-angle units of its representation context and,
+as its model tolerance, the context's length uncertainty floored at 1e-8 m
+(`"units":"context"`; several exporters declare uncertainties such as 1e-16 m that
+their written coordinates cannot meet). A context without a length uncertainty keeps
+its units with a 1e-8 m tolerance (`"context_units"`). When discovery finds no unambiguous context the survey assumes
+`--geometry-metres-per-unit` (default `0.001`, millimetres), radians and 1e-8 m
+(`"assumed"`). The chord tolerance is 1e-3 of the solid's vertex bounding-box
+diagonal, clamped to 1e-6..1e-3 m, with a 0.1 rad normal angle; each root records its
+units, declared uncertainty, tolerance and chord. These are measurement policies of the runner, not
+library defaults. Each report records the fallback assumption and the survey
+executable hash.
 
 `geometry_result` keeps root counts, outcome counts per failing stage and kind,
 the ten most frequent failure categories (with entity IDs replaced by `N`), the

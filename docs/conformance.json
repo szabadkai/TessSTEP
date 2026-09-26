@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20)",
+  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20); curved B-rep import with elementary and B-spline geometry; root and context-unit discovery",
   "features": [
     {
       "feature": "streaming lexer",
@@ -184,9 +184,9 @@
     },
     {
       "feature": "STEP geometry / topology / meshes",
-      "status": "faceted and edge-based planar subsets implemented",
+      "status": "faceted, edge-based planar and curved B-rep subsets implemented",
       "test": "planar_edge_brep_to_mesh_preserves_topology_and_line_trims",
-      "limitations": "Explicit root/units; reduced profiles; polygon or LINE edge loops; no curved import/AP claim"
+      "limitations": "Explicit root/units or discovered context units; reduced profiles; elementary and B-spline surfaces with computed pcurves; no cavity shells, swept surfaces, poles/apices, healing or AP claim"
     },
     {
       "feature": "public C ABI",
@@ -342,7 +342,7 @@
       "feature": "Periodic chart shifts and seam uses",
       "status": "implemented",
       "test": "uv_trimming_aligns_wrapped_pcurve_charts_without_projection",
-      "limitations": "explicit contractible chart and hole placement; no automatic chart atlas"
+      "limitations": "Explicit contractible charts; holes placed into the outer chart by whole periods; no general chart atlas"
     },
     {
       "feature": "Canonical shared-edge sampling",
@@ -486,7 +486,7 @@
       "feature": "Selected-root schema decoding",
       "status": "implemented",
       "test": "schema_reachable_scope_is_cycle_safe_bounded_and_explicit",
-      "limitations": "Local reference closure only; not whole-document/AP conformance"
+      "limitations": "Local reference closure only, visited in closure-sized work; not whole-document/AP conformance"
     },
     {
       "feature": "Faceted STEP orientation and hole topology",
@@ -546,7 +546,55 @@
       "feature": "Explicit physical-profile link slots",
       "status": "implemented",
       "test": "physical_profile_links_are_retained_without_expanding_their_targets",
-      "limitations": "Named opt-in reference slots; targets must be local but are neither decoded, type-checked nor compared with the tessellation"
+      "limitations": "Named opt-in reference or aggregate-of-reference slots; targets must be local but are neither decoded, type-checked nor compared with the tessellation"
+    },
+    {
+      "feature": "Curved B-rep STEP solid import",
+      "status": "implemented",
+      "test": "brep_elementary_surfaces_close_with_expected_volumes",
+      "limitations": "MANIFOLD_SOLID_BREP on plane/cylinder/cone/sphere/ring torus/B-spline surfaces with line/conic/B-spline edges (also as SURFACE_CURVE 3D curves); explicit length and angle units; Rust only"
+    },
+    {
+      "feature": "Computed pcurves",
+      "status": "implemented",
+      "test": "brep_seam_curve_with_supplied_pcurves_matches_the_seamless_cylinder",
+      "limitations": "Exact UV images where linear/conic; otherwise verified cubic Hermite fits to a quarter of the model tolerance; supplied PCURVEs retained as links, never read"
+    },
+    {
+      "feature": "Implicit outer bounds and inserted annulus seams",
+      "status": "implemented",
+      "test": "brep_annular_cylinder_inserts_one_seam_and_meshes_as_a_strip",
+      "limitations": "Unique counterclockwise loop or typed ambiguity error; seams only between aligned loop vertices; both adaptations counted, geometry unchanged"
+    },
+    {
+      "feature": "Curved import rejections and budgets",
+      "status": "implemented",
+      "test": "brep_rejections_are_typed_and_located",
+      "limitations": "Off-surface curves, misaligned annuli, vertex loops, ambiguous outer bounds, horn tori, invalid cone angles, cavity shells and out-of-profile types are typed failures"
+    },
+    {
+      "feature": "Root and representation-context unit discovery",
+      "status": "implemented",
+      "test": "discovery_reads_context_units_and_uncertainty",
+      "limitations": "Shape representations containing each solid root; SI and conversion-based length/plane-angle units and length uncertainty; missing or conflicting units are per-root errors, never defaults"
+    },
+    {
+      "feature": "Periodic NURBS surface axes",
+      "status": "implemented",
+      "test": "nurbs_periodic_axes_require_closure_and_wrap_evaluation",
+      "limitations": "Opt-in per axis after sampled closure validation within a tolerance; C0 seams; knot insertion preserves the declaration"
+    },
+    {
+      "feature": "Automatic periodic hole placement",
+      "status": "implemented",
+      "test": "uv_trimming_places_holes_in_the_outer_chart_by_whole_periods",
+      "limitations": "Nearest-center whole-period shift and its neighbours; shifts recorded per use; no geometry change"
+    },
+    {
+      "feature": "Metric-aware constrained triangulation and refinement",
+      "status": "implemented",
+      "test": "brep_annular_cylinder_inserts_one_seam_and_meshes_as_a_strip",
+      "limitations": "Diagonal RMS-speed UV metric, best-first ear clipping, queue-based Lawson flips and facet-plane chord error; isotropic refinement, no certified bounds"
     }
   ]
 }

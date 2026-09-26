@@ -302,3 +302,101 @@ fn nurbs_surface_affine_covariance_and_one_sided_partials() {
         1e-14,
     );
 }
+/// Rational quadratic unit circle (square control polygon) swept along z.
+fn closed_cylinder() -> S {
+    let w = std::f64::consts::FRAC_1_SQRT_2;
+    let ring = [
+        [1., 0.],
+        [1., 1.],
+        [0., 1.],
+        [-1., 1.],
+        [-1., 0.],
+        [-1., -1.],
+        [0., -1.],
+        [1., -1.],
+        [1., 0.],
+    ];
+    let mut controls = Vec::new();
+    let mut weights = Vec::new();
+    for (i, [x, y]) in ring.into_iter().enumerate() {
+        for z in [0., 2.] {
+            controls.push([x, y, z]);
+            weights.push(if i % 2 == 1 { w } else { 1. });
+        }
+    }
+    S::new(
+        [2, 1],
+        [
+            &[0., 0., 0., 1., 1., 2., 2., 3., 3., 4., 4., 4.],
+            &[0., 0., 1., 1.],
+        ],
+        [9, 2],
+        &pts(&controls),
+        &weights,
+        Default::default(),
+    )
+    .unwrap()
+}
+#[test]
+fn nurbs_periodic_axes_require_closure_and_wrap_evaluation() {
+    let open = closed_cylinder();
+    assert_eq!(open.periodic_axes(), [false; 2]);
+    assert!(open.evaluate(4.5, 0.5).is_err());
+    let periodic = open
+        .clone()
+        .with_periodic_axes([true, false], 1e-12)
+        .unwrap();
+    assert_eq!(periodic.periodic_axes(), [true, false]);
+    for u in [-3.25, -0.5, 0.25, 1.5, 3.99] {
+        let a = periodic.evaluate(u, 0.5).unwrap();
+        let b = periodic.evaluate(u + 4., 0.5).unwrap();
+        near(a.position.coordinates(), b.position.coordinates(), 1e-12);
+        near(a.du.components(), b.du.components(), 1e-12);
+        let inside = open.evaluate(u.rem_euclid(4.), 0.5).unwrap();
+        near(
+            a.position.coordinates(),
+            inside.position.coordinates(),
+            1e-12,
+        );
+    }
+    // The seam keeps both one-sided limits after wrapping.
+    let left = periodic
+        .evaluate_on_sides(8., 0.5, [KnotSide::Left, KnotSide::Right])
+        .unwrap();
+    let right = periodic
+        .evaluate_on_sides(8., 0.5, [KnotSide::Right, KnotSide::Right])
+        .unwrap();
+    near(
+        left.position.coordinates(),
+        right.position.coordinates(),
+        1e-12,
+    );
+    near(
+        left.position.coordinates(),
+        open.evaluate(4., 0.5).unwrap().position.coordinates(),
+        1e-12,
+    );
+    // The v boundaries (z=0 and z=2) do not coincide, and neither do an open patch's.
+    assert_eq!(
+        open.clone().with_periodic_axes([false, true], 1e-6),
+        Err(Error::InvalidShape)
+    );
+    assert_eq!(
+        patch().with_periodic_axes([true, false], 1e-6),
+        Err(Error::InvalidShape)
+    );
+    assert_eq!(
+        open.clone().with_periodic_axes([true, false], 0.),
+        Err(Error::InvalidShape)
+    );
+    // Knot insertion preserves geometry and therefore the validated closure.
+    let refined = periodic
+        .insert_knot(ParameterAxis::U, 0.5, SplineLimits::default())
+        .unwrap();
+    assert_eq!(refined.periodic_axes(), [true, false]);
+    near(
+        refined.evaluate(4.5, 0.5).unwrap().position.coordinates(),
+        periodic.evaluate(0.5, 0.5).unwrap().position.coordinates(),
+        1e-12,
+    );
+}

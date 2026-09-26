@@ -1,3 +1,51 @@
+# Curved B-rep import, unit discovery and tessellation hardening — 2026-09-26
+
+Added `import_brep_solid` for `MANIFOLD_SOLID_BREP`s on elementary and (rational,
+quasi-uniform) B-spline surfaces with line, conic and B-spline edges, computed pcurves,
+inferred outer bounds and inserted annulus seams, plus `discover_solids` for root,
+unit and uncertainty discovery; see [CURVED_IMPORT.md](CURVED_IMPORT.md). Kernel
+changes: validated periodic NURBS axes, whole-period hole placement in trimming,
+aggregate decoder link slots, closure-sized selected-root decoding, and metric-aware
+best-first ear clipping, queue-based Lawson flips and facet-plane chord error in the
+tessellator. Rust only; no C/C++ entry point is claimed.
+
+Observed locally on macOS arm64, rustc 1.98.1:
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | 232 tests/doctests passed |
+| Workspace fmt, Clippy (`-D warnings`, all targets/features) and rustdoc (`-D warnings`) | passed |
+| Architecture, authored fixture provenance and generated conformance | passed; 19 packages, 79 fixtures |
+| Python verification tests | 41 passed |
+| Kernel, CLI, EXPRESS, schema, product and metamorphic checks | passed |
+| `check_capi.py --library-dir target/release` (no sanitizers; see local note) | installed C/C++ package checks passed |
+| `check_geometry.py --require-external` | 44 reviewed outcomes passed, including 11 generated curved fixtures, the planar fixtures through the curved profile and 3 hash-pinned curved exporter files |
+| `cargo check --manifest-path fuzz/Cargo.toml --locked` (unnested copy) | passed with the new `brep_import` target; no coverage-guided run |
+| `cargo bench -p tessstep-import --bench brep` | washer import about 103 µs, tessellation 7.6 ms (1,024 triangles); per-root import flat from 82 to 10,496 entities |
+
+The exporter files are an ST-DEVELOPER block with a seamless hole and no
+`FACE_OUTER_BOUND` (2 inferred bounds, 1 seam), a CATIA V5 rod with degree-5 B-spline
+geometry, and an I-DEAS part whose closed rational B-spline cylinders use periodic
+NURBS charts. Each volume agrees with its closed form within the chord-dependent bound.
+
+`python3 scripts/corpus.py --check` first reported 4 regressions: OCC files whose
+contexts declare a 1e-16 m uncertainty that their coordinates cannot meet. The
+survey now floors the declared uncertainty at 1e-8 m and reports both values. The
+rerun passed (3,230 paths / 3,227 unique inputs, 115 s, all compatible) with 234
+changed inputs and no regressions. Solid roots accepted through tessellation rose
+from 22 to 348 of 1,173 discovered (82 files `unsupported` → `accepted`, 42 →
+`partial`, 85 → `rejected` past the profile stage). Two reviewed reclassifications:
+`bug31711.stp` no longer exhausts the decode budget and now names
+`SURFACE_OF_LINEAR_EXTRUSION`, and `bug33665.step` names `OPEN_SHELL` as outside the
+profile. The baseline was saved after this review.
+
+Among unmodified exporter files (excluding the synthetic defect catalog), 312 roots
+pass and the remaining failures, by frequency, are: pole or apex charts (about 110:
+vertex loops, singular crossings and enclosing loops), edges farther than the
+tolerance from their surface (90), annuli without aligned seam vertices (85),
+unresolved pcurve fits (31), swept surfaces (52), cavity shells (16) and degenerate
+UV loops (16). Every `OpenShell` topology failure is in the synthetic catalog.
+
 # Existing tessellation import (Milestone 20) — 2026-09-26
 
 Added selected-root import of `TESSELLATED_SOLID`, `TESSELLATED_SHELL` and
