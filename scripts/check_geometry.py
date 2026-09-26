@@ -47,23 +47,28 @@ MESH_KEYS = ("kind", "faces", "linked_faces", "skipped_degenerate", "vertices", 
 # split edges, recharted spheres) and the closed-form volume with its smallest
 # curvature radius, or None.
 BREP_EXPECTED = {
-    "brep-cylinder.step": (("accepted",) * 3, (0, 1, 0, 0), (math.pi * 2000e-9, 0.01)),
-    "brep-seam-cylinder.step": (("accepted",) * 3, (0, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
-    "brep-cone.step": (("accepted",) * 3, (0, 1, 0, 0),
+    "brep-cylinder.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
+    "brep-seam-cylinder.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
+    "brep-cone.step": (("accepted",) * 3, (0, 1, 0, 0, 0),
                        (math.pi * 10 / 3 * (100 + 10 * (10 + 10 * math.tan(math.pi / 6)) + (10 + 10 * math.tan(math.pi / 6)) ** 2) * 1e-9, 0.01)),
-    "brep-torus.step": (("accepted",) * 3, (0, 0, 0, 0), (2 * math.pi ** 2 * 20 * 25e-9, 0.005)),
-    "brep-sphere-zone.step": (("accepted",) * 3, (0, 1, 0, 0), (1056 * math.pi * 1e-9, 0.008)),
-    "brep-washer.step": (("accepted",) * 3, (2, 2, 0, 0), (math.pi * 1500e-9, 0.01)),
-    "brep-bspline-cube.step": (("accepted",) * 3, (0, 0, 0, 0), (1e-6, math.inf)),
+    "brep-torus.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (2 * math.pi ** 2 * 20 * 25e-9, 0.005)),
+    "brep-sphere-zone.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (1056 * math.pi * 1e-9, 0.008)),
+    "brep-washer.step": (("accepted",) * 3, (2, 2, 0, 0, 0), (math.pi * 1500e-9, 0.01)),
+    "brep-bspline-cube.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (1e-6, math.inf)),
     "brep-off-surface.step": (("accepted", "rejected", "not_run"), None, None),
-    "brep-misaligned.step": (("accepted",) * 3, (0, 1, 1, 0), (math.pi * 2000e-9, 0.01)),
-    "brep-sphere-cap.step": (("accepted",) * 3, (0, 0, 0, 1), (math.pi * 16 * 26 / 3 * 1e-9, 0.008)),
-    "brep-hemisphere.step": (("accepted", "unsupported", "not_run"), None, None),
-    "brep-vertex-loop.step": (("accepted", "unsupported", "not_run"), None, None),
+    "brep-misaligned.step": (("accepted",) * 3, (0, 1, 1, 0, 0), (math.pi * 2000e-9, 0.01)),
+    "brep-sphere-cap.step": (("accepted",) * 3, (0, 0, 0, 1, 0), (math.pi * 16 * 26 / 3 * 1e-9, 0.008)),
+    "brep-hemisphere.step": (("accepted",) * 3, (0, 1, 0, 0, 1), (2 / 3 * math.pi * 1e-6, 0.01)),
+    "brep-vertex-loop.step": (("accepted",) * 3, (0, 1, 0, 0, 1), (math.pi / 3 * 1e-6, 0.01)),
+    "brep-cone-seam.step": (("accepted",) * 3, (0, 0, 0, 0, 1), (math.pi / 3 * 1e-6, 0.01)),
+    "brep-sphere.step": (("accepted",) * 3, (0, 1, 0, 1, 2), (4 / 3 * math.pi * 1e-6, 0.01)),
+    "brep-sphere-seam.step": (("accepted",) * 3, (0, 0, 0, 0, 2), (4 / 3 * math.pi * 1e-6, 0.01)),
+    "brep-bspline-pole.step": (("accepted",) * 3, (0, 0, 0, 0, 1), (1e-6 / 6, math.inf)),
+    "brep-regular-vertex-loop.step": (("accepted", "unsupported", "not_run"), None, None),
     "brep-ambiguous-outer.step": (("accepted", "rejected", "not_run"), None, None),
 }
 BREP_CHORD = 1e-5
-ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres")
+ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges")
 
 
 def inspect(binary, path, root_id=1000, unit=0.001, scope="faceted-solid", strict=False, extra=()):

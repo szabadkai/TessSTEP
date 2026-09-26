@@ -51,7 +51,10 @@ RSS guarantee or recoverable process-allocation-failure promise.
 
 Curve evaluation returns position, first and second derivatives. Surface evaluation
 returns position, du, dv, duu, duv and dvv. Parameters must be finite and inside the
-closed active domain; they are never clamped, extrapolated or implicitly wrapped.
+closed active domain. A value within 4 ulps of a domain end (relative to the larger of
+the end magnitude and the domain span) is evaluated at that end, because convex
+combinations of points on a boundary round that far outside; farther values fail and
+are never clamped, extrapolated or implicitly wrapped.
 Interior knots default to their right-hand value/derivatives. `evaluate_on_side` and
 `evaluate_on_sides` select left or right explicitly. Both endpoints always use their
 inward side, including nonclamped and repeated terminal knots. A reported derivative

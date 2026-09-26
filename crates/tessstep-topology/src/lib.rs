@@ -94,6 +94,8 @@ pub struct RawBrep {
 pub struct ValidatedBrep {
     raw: RawBrep,
     edge_uses: Vec<Vec<CoedgeId>>,
+    collapsed: Vec<bool>,
+    singular: Vec<bool>,
     tolerance: f64,
 }
 /// Immutable, structurally checked model with canonical edge-use incidence.
@@ -116,6 +118,24 @@ impl NormalizedBrep {
     }
     pub fn edge_uses(&self, edge: EdgeId) -> Option<&[CoedgeId]> {
         self.validated.edge_uses.get(edge.0).map(Vec::as_slice)
+    }
+    /// Whether an edge is collapsed: closed at one vertex with a curve that stays within
+    /// the model tolerance of it. Collapsed edges close face charts at singular lines
+    /// (poles, apices); they may have a single use and have no 3D extent.
+    pub fn is_collapsed(&self, edge: EdgeId) -> bool {
+        self.validated
+            .collapsed
+            .get(edge.0)
+            .copied()
+            .unwrap_or(false)
+    }
+    /// Vertices at which some collapsed edge lies.
+    pub fn is_singular_vertex(&self, vertex: VertexId) -> bool {
+        self.validated
+            .singular
+            .get(vertex.0)
+            .copied()
+            .unwrap_or(false)
     }
     pub fn model_tolerance(&self) -> f64 {
         self.validated.tolerance

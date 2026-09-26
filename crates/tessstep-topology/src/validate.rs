@@ -103,6 +103,7 @@ impl RawBrep {
         }
         let mut vertices = vec![false; self.vertices.len()];
         let mut edge_uses = vec![Vec::new(); self.edges.len()];
+        let mut collapsed = vec![false; self.edges.len()];
         let distance = tolerance.distance().as_metres();
         for (i, e) in self.edges.iter().enumerate() {
             let [a, b] = e.range;
@@ -126,6 +127,27 @@ impl RawBrep {
                 {
                     return Err(fail(Defect::EndpointMismatch, "edge", i));
                 }
+            }
+            // A closed edge whose curve stays at its vertex is collapsed: it represents
+            // a singular line of a face chart (a pole or apex), not a 3D boundary.
+            if e.vertices[0] == e.vertices[1] {
+                spend(&mut work, 3)?;
+                let at = self.vertices[e.vertices[0].0].position;
+                let mut inside = true;
+                for f in [0.25, 0.5, 0.75] {
+                    let p = e
+                        .curve
+                        .evaluate(a + (b - a) * f)
+                        .map_err(|_| fail(Defect::GeometryFailure, "edge", i))?
+                        .position;
+                    if p.distance(at)
+                        .map_err(|_| fail(Defect::GeometryFailure, "edge", i))?
+                        > distance
+                    {
+                        inside = false;
+                    }
+                }
+                collapsed[i] = inside;
             }
         }
         all_used(&vertices, "vertex")?;
@@ -202,18 +224,25 @@ impl RawBrep {
                         ));
                         let prev = &self.coedges[cs[(j + cs.len() - 1) % cs.len()].0];
                         let v = self.use_vertices(cid).expect("validated handles")[0];
-                        // Closed edges have two distinct endpoint incidences at the same vertex.
+                        // Closed edges have two distinct endpoint incidences at the same
+                        // vertex; a collapsed edge is a single point, so its two ends are
+                        // one incidence.
+                        let germ = |edge: EdgeId, end: bool| (edge, end && !collapsed[edge.0]);
                         links.entry(v).or_default().push((
-                            (prev.edge, !prev.orientation.is_reversed()),
-                            (c.edge, c.orientation.is_reversed()),
+                            germ(prev.edge, !prev.orientation.is_reversed()),
+                            germ(c.edge, c.orientation.is_reversed()),
                         ));
                     }
                 }
             }
             let mut adjacency = vec![Vec::new(); shell.faces.len()];
-            for uses in incidence.values() {
+            for (edge, uses) in &incidence {
                 if uses.len() > 2 {
                     return Err(fail(Defect::NonManifoldEdge, "shell", si));
+                }
+                // A collapsed edge bounds only the face whose chart it closes.
+                if uses.len() == 1 && collapsed[edge.0] {
+                    continue;
                 }
                 if uses.len() == 1 && shell.closed {
                     return Err(fail(Defect::OpenShell, "shell", si));
@@ -278,9 +307,17 @@ impl RawBrep {
                 return Err(fail(Defect::OpenShell, "solid", i));
             }
         }
+        let mut singular = vec![false; self.vertices.len()];
+        for (e, &c) in self.edges.iter().zip(&collapsed) {
+            if c {
+                singular[e.vertices[0].0] = true;
+            }
+        }
         Ok(ValidatedBrep {
             raw: self,
             edge_uses,
+            collapsed,
+            singular,
             tolerance: distance,
         })
     }

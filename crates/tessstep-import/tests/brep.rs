@@ -170,6 +170,98 @@ fn brep_edge_splits_and_sphere_recharting_are_reported() {
 }
 
 #[test]
+fn brep_poles_and_apices_close_with_collapsed_edges() {
+    let chord = 1e-5;
+    let seam = |collapsed| Adaptations {
+        inserted_seams: 1,
+        collapsed_edges: collapsed,
+        ..Adaptations::default()
+    };
+    for (name, text, adaptations, volume) in [
+        // Every sphere frame puts a pole on or inside the hemisphere: a seam to the
+        // enclosed pole and a collapsed edge along the pole line close its chart.
+        (
+            "hemisphere",
+            include_str!("../../../corpus/geometry/brep-hemisphere.step"),
+            seam(1),
+            2. / 3. * PI * 1e-6,
+        ),
+        // A VERTEX_LOOP at the apex names the seam's end vertex.
+        (
+            "vertex loop",
+            include_str!("../../../corpus/geometry/brep-vertex-loop.step"),
+            seam(1),
+            PI / 3. * 1e-6,
+        ),
+        // The loop meets the apex between the two uses of its generator seam.
+        (
+            "apex join",
+            include_str!("../../../corpus/geometry/brep-cone-seam.step"),
+            Adaptations {
+                collapsed_edges: 1,
+                ..Adaptations::default()
+            },
+            PI / 3. * 1e-6,
+        ),
+        // Only a VERTEX_LOOP: the face is re-charted with its vertex at a pole and
+        // spans both pole lines, joined by a seam.
+        (
+            "full sphere",
+            include_str!("../../../corpus/geometry/brep-sphere.step"),
+            Adaptations {
+                recharted_spheres: 1,
+                ..seam(2)
+            },
+            4. / 3. * PI * 1e-6,
+        ),
+        // A bilinear B-spline base with one side collapsed to a corner of the loop.
+        (
+            "collapsed B-spline side",
+            include_str!("../../../corpus/geometry/brep-bspline-pole.step"),
+            Adaptations {
+                collapsed_edges: 1,
+                ..Adaptations::default()
+            },
+            1e-6 / 6.,
+        ),
+        // A pole-to-pole meridian seam: exact meridian pcurves and a join per pole.
+        (
+            "meridian seam",
+            include_str!("../../../corpus/geometry/brep-sphere-seam.step"),
+            Adaptations {
+                collapsed_edges: 2,
+                ..Adaptations::default()
+            },
+            4. / 3. * PI * 1e-6,
+        ),
+    ] {
+        let solid = import(text).unwrap();
+        assert_eq!(solid.adaptations(), adaptations, "{name}");
+        let n = solid.brep();
+        let collapsed: Vec<_> = (0..n.data().edges.len())
+            .filter(|&e| n.is_collapsed(tessstep_topology::EdgeId(e)))
+            .collect();
+        assert_eq!(collapsed.len(), adaptations.collapsed_edges, "{name}");
+        let mesh = mesh(&solid, chord);
+        check_volume(&mesh, volume, chord, 0.01);
+        // Each pole is one welded mesh vertex, whatever its chart samples.
+        for &e in &collapsed {
+            let pole = n.data().vertices[n.data().edges[e].vertices[0].0]
+                .position
+                .coordinates();
+            let at = mesh.data().positions.iter().filter(|p| *p == &pole).count();
+            assert_eq!(at, 1, "{name}");
+        }
+        let again = import(text).unwrap();
+        assert_eq!(
+            mesh.data().triangles,
+            self::mesh(&again, chord).data().triangles,
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn brep_bspline_faces_and_rational_complex_instances() {
     let solid = import(BSPLINE_CUBE).unwrap();
     let mesh = mesh(&solid, 1e-6);
@@ -215,14 +307,15 @@ fn brep_rejections_are_typed_and_located() {
             "lies 5.000e-4 m from the face surface",
         ),
         (
-            include_str!("../../../corpus/geometry/brep-hemisphere.step").to_string(),
+            include_str!("../../../corpus/geometry/brep-regular-vertex-loop.step").to_string(),
             ErrorKind::Unsupported,
-            "wind around a periodic surface direction",
+            "VERTEX_LOOP vertex is not at a pole or apex",
         ),
         (
-            include_str!("../../../corpus/geometry/brep-vertex-loop.step").to_string(),
+            // A cylinder side face bounded by its bottom circle alone encloses no pole.
+            CYLINDER.replace("ADVANCED_FACE('',(#24,#27),", "ADVANCED_FACE('',(#24),"),
             ErrorKind::Unsupported,
-            "VERTEX_LOOP bounds",
+            "without enclosing a pole or apex",
         ),
         (
             include_str!("../../../corpus/geometry/brep-ambiguous-outer.step").to_string(),

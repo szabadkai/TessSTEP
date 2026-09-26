@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20); curved B-rep import with elementary and B-spline geometry; root and context-unit discovery",
+  "scope": "Milestones 0–5 with bounded local 3D product semantics and independent geometry Milestones 6–19; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20); curved B-rep import with elementary and B-spline geometry and pole/apex charts; root and context-unit discovery",
   "features": [
     {
       "feature": "streaming lexer",
@@ -186,7 +186,7 @@
       "feature": "STEP geometry / topology / meshes",
       "status": "faceted, edge-based planar and curved B-rep subsets implemented",
       "test": "planar_edge_brep_to_mesh_preserves_topology_and_line_trims",
-      "limitations": "Explicit root/units or discovered context units; reduced profiles; elementary and B-spline surfaces with computed pcurves; no cavity shells, swept surfaces, poles/apices, healing or AP claim"
+      "limitations": "Explicit root/units or discovered context units; reduced profiles; elementary and B-spline surfaces with computed pcurves; pole and apex charts; no cavity shells, swept surfaces, healing or AP claim"
     },
     {
       "feature": "public C ABI",
@@ -294,7 +294,7 @@
       "feature": "Bounded positive-weight NURBS curves",
       "status": "implemented",
       "test": "nurbs_curve_rational_circle_and_derivatives",
-      "limitations": "degrees 1\u201316; expanded knots, two derivatives, one-sided breaks; no zero/negative weights or automatic periodic wrapping"
+      "limitations": "degrees 1–16; expanded knots, two derivatives, one-sided breaks; no zero/negative weights or automatic periodic wrapping"
     },
     {
       "feature": "Homogeneous curve knot insertion",
@@ -384,7 +384,13 @@
       "feature": "Regular analytic curved-face refinement",
       "status": "implemented",
       "test": "analytic_sphere_cone_and_torus_regular_patches",
-      "limitations": "sampled chord/normal checks and periodic guards; singular poles/apices and certified bounds unsupported"
+      "limitations": "sampled chord/normal checks and periodic guards; certified bounds unsupported"
+    },
+    {
+      "feature": "Pole and apex face tessellation",
+      "status": "implemented",
+      "test": "pole_and_apex_charts_close_with_collapsed_edges",
+      "limitations": "collapsed-edge charts; polar-wedge probes, dropped pole slivers and limit corner normals; sampled, not certified, error bounds"
     },
     {
       "feature": "NURBS knot-cell refinement",
@@ -421,6 +427,12 @@
       "status": "implemented",
       "test": "topology_closed_edges_keep_two_endpoint_incidences",
       "limitations": "structural link validation distinguishes ends at one vertex; no geometric singular-edge repair"
+    },
+    {
+      "feature": "Collapsed pole and apex edges",
+      "status": "implemented",
+      "test": "topology_collapsed_edges_close_pole_and_apex_charts",
+      "limitations": "closed edges within model tolerance of their vertex; single use in closed shells; singular vertices; no healing"
     },
     {
       "feature": "Shared mesh assets and nested occurrence scenes",
@@ -567,10 +579,16 @@
       "limitations": "Unique counterclockwise loop or typed ambiguity error; seams between aligned or split loop vertices; rotated sphere frames avoiding poles; all adaptations counted, geometry unchanged"
     },
     {
+      "feature": "Pole and apex charts in curved STEP import",
+      "status": "implemented",
+      "test": "brep_poles_and_apices_close_with_collapsed_edges",
+      "limitations": "Sphere poles and cone apices: loop joins, enclosing loops with pole seams, VERTEX_LOOPs and full spheres; exact meridian pcurves; counted adaptations; no singular B-spline sides or interior singular crossings"
+    },
+    {
       "feature": "Curved import rejections and budgets",
       "status": "implemented",
       "test": "brep_rejections_are_typed_and_located",
-      "limitations": "Off-surface curves, hemispheres and apices, vertex loops, ambiguous outer bounds, horn tori, invalid cone angles, cavity shells and out-of-profile types are typed failures"
+      "limitations": "Off-surface curves, vertex loops away from poles, loops enclosing no pole, ambiguous outer bounds, horn tori, invalid cone angles, cavity shells and out-of-profile types are typed failures"
     },
     {
       "feature": "Root and representation-context unit discovery",

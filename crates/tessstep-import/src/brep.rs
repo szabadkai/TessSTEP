@@ -1,7 +1,8 @@
 //! Edge-based B-rep solids with elementary and B-spline geometry.
 use super::*;
 use crate::pcurve::{
-    Chart, CurveShape, Frame, Inverter, PcurveError, V3, add, dot, nearest, norm, scale, sub,
+    Chart, CurveShape, Frame, Inverter, PcurveError, Singular, V3, add, dot, nearest, norm, scale,
+    sub,
 };
 use std::f64::consts::TAU;
 use tessstep_curves::spline::{NurbsCurve, SplineLimits};
@@ -25,6 +26,11 @@ pub struct Adaptations {
     /// Spherical faces planned in a rotated frame because the STEP frame puts a pole
     /// on or inside them; the sphere and its orientation are unchanged.
     pub recharted_spheres: usize,
+    /// Collapsed edges that close a face chart along a pole or apex line: at a loop
+    /// vertex where two uses meet at the singular point, at a VERTEX_LOOP, or at the
+    /// end of an inserted seam from a loop that encloses the pole. They have no 3D
+    /// extent; the pole vertex is inserted when no VERTEX_LOOP names it.
+    pub collapsed_edges: usize,
 }
 
 /// Import one selected MANIFOLD_SOLID_BREP whose faces lie on planes, cylinders,
@@ -175,6 +181,8 @@ struct LoopRecord {
     /// Uses oriented with the surface: the face lies to their left in the UV chart.
     uses: Vec<Use>,
     outer: bool,
+    /// The vertex of a VERTEX_LOOP bound, which has no uses.
+    vertex: Option<VertexId>,
 }
 #[derive(Clone)]
 struct FaceRecord {
@@ -529,7 +537,11 @@ impl Builder {
                     surface = periodic;
                 }
             }
-            return Ok((Chart::Nurbs(periods), SurfaceGeometry::Nurbs(surface)));
+            let singular = pcurve::nurbs_singular(&surface, c.tolerance.distance().as_metres());
+            return Ok((
+                Chart::Nurbs(periods, singular),
+                SurfaceGeometry::Nurbs(surface),
+            ));
         }
         Err(c.error(
             ErrorKind::Unsupported,
@@ -674,10 +686,13 @@ impl Builder {
             let orientation = c.boolean(bound, "ORIENTATION")?;
             let wire = c.reference(bound, "BOUND")?;
             if c.is(wire, "VERTEX_LOOP") {
-                return Err(c.error(
-                    ErrorKind::Unsupported,
-                    "VERTEX_LOOP bounds (surface poles and apices) are not supported",
-                ));
+                let vertex = c.topological_vertex(c.reference(wire, "LOOP_VERTEX")?)?;
+                loops.push(LoopRecord {
+                    uses: Vec::new(),
+                    outer: c.is(bound, "FACE_OUTER_BOUND"),
+                    vertex: Some(vertex),
+                });
+                continue;
             }
             let mut uses = Vec::new();
             for value in c.aggregate(wire, "EDGE_LIST")? {
@@ -701,6 +716,7 @@ impl Builder {
             loops.push(LoopRecord {
                 uses,
                 outer: c.is(bound, "FACE_OUTER_BOUND"),
+                vertex: None,
             });
         }
         self.faces.push(FaceRecord {
@@ -761,11 +777,7 @@ impl Builder {
         // splits, which are applied to all faces before planning again.
         let mut plans = Vec::new();
         for pass in 0.. {
-            let base = self.edges.len();
-            let (seams, inferred) = (
-                self.adaptations.inserted_seams,
-                self.adaptations.inferred_outer_bounds,
-            );
+            let saved = self.snapshot(c);
             plans.clear();
             let mut splits = BTreeMap::new();
             for face in &faces {
@@ -786,9 +798,8 @@ impl Builder {
                     "annular faces still lack aligned seam vertices after edge splitting",
                 ));
             }
-            self.edges.truncate(base);
-            self.adaptations.inserted_seams = seams;
-            self.adaptations.inferred_outer_bounds = inferred;
+            // Planning state is discarded; the splits below persist into the next pass.
+            self.restore(c, saved);
             for (edge, parameter) in splits {
                 self.split(c, &mut faces, edge, parameter)?;
             }
@@ -1007,52 +1018,87 @@ impl Builder {
 
     /// Plan a face in its STEP chart. A spherical face that fails there because it
     /// touches or encloses a pole is retried with frames whose poles lie away from its
-    /// boundary; the sphere, its orientation and all 3D geometry are unchanged.
+    /// boundary; the sphere, its orientation and all 3D geometry are unchanged. Pole
+    /// and apex charts (collapsed edges) are used only when no frame avoids them.
     fn plan(
         &mut self,
         c: &mut Context<'_, '_>,
         face: &FaceRecord,
         tolerance: f64,
     ) -> Result<Planned, Error> {
-        let first = self.plan_chart(c, face, tolerance);
         let Chart::Sphere(frame, radius) = face.chart else {
-            return first;
+            return self.plan_chart(c, face, tolerance, true);
         };
-        match &first {
-            Err(e) if e.kind == ErrorKind::Unsupported => {}
-            _ => return first,
-        }
-        for axis in self.sphere_axes(face, frame)? {
-            c.charge(1)?;
-            let Some(recharted) = sphere_chart(frame.o, axis, radius) else {
-                continue;
-            };
-            let mut candidate = face.clone();
-            (candidate.chart, candidate.surface) = recharted;
-            let saved = (self.edges.len(), self.adaptations);
-            match self.plan_chart(c, &candidate, tolerance) {
-                Ok(Planned::Face(mut plan)) => {
-                    plan.surface = Some(candidate.surface);
-                    self.adaptations.recharted_spheres += 1;
-                    return Ok(Planned::Face(plan));
+        let axes = self.sphere_axes(c, face, frame)?;
+        let mut native = None;
+        for singular in [false, true] {
+            let saved = self.snapshot(c);
+            match self.plan_chart(c, face, tolerance, singular) {
+                Err(e) if e.kind == ErrorKind::Unsupported => {
+                    self.restore(c, saved);
+                    if singular {
+                        native = Some(e);
+                    }
                 }
-                Ok(split @ Planned::Split { .. }) => return Ok(split),
-                Err(e) if e.kind == ErrorKind::ResourceLimit => return Err(e),
-                Err(_) => {
-                    self.edges.truncate(saved.0);
-                    self.adaptations = saved.1;
+                other => return other,
+            }
+            for &axis in &axes {
+                c.charge(1)?;
+                let Some(recharted) = sphere_chart(frame.o, axis, radius) else {
+                    continue;
+                };
+                let mut candidate = face.clone();
+                (candidate.chart, candidate.surface) = recharted;
+                let saved = self.snapshot(c);
+                match self.plan_chart(c, &candidate, tolerance, singular) {
+                    Ok(Planned::Face(mut plan)) => {
+                        plan.surface = Some(candidate.surface);
+                        self.adaptations.recharted_spheres += 1;
+                        return Ok(Planned::Face(plan));
+                    }
+                    Ok(split @ Planned::Split { .. }) => return Ok(split),
+                    Err(e) if e.kind == ErrorKind::ResourceLimit => return Err(e),
+                    Err(_) => self.restore(c, saved),
                 }
             }
         }
-        first
+        Err(native.expect("the singular native chart was planned"))
     }
 
-    /// Candidate sphere axes: perpendiculars to the mean boundary direction (which put
-    /// both poles a quarter turn from a cap's centre), then 26 lattice directions, all
-    /// at least 1e-3 rad from every sampled boundary direction.
-    fn sphere_axes(&self, face: &FaceRecord, frame: Frame) -> Result<Vec<V3>, Error> {
+    /// Planning state that failed attempts roll back: inserted edges and vertices.
+    fn snapshot(&self, c: &Context<'_, '_>) -> (usize, usize, Adaptations) {
+        (self.edges.len(), c.raw.vertices.len(), self.adaptations)
+    }
+    fn restore(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        (edges, vertices, adaptations): (usize, usize, Adaptations),
+    ) {
+        self.edges.truncate(edges);
+        c.raw.vertices.truncate(vertices);
+        c.point_entities.truncate(vertices);
+        self.adaptations = adaptations;
+    }
+
+    /// Candidate sphere axes: directions to VERTEX_LOOP vertices (which then sit at a
+    /// pole), perpendiculars to the mean boundary direction (which put both poles a
+    /// quarter turn from a cap's centre), then 26 lattice directions, all at least
+    /// 1e-3 rad from every sampled boundary direction.
+    fn sphere_axes(
+        &self,
+        c: &Context<'_, '_>,
+        face: &FaceRecord,
+        frame: Frame,
+    ) -> Result<Vec<V3>, Error> {
         let mut directions = Vec::new();
+        let mut candidates = Vec::new();
         for l in &face.loops {
+            if let Some(v) = l.vertex {
+                let d = sub(c.raw.vertices[v.0].position.coordinates(), frame.o);
+                if norm(d) > 0. {
+                    candidates.push(scale(d, 1. / norm(d)));
+                }
+            }
             for u in &l.uses {
                 let e = &self.edges[u.edge];
                 for i in 0..=16 {
@@ -1071,7 +1117,6 @@ impl Builder {
         for d in &directions {
             mean = add(mean, *d);
         }
-        let mut candidates = Vec::new();
         if norm(mean) > 1e-9 {
             let m = scale(mean, 1. / norm(mean));
             let helper = if m[0].abs() < 0.9 {
@@ -1107,12 +1152,136 @@ impl Builder {
             .collect())
     }
 
+    /// A collapsed edge at a singular vertex, with a pcurve from `start` along the
+    /// singular line (periodic axis `k`) by `delta`.
+    fn collapsed_edge(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        vertex: VertexId,
+        start: [f64; 2],
+        k: usize,
+        delta: f64,
+    ) -> Result<(usize, Pcurve), Error> {
+        c.record()?;
+        let span = delta.abs();
+        let at = c.checked(Point::<ModelSpace, 3>::new(
+            c.raw.vertices[vertex.0].position.coordinates(),
+        ))?;
+        let q = span / 4.;
+        // Quarter-span knots seed the singular line's samples.
+        let curve = NurbsCurve::new(
+            1,
+            &[0., 0., q, 2. * q, 3. * q, span, span],
+            &[at; 5],
+            &[1.; 5],
+            SplineLimits::default(),
+        )
+        .map_err(|e| c.error(ErrorKind::InvalidGeometry, e))?;
+        let mut tangent = [0.; 2];
+        tangent[k] = delta.signum();
+        let pcurve = Pcurve {
+            curve: CurveGeometry::Analytic(c.checked(Curve::line(
+                c.checked(Point::<ParameterSpace, 2>::new(start))?,
+                c.checked(Vector::new(tangent))?,
+            ))?),
+            range: [0., span],
+        };
+        self.edges.push(EdgeRecord {
+            entity: None,
+            curve: CurveGeometry::Nurbs(curve),
+            shape: CurveShape::Nurbs,
+            range: [0., span],
+            vertices: [vertex; 2],
+        });
+        self.adaptations.collapsed_edges += 1;
+        Ok((self.edges.len() - 1, pcurve))
+    }
+
+    /// An isoparametric seam at coordinate `at` of periodic axis `k`, between `from`
+    /// (at `jf` along the other axis) and `to` (at `jt`), with its pcurve. Returns
+    /// the edge and whether the use from `from` to `to` is forward.
+    #[allow(clippy::too_many_arguments)]
+    fn iso_seam(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        chart: &Chart,
+        k: usize,
+        at: f64,
+        (from, jf): (VertexId, f64),
+        (to, jt): (VertexId, f64),
+        tolerance: f64,
+    ) -> Result<Option<(usize, bool, Pcurve)>, Error> {
+        let Some((curve, shape)) = seam_curve(chart, k, at) else {
+            return Ok(None);
+        };
+        let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
+        let point = |t: f64| curve.evaluate(t).map(|e| e.position.coordinates());
+        let (Ok(pf), Ok(pt)) = (point(jf), point(jt)) else {
+            return Ok(None);
+        };
+        if norm(sub(pf, position(from))) > tolerance || norm(sub(pt, position(to))) > tolerance {
+            return Ok(None);
+        }
+        let forward = jt > jf;
+        let range = [jf.min(jt), jf.max(jt)];
+        let (origin, tangent) = if k == 0 {
+            ([at, 0.], [0., 1.])
+        } else {
+            ([0., at], [1., 0.])
+        };
+        let pcurve = Pcurve {
+            curve: CurveGeometry::Analytic(c.checked(Curve::line(
+                c.checked(Point::<ParameterSpace, 2>::new(origin))?,
+                c.checked(Vector::new(tangent))?,
+            ))?),
+            range,
+        };
+        c.record()?;
+        self.edges.push(EdgeRecord {
+            entity: None,
+            curve,
+            shape,
+            range,
+            vertices: if forward { [from, to] } else { [to, from] },
+        });
+        self.adaptations.inserted_seams += 1;
+        Ok(Some((self.edges.len() - 1, forward, pcurve)))
+    }
+
+    /// The vertex at a singular point: a VERTEX_LOOP's vertex, or an inserted one.
+    fn pole_vertex(
+        c: &mut Context<'_, '_>,
+        face: &FaceRecord,
+        poles: &mut Vec<(Singular, VertexId)>,
+        s: &Singular,
+    ) -> Result<VertexId, Error> {
+        if let Some(i) = poles
+            .iter()
+            .position(|(p, _)| p.k == s.k && p.value == s.value)
+        {
+            return Ok(poles.remove(i).1);
+        }
+        c.record()?;
+        c.raw.vertices.push(Vertex {
+            position: c.checked(Point::new(s.point))?,
+        });
+        c.point_entities.push(face.entity);
+        Ok(VertexId(c.raw.vertices.len() - 1))
+    }
+
     fn plan_chart(
         &mut self,
         c: &mut Context<'_, '_>,
         face: &FaceRecord,
         tolerance: f64,
+        allow_singular: bool,
     ) -> Result<Planned, Error> {
+        if !allow_singular && face.loops.iter().any(|l| l.vertex.is_some()) {
+            return Err(c.error(
+                ErrorKind::Unsupported,
+                "VERTEX_LOOP bounds need a pole or apex chart",
+            ));
+        }
         let inverter = Inverter {
             chart: &face.chart,
             surface: &face.surface,
@@ -1130,25 +1299,149 @@ impl Builder {
                 pcurves.insert(u.edge, p);
             }
         }
-        let charts: Vec<LoopChart> = face
-            .loops
-            .iter()
-            .map(|l| self.chart_loop(face, &l.uses, &pcurves))
-            .collect::<Result<_, _>>()
-            .map_err(|e| self.pcurve_error(c, face.loops[0].uses[0].edge, e))?;
-        let wrapping: Vec<usize> = (0..charts.len())
-            .filter(|&i| charts[i].winding != [0, 0])
+        let singular = face.chart.singular();
+        let periods = face.chart.periods();
+        let position =
+            |c: &Context<'_, '_>, v: VertexId| c.raw.vertices[v.0].position.coordinates();
+        let at_singular = |c: &Context<'_, '_>, v: VertexId| {
+            singular
+                .iter()
+                .copied()
+                .find(|s| norm(sub(position(c, v), s.point)) <= tolerance)
+        };
+        // Apex joins: where consecutive uses meet at a singular point, a collapsed edge
+        // runs along the singular line between their chart ends, in the direction that
+        // keeps the face on its left.
+        let mut loops = face.loops.clone();
+        for l in loops
+            .iter_mut()
+            .filter(|l| l.vertex.is_none() && !singular.is_empty())
+        {
+            let n = l.uses.len();
+            let mut joined = Vec::with_capacity(n);
+            for i in 0..n {
+                c.charge(1)?;
+                let (u, next) = (l.uses[i], l.uses[(i + 1) % n]);
+                joined.push(u);
+                let e = &self.edges[u.edge];
+                let v = if u.forward {
+                    e.vertices[1]
+                } else {
+                    e.vertices[0]
+                };
+                let Some(s) = at_singular(c, v) else {
+                    continue;
+                };
+                if !allow_singular {
+                    return Err(c.error(
+                        ErrorKind::Unsupported,
+                        "face loop meets a pole or apex of the surface chart",
+                    ));
+                }
+                let end = use_uv(&pcurves[&u.edge], u, 1.)
+                    .map_err(|e| self.pcurve_error(c, u.edge, e))?;
+                let start = use_uv(&pcurves[&next.edge], next, 0.)
+                    .map_err(|e| self.pcurve_error(c, next.edge, e))?;
+                let (k, j) = (s.k, 1 - s.k);
+                let near = |x: f64| (x - s.value).abs() <= 1e-7 * (1. + s.value.abs());
+                if !near(end[j]) || !near(start[j]) {
+                    continue;
+                }
+                // The face lies on the singular line's side: the join runs along it in
+                // the direction that keeps the face on its left.
+                let sign = if k == 0 { s.side } else { -s.side };
+                let delta = match periods[k] {
+                    Some(period) => {
+                        let delta = (sign * (start[k] - end[k])).rem_euclid(period);
+                        // Meeting at the same chart point: the loop runs up a seam and back.
+                        if delta <= 1e-9 * period {
+                            period
+                        } else {
+                            delta
+                        }
+                    }
+                    None => sign * (start[k] - end[k]),
+                };
+                if delta <= 0. {
+                    return Err(c.error(
+                        ErrorKind::InvalidGeometry,
+                        "face loop runs against its surface along a pole or apex line",
+                    ));
+                }
+                let mut from = end;
+                from[j] = s.value;
+                let (index, pcurve) = self.collapsed_edge(c, v, from, k, sign * delta)?;
+                pcurves.insert(index, pcurve);
+                joined.push(Use {
+                    edge: index,
+                    forward: true,
+                });
+            }
+            l.uses = joined;
+        }
+        // A loop that runs along an edge and straight back is a slit unless a collapsed
+        // edge separates the two uses at a pole or apex.
+        for l in &loops {
+            let n = l.uses.len();
+            for i in 0..n {
+                let (u, next) = (l.uses[i], l.uses[(i + 1) % n]);
+                if n > 1 && u.edge == next.edge && u.forward != next.forward {
+                    return Err(c.error(
+                        // Only a chart with singular points can make it valid.
+                        if singular.is_empty() {
+                            ErrorKind::InvalidGeometry
+                        } else {
+                            ErrorKind::Unsupported
+                        },
+                        "face loop doubles back along an edge away from a pole or apex of the surface chart",
+                    ));
+                }
+            }
+        }
+        // VERTEX_LOOP vertices must lie at singular points of the chart.
+        let mut poles = Vec::new();
+        for l in &loops {
+            if let Some(v) = l.vertex {
+                match at_singular(c, v) {
+                    Some(s) => poles.push((s, v)),
+                    None => {
+                        return Err(c.error(
+                            ErrorKind::Unsupported,
+                            "VERTEX_LOOP vertex is not at a pole or apex of the face chart",
+                        ));
+                    }
+                }
+            }
+        }
+        let edge_loops: Vec<usize> = (0..loops.len())
+            .filter(|&i| loops[i].vertex.is_none())
             .collect();
-        if wrapping.is_empty() {
-            let explicit: Vec<usize> = (0..face.loops.len())
-                .filter(|&i| face.loops[i].outer)
+        let mut charts = BTreeMap::new();
+        for &i in &edge_loops {
+            let chart = self
+                .chart_loop(face, &loops[i].uses, &pcurves)
+                .map_err(|e| self.pcurve_error(c, loops[i].uses[0].edge, e))?;
+            charts.insert(i, chart);
+        }
+        let wrapping: Vec<usize> = edge_loops
+            .iter()
+            .copied()
+            .filter(|i| charts[i].winding != [0, 0])
+            .collect();
+        if wrapping.is_empty() && poles.is_empty() {
+            let explicit: Vec<usize> = edge_loops
+                .iter()
+                .copied()
+                .filter(|&i| loops[i].outer)
                 .collect();
             let outer = match explicit.len() {
                 1 => explicit[0],
-                0 if face.loops.len() == 1 => 0,
+                0 if edge_loops.len() == 1 => edge_loops[0],
                 0 => {
-                    let ccw: Vec<usize> = (0..charts.len())
-                        .filter(|&i| signed_area(&charts[i].polygon) > 0.)
+                    let ccw: Vec<usize> = edge_loops
+                        .iter()
+                        .copied()
+                        .filter(|i| signed_area(&charts[i].polygon) > 0.)
                         .collect();
                     if ccw.len() != 1 {
                         return Err(c.error(
@@ -1156,7 +1449,7 @@ impl Builder {
                             format!(
                                 "ambiguous outer bound: no FACE_OUTER_BOUND and {} of {} loops are counterclockwise in the surface chart",
                                 ccw.len(),
-                                charts.len()
+                                edge_loops.len()
                             ),
                         ));
                     }
@@ -1167,18 +1460,240 @@ impl Builder {
             };
             return Ok(Planned::Face(Plan {
                 surface: None,
-                outer: face.loops[outer].uses.clone(),
-                holes: (0..face.loops.len())
-                    .filter(|&i| i != outer)
-                    .map(|i| face.loops[i].uses.clone())
+                outer: loops[outer].uses.clone(),
+                holes: edge_loops
+                    .iter()
+                    .filter(|&&i| i != outer)
+                    .map(|&i| loops[i].uses.clone())
                     .collect(),
                 pcurves,
             }));
         }
-        let periodic = |k: usize| face.chart.periods()[k].is_some();
+        let rotate = |uses: &[Use], start: usize| -> Vec<Use> {
+            uses[start..]
+                .iter()
+                .chain(&uses[..start])
+                .copied()
+                .collect()
+        };
+        // Is the chart point `uv` covered by a hole's sampled chart box along `k`
+        // (modulo its period) and, along the other axis, within `[lo, hi]`?
+        let hole_blocks = |holes: &[usize], k: usize, at: f64, lo: f64, hi: f64| {
+            let j = 1 - k;
+            holes.iter().any(|h| {
+                let polygon = &charts[h].polygon;
+                let (kmin, kmax) = minmax(&polygon.iter().map(|p| p[k]).collect::<Vec<_>>());
+                let (jmin, jmax) = minmax(&polygon.iter().map(|p| p[j]).collect::<Vec<_>>());
+                let at = periods[k].map_or(at, |p| nearest(at, 0.5 * (kmin + kmax), p));
+                at >= kmin && at <= kmax && hi >= jmin && lo <= jmax
+            })
+        };
+        if allow_singular
+            && wrapping.len() == 1
+            && charts[&wrapping[0]]
+                .winding
+                .iter()
+                .filter(|&&w| w != 0)
+                .count()
+                == 1
+        {
+            // One loop around a periodic axis encloses the pole or apex on its left:
+            // a seam from one of its vertices to that singular point, and a collapsed
+            // edge along the singular line, close the chart.
+            let a = wrapping[0];
+            let winding = charts[&a].winding;
+            let k = (0..2).find(|&k| winding[k] != 0).expect("wrapping axis");
+            let (j, w) = (1 - k, winding[k]);
+            let period = periods[k].expect("wrapping axis is periodic");
+            let direction = if k == 0 { 1. } else { -1. };
+            let up = w as f64 * direction > 0.;
+            let (jmin, jmax) = minmax(&charts[&a].polygon.iter().map(|p| p[j]).collect::<Vec<_>>());
+            let enclosed = singular
+                .iter()
+                .copied()
+                .filter(|s| {
+                    s.k == k
+                        && if up {
+                            s.side < 0. && s.value >= jmax
+                        } else {
+                            s.side > 0. && s.value <= jmin
+                        }
+                })
+                .min_by(|x, y| {
+                    (x.value - 0.5 * (jmin + jmax))
+                        .abs()
+                        .total_cmp(&(y.value - 0.5 * (jmin + jmax)).abs())
+                });
+            let Some(s) = enclosed.filter(|_| w.abs() == 1) else {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "a face loop winds around a periodic surface direction without enclosing a pole or apex, or winds more than once",
+                ));
+            };
+            let pole = Self::pole_vertex(c, face, &mut poles, &s)?;
+            if !poles.is_empty() {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "VERTEX_LOOP vertex is not the pole or apex enclosed by the face",
+                ));
+            }
+            let holes: Vec<usize> = edge_loops.iter().copied().filter(|&i| i != a).collect();
+            for (ia, ua) in charts[&a].starts.clone().into_iter().enumerate() {
+                c.charge(1)?;
+                if hole_blocks(&holes, k, ua[k], ua[j].min(s.value), ua[j].max(s.value)) {
+                    continue;
+                }
+                let u = loops[a].uses[ia];
+                let e = &self.edges[u.edge];
+                let va = if u.forward {
+                    e.vertices[0]
+                } else {
+                    e.vertices[1]
+                };
+                let Some((seam, forward, seam_pcurve)) = self.iso_seam(
+                    c,
+                    &face.chart,
+                    k,
+                    ua[k],
+                    (va, ua[j]),
+                    (pole, s.value),
+                    tolerance,
+                )?
+                else {
+                    continue;
+                };
+                let mut from = [0.; 2];
+                from[k] = ua[k] + w as f64 * period;
+                from[j] = s.value;
+                let (collapsed, collapsed_pcurve) =
+                    self.collapsed_edge(c, pole, from, k, -(w as f64) * period)?;
+                pcurves.insert(seam, seam_pcurve);
+                pcurves.insert(collapsed, collapsed_pcurve);
+                let mut outer = rotate(&loops[a].uses, ia);
+                outer.extend([
+                    Use {
+                        edge: seam,
+                        forward,
+                    },
+                    Use {
+                        edge: collapsed,
+                        forward: true,
+                    },
+                    Use {
+                        edge: seam,
+                        forward: !forward,
+                    },
+                ]);
+                return Ok(Planned::Face(Plan {
+                    surface: None,
+                    outer,
+                    holes: holes.iter().map(|&i| loops[i].uses.clone()).collect(),
+                    pcurves,
+                }));
+            }
+            return Err(c.error(
+                ErrorKind::Unsupported,
+                "no seam from the face loop to its enclosed pole or apex avoids the face's holes",
+            ));
+        }
+        if wrapping.is_empty() {
+            // A face bounded only by VERTEX_LOOPs (and holes) covers the whole periodic
+            // band between two singular lines, such as a full sphere.
+            let k = poles[0].0.k;
+            if periods[k].is_none() {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "VERTEX_LOOP bounds on a non-periodic chart are not supported",
+                ));
+            }
+            let line = |side: f64| {
+                singular
+                    .iter()
+                    .copied()
+                    .find(|s| s.k == k && s.side == side)
+            };
+            let (Some(bottom), Some(top)) = (line(1.), line(-1.)) else {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "a face bounded by VERTEX_LOOPs needs a chart between two poles",
+                ));
+            };
+            let b = Self::pole_vertex(c, face, &mut poles, &bottom)?;
+            let t = Self::pole_vertex(c, face, &mut poles, &top)?;
+            if !poles.is_empty() {
+                return Err(c.error(ErrorKind::Unsupported, "repeated VERTEX_LOOP at one pole"));
+            }
+            let period = periods[k].expect("singular lines run along periodic axes");
+            let sign = if k == 0 { 1. } else { -1. };
+            let mut candidates = vec![0., 0.25 * period, 0.5 * period, 0.75 * period];
+            for i in &edge_loops {
+                let (_, kmax) = minmax(&charts[i].polygon.iter().map(|p| p[k]).collect::<Vec<_>>());
+                candidates.push(kmax + 1e-3 * period);
+            }
+            for at in candidates {
+                c.charge(1)?;
+                if hole_blocks(&edge_loops, k, at, bottom.value, top.value) {
+                    continue;
+                }
+                let Some((seam, forward, seam_pcurve)) = self.iso_seam(
+                    c,
+                    &face.chart,
+                    k,
+                    at,
+                    (b, bottom.value),
+                    (t, top.value),
+                    tolerance,
+                )?
+                else {
+                    continue;
+                };
+                let mut from = [0.; 2];
+                from[k] = at;
+                from[1 - k] = bottom.value;
+                let (low, low_pcurve) = self.collapsed_edge(c, b, from, k, sign * period)?;
+                from[k] = at + sign * period;
+                from[1 - k] = top.value;
+                let (high, high_pcurve) = self.collapsed_edge(c, t, from, k, -sign * period)?;
+                pcurves.extend([(seam, seam_pcurve), (low, low_pcurve), (high, high_pcurve)]);
+                return Ok(Planned::Face(Plan {
+                    surface: None,
+                    outer: vec![
+                        Use {
+                            edge: low,
+                            forward: true,
+                        },
+                        Use {
+                            edge: seam,
+                            forward,
+                        },
+                        Use {
+                            edge: high,
+                            forward: true,
+                        },
+                        Use {
+                            edge: seam,
+                            forward: !forward,
+                        },
+                    ],
+                    holes: edge_loops.iter().map(|&i| loops[i].uses.clone()).collect(),
+                    pcurves,
+                }));
+            }
+            return Err(c.error(
+                ErrorKind::Unsupported,
+                "no pole-to-pole seam avoids the face's holes",
+            ));
+        }
+        if !poles.is_empty() {
+            return Err(c.error(
+                ErrorKind::Unsupported,
+                "VERTEX_LOOP bounds on an annular face are not supported",
+            ));
+        }
+        let periodic = |k: usize| periods[k].is_some();
         let pair = match wrapping.as_slice() {
             &[a, b] => {
-                let (wa, wb) = (charts[a].winding, charts[b].winding);
+                let (wa, wb) = (charts[&a].winding, charts[&b].winding);
                 let axis = (0..2).find(|&k| wa[k] != 0);
                 match axis {
                     Some(k)
@@ -1198,18 +1713,33 @@ impl Builder {
             return Err(c.error(
                 ErrorKind::Unsupported,
                 format!(
-                    "{} face loops wind around a periodic surface direction; faces that enclose a pole or apex, or wrap more than once, are not supported",
+                    "{} face loops wind around a periodic surface direction; faces that wrap more than once are not supported",
                     wrapping.len()
                 ),
             ));
         };
-        let holes: Vec<usize> = (0..face.loops.len())
+        let holes: Vec<usize> = edge_loops
+            .iter()
+            .copied()
             .filter(|&i| i != a && i != b)
+            .collect();
+        let annulus = FaceRecord {
+            loops: loops.clone(),
+            ..face.clone()
+        };
+        let chart_list: Vec<LoopChart> = (0..loops.len())
+            .map(|i| {
+                charts.remove(&i).unwrap_or(LoopChart {
+                    starts: Vec::new(),
+                    winding: [0, 0],
+                    polygon: Vec::new(),
+                })
+            })
             .collect();
         let (seam, ia, ib, range_j, forward) = match self.seam(
             c,
-            face,
-            &charts,
+            &annulus,
+            &chart_list,
             &pcurves,
             (a, b, k),
             &holes,
@@ -1221,29 +1751,22 @@ impl Builder {
                 return Ok(Planned::Split { edge, parameter });
             }
         };
-        let rotate = |uses: &[Use], start: usize| -> Vec<Use> {
-            uses[start..]
-                .iter()
-                .chain(&uses[..start])
-                .copied()
-                .collect()
-        };
         let index = self.edges.len();
         self.edges.push(*seam);
-        let mut outer = rotate(&face.loops[a].uses, ia);
+        let mut outer = rotate(&loops[a].uses, ia);
         outer.push(Use {
             edge: index,
             forward,
         });
-        outer.extend(rotate(&face.loops[b].uses, ib));
+        outer.extend(rotate(&loops[b].uses, ib));
         outer.push(Use {
             edge: index,
             forward: !forward,
         });
         let origin = if k == 0 {
-            [charts[a].starts[ia][0], 0.]
+            [chart_list[a].starts[ia][0], 0.]
         } else {
-            [0., charts[a].starts[ia][1]]
+            [0., chart_list[a].starts[ia][1]]
         };
         let tangent = if k == 0 { [0., 1.] } else { [1., 0.] };
         pcurves.insert(
@@ -1260,7 +1783,7 @@ impl Builder {
         Ok(Planned::Face(Plan {
             surface: None,
             outer,
-            holes: holes.iter().map(|&i| face.loops[i].uses.clone()).collect(),
+            holes: holes.iter().map(|&i| loops[i].uses.clone()).collect(),
             pcurves,
         }))
     }
@@ -1439,6 +1962,23 @@ impl Builder {
     }
 }
 
+/// Chart point at fraction `s` along a use, in its pcurve's own chart.
+fn use_uv(pcurve: &Pcurve, u: Use, s: f64) -> Result<[f64; 2], PcurveError> {
+    let s = if u.forward { s } else { 1. - s };
+    let t = if s == 0. {
+        pcurve.range[0]
+    } else if s == 1. {
+        pcurve.range[1]
+    } else {
+        pcurve.range[0] + s * (pcurve.range[1] - pcurve.range[0])
+    };
+    Ok(pcurve
+        .curve
+        .evaluate(t)
+        .map_err(|_| PcurveError::Geometry)?
+        .position
+        .coordinates())
+}
 fn minmax(values: &[f64]) -> (f64, f64) {
     values
         .iter()

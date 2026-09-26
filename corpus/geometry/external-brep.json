@@ -11,6 +11,7 @@
       2,
       1,
       0,
+      0,
       0
     ],
     "description": "50.8 x 25.4 x 25.4 mm block with an r=6.35 mm through-hole; planar faces without FACE_OUTER_BOUND and a seamless hole cylinder",
@@ -29,6 +30,7 @@
       0,
       0,
       0,
+      0,
       0
     ],
     "description": "r=5 mm, 200 mm rod: B-spline cylindrical faces with degree-5 B-spline edges and planar caps",
@@ -44,6 +46,7 @@
     "model_tolerance_m": 1e-05,
     "chord_m": 1e-05,
     "adaptations": [
+      0,
       0,
       0,
       0,

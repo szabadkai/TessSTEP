@@ -65,11 +65,11 @@ roots that reached it, and is `not_run` when none did. Profile rejection is not
 an AP validity verdict: the profiles are reduced, selected-root subsets.
 
 Each root uses the length and plane-angle units of its representation context and,
-as its model tolerance, the context's length uncertainty floored at 1e-8 m
+as its model tolerance, the context's length uncertainty floored at 1e-7 m
 (`"units":"context"`; several exporters declare uncertainties such as 1e-16 m that
 their written coordinates cannot meet). A context without a length uncertainty keeps
-its units with a 1e-8 m tolerance (`"context_units"`). When discovery finds no unambiguous context the survey assumes
-`--geometry-metres-per-unit` (default `0.001`, millimetres), radians and 1e-8 m
+its units with a 1e-7 m tolerance (`"context_units"`). When discovery finds no unambiguous context the survey assumes
+`--geometry-metres-per-unit` (default `0.001`, millimetres), radians and 1e-7 m
 (`"assumed"`). The chord tolerance is 1e-3 of the solid's vertex bounding-box
 diagonal, clamped to 1e-6..1e-3 m, with a 0.1 rad normal angle; each root records its
 units, declared uncertainty, tolerance and chord. These are measurement policies of the runner, not

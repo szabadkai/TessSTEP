@@ -85,16 +85,45 @@ pub(crate) enum Chart {
     Cone(Frame, f64),
     Sphere(Frame, f64),
     Torus(Frame, f64, f64),
-    /// Periods of the axes declared periodic on the kernel surface.
-    Nurbs([Option<f64>; 2]),
+    /// Periods of the axes declared periodic on the kernel surface, and the domain
+    /// sides that collapse to a point.
+    Nurbs([Option<f64>; 2], Vec<Singular>),
 }
 impl Chart {
     pub(crate) fn periods(&self) -> [Option<f64>; 2] {
         match self {
             Self::Plane(_) => [None, None],
-            Self::Nurbs(periods) => *periods,
+            Self::Nurbs(periods, _) => *periods,
             Self::Cylinder(..) | Self::Cone(..) | Self::Sphere(..) => [Some(TAU), None],
             Self::Torus(..) => [Some(TAU), Some(TAU)],
+        }
+    }
+    /// Lines of the chart along which the surface collapses to one point.
+    pub(crate) fn singular(&self) -> Vec<Singular> {
+        use std::f64::consts::FRAC_PI_2;
+        match *self {
+            Self::Sphere(f, r) => vec![
+                Singular {
+                    k: 0,
+                    value: -FRAC_PI_2,
+                    point: sub(f.o, scale(f.z, r)),
+                    side: 1.,
+                },
+                Singular {
+                    k: 0,
+                    value: FRAC_PI_2,
+                    point: add(f.o, scale(f.z, r)),
+                    side: -1.,
+                },
+            ],
+            Self::Cone(f, _) => vec![Singular {
+                k: 0,
+                value: 0.,
+                point: f.o,
+                side: 1.,
+            }],
+            Self::Nurbs(_, ref singular) => singular.clone(),
+            _ => Vec::new(),
         }
     }
     fn frame(&self) -> Option<&Frame> {
@@ -104,9 +133,51 @@ impl Chart {
             | Self::Cone(f, _)
             | Self::Sphere(f, _)
             | Self::Torus(f, ..) => Some(f),
-            Self::Nurbs(_) => None,
+            Self::Nurbs(..) => None,
         }
     }
+}
+
+/// Domain sides of a B-spline surface that collapse to one point within `tolerance`,
+/// sampled at nine parameters along each side (any knot vector).
+pub(crate) fn nurbs_singular(surface: &NurbsSurface<ModelSpace>, tolerance: f64) -> Vec<Singular> {
+    let domain = surface.knot_vectors().map(|k| k.domain());
+    let mut out = Vec::new();
+    for k in 0..2 {
+        let j = 1 - k;
+        for (end, side) in [(0, 1.), (1, -1.)] {
+            let mut points = Vec::new();
+            for i in 0..=8 {
+                let mut uv = [0.; 2];
+                uv[k] = domain[k][0] + (domain[k][1] - domain[k][0]) * i as f64 / 8.;
+                uv[j] = domain[j][end];
+                match surface.evaluate(uv[0], uv[1]) {
+                    Ok(e) => points.push(e.position.coordinates()),
+                    Err(_) => break,
+                }
+            }
+            if points.len() == 9 && points.iter().all(|p| distance(*p, points[4]) <= tolerance) {
+                out.push(Singular {
+                    k,
+                    value: domain[j][end],
+                    point: points[4],
+                    side,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// A pole or apex line of a chart: `uv[1 - k] == value` along axis `k`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Singular {
+    pub k: usize,
+    pub value: f64,
+    /// The surface point the whole line maps to.
+    pub point: V3,
+    /// +1 when the surface lies at larger `uv[1 - k]` than the line, else -1.
+    pub side: f64,
 }
 
 /// Importer-side description of an edge curve, retained for exact UV images.
@@ -195,7 +266,7 @@ fn invert_elementary(chart: &Chart, p: V3, hint: Option<[f64; 2]>) -> [f64; 2] {
         Chart::Cone(_, alpha) => [u, rho * alpha.sin() + l[2] * alpha.cos()],
         Chart::Sphere(..) => [u, l[2].atan2(rho)],
         Chart::Torus(_, major, _) => [u, l[2].atan2(rho - major)],
-        Chart::Nurbs(_) => unreachable!("elementary chart"),
+        Chart::Nurbs(..) => unreachable!("elementary chart"),
     };
     let mut uv = uv;
     if let Some(h) = hint {
@@ -231,6 +302,7 @@ fn newton(
     };
     uv = clamp(uv);
     let mut jet = surface_jet(surface, uv, work)?;
+    let mut nudged = false;
     for _ in 0..32 {
         let r = sub(jet.p, p);
         let (a, b, c) = (
@@ -240,8 +312,17 @@ fn newton(
         );
         let (g0, g1) = (dot(jet.du, r), dot(jet.dv, r));
         let det = a * c - b * b;
-        if !det.is_finite() || det <= 0. {
-            break;
+        if !det.is_finite() || det <= 1e-24 * a.max(c) * a.max(c) {
+            // A seed on a collapsed side has a singular Jacobian: step once toward
+            // the domain centre, where the surface is regular.
+            if nudged {
+                break;
+            }
+            nudged = true;
+            let centre = [0, 1].map(|k| 0.5 * (domain[k][0] + domain[k][1]));
+            uv = clamp([0, 1].map(|k| uv[k] + 1e-6 * (centre[k] - uv[k])));
+            jet = surface_jet(surface, uv, work)?;
+            continue;
         }
         let step = [-(c * g0 - b * g1) / det, -(a * g1 - b * g0) / det];
         let next = clamp([uv[0] + step[0], uv[1] + step[1]]);
@@ -314,6 +395,8 @@ fn invert_nurbs(
         }
     }
     seeds.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Seeds with distinct distances: a collapsed side repeats one point many times.
+    seeds.dedup_by(|a, b| a.0 == b.0);
     let mut best: Option<([f64; 2], f64)> = None;
     for &(_, seed) in seeds.iter().take(6) {
         let (uv, d) = newton(surface, domain, p, seed, work)?;
@@ -344,7 +427,7 @@ impl Inverter<'_> {
         work: &mut Work,
     ) -> Result<[f64; 2], PcurveError> {
         match (self.chart, self.surface) {
-            (Chart::Nurbs(periods), SurfaceGeometry::Nurbs(n)) => {
+            (Chart::Nurbs(periods, _), SurfaceGeometry::Nurbs(n)) => {
                 let mut uv = invert_nurbs(self.surface, n, p, hint, self.tolerance, work)?;
                 if let Some(h) = hint {
                     for k in 0..2 {
@@ -355,7 +438,7 @@ impl Inverter<'_> {
                 }
                 Ok(uv)
             }
-            (Chart::Nurbs(_), _) => Err(PcurveError::Geometry),
+            (Chart::Nurbs(..), _) => Err(PcurveError::Geometry),
             _ => {
                 work.charge(1)?;
                 Ok(invert_elementary(self.chart, p, hint))
@@ -391,15 +474,38 @@ fn parallel(a: V3, b: V3, angle: f64) -> bool {
 }
 
 /// Exact UV image for curve/surface pairs whose preimage is a line or planar conic.
+/// `range` selects the branch of images that are only piecewise linear (meridians
+/// change longitude at the poles).
 fn exact(
     chart: &Chart,
     shape: &CurveShape,
     curve: &CurveGeometry<ModelSpace, 3>,
+    range: [f64; 2],
     tolerance: f64,
 ) -> Option<CurveGeometry<ParameterSpace, 2>> {
     const ANGLE: f64 = 1e-9;
     let f = chart.frame()?;
     match (chart, shape) {
+        // Great circles through the poles map to constant-u lines between the poles,
+        // including arcs that end at a pole, where the fitted inverse is singular.
+        (Chart::Sphere(_, r), CurveShape::Conic { frame, a, b })
+            if (a - r).abs() <= tolerance
+                && (b - r).abs() <= tolerance
+                && distance(frame.o, f.o) <= tolerance
+                && dot(frame.z, f.z).abs() <= ANGLE =>
+        {
+            let t = 0.5 * (range[0] + range[1]);
+            let (sin, cos) = t.sin_cos();
+            let d = add(scale(frame.x, cos), scale(frame.y, sin));
+            let l = [dot(d, f.x), dot(d, f.y), dot(d, f.z)];
+            let tangent = add(scale(frame.x, -sin), scale(frame.y, cos));
+            let sigma = dot(tangent, f.z).signum();
+            if dot(tangent, f.z).abs() <= ANGLE {
+                return None;
+            }
+            let v = l[2].atan2(l[0].hypot(l[1]));
+            line2([l[1].atan2(l[0]), v - sigma * t], [0., sigma])
+        }
         (Chart::Plane(_), CurveShape::Line { origin, tangent }) => {
             let o = f.local(*origin);
             line2([o[0], o[1]], [dot(*tangent, f.x), dot(*tangent, f.y)])
@@ -495,6 +601,64 @@ fn exact(
     }
 }
 
+/// An interior curve parameter at which the curve passes within the model tolerance
+/// of a singular point of the chart (a pole or apex), where no continuous pcurve
+/// exists. Each knot or quarter-period span is sampled and every local minimum of
+/// the distance is refined by golden-section search.
+fn singular_crossing(
+    chart: &Chart,
+    curve: &CurveGeometry<ModelSpace, 3>,
+    range: [f64; 2],
+    tolerance: f64,
+    work: &mut Work,
+) -> Result<Option<f64>, PcurveError> {
+    let singular = chart.singular();
+    if singular.is_empty() {
+        return Ok(None);
+    }
+    let seeds = curve
+        .break_parameters(range, 30_000)
+        .map_err(|_| PcurveError::Limit)?;
+    let margin = 1e-9 * (range[1] - range[0]);
+    let mut at = |t: f64, p: V3| -> Result<f64, PcurveError> {
+        Ok(distance(curve_jet(curve, t, KnotSide::Right, work)?.0, p))
+    };
+    const SAMPLES: usize = 16;
+    for w in seeds.windows(2) {
+        for s in &singular {
+            let ts: Vec<f64> = (0..=SAMPLES)
+                .map(|i| w[0] + (w[1] - w[0]) * i as f64 / SAMPLES as f64)
+                .collect();
+            let d = ts
+                .iter()
+                .map(|&t| at(t, s.point))
+                .collect::<Result<Vec<_>, _>>()?;
+            for i in 0..=SAMPLES {
+                let lower = i == 0 || d[i] <= d[i - 1];
+                let upper = i == SAMPLES || d[i] <= d[i + 1];
+                if !(lower && upper) {
+                    continue;
+                }
+                let (mut a, mut b) = (ts[i.saturating_sub(1)], ts[(i + 1).min(SAMPLES)]);
+                const PHI: f64 = 0.618_033_988_749_894_9;
+                for _ in 0..60 {
+                    let (x, y) = (b - PHI * (b - a), a + PHI * (b - a));
+                    if at(x, s.point)? <= at(y, s.point)? {
+                        b = y;
+                    } else {
+                        a = x;
+                    }
+                }
+                let t = 0.5 * (a + b);
+                if at(t, s.point)? <= tolerance && t - range[0] > margin && range[1] - t > margin {
+                    return Ok(Some(t));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Compute the pcurve of an edge (curve on `range`) on a face surface.
 pub(crate) fn pcurve(
     inverter: &Inverter<'_>,
@@ -504,7 +668,10 @@ pub(crate) fn pcurve(
     work: &mut Work,
 ) -> Result<Pcurve, PcurveError> {
     let tolerance = inverter.tolerance;
-    if let Some(candidate) = exact(inverter.chart, shape, curve, tolerance) {
+    if let Some(parameter) = singular_crossing(inverter.chart, curve, range, tolerance, work)? {
+        return Err(PcurveError::Singular { parameter });
+    }
+    if let Some(candidate) = exact(inverter.chart, shape, curve, range, tolerance) {
         let mut agrees = true;
         for s in [0., 0.25, 0.5, 0.75, 1.] {
             let t = range[0] + (range[1] - range[0]) * s;
@@ -580,12 +747,25 @@ fn fitted(
         .break_parameters(range, MAX_SEGMENTS)
         .map_err(|_| PcurveError::Limit)?;
     work.charge(seeds.len())?;
+    let singular = inverter.chart.singular();
     let point = |t: f64,
                  side: KnotSide,
                  hint: Option<[f64; 2]>,
                  work: &mut Work|
      -> Result<([f64; 2], [f64; 2]), PcurveError> {
         let (p, d) = curve_jet(curve, t, side, work)?;
+        // A curve end at a pole or apex takes its one-sided limit: the coordinate
+        // along the singular line from just inside the curve, the other on the line.
+        if t == range[0] || t == range[1] {
+            if let Some(s) = singular.iter().find(|s| distance(p, s.point) <= tolerance) {
+                let h = 1e-7 * (range[1] - range[0]) * if t == range[0] { 1. } else { -1. };
+                let (q, _) = curve_jet(curve, t + h, side, work)?;
+                let inside = inverter.invert(q, hint, work)?;
+                let mut uv = inside;
+                uv[1 - s.k] = s.value;
+                return Ok((uv, [0, 1].map(|k| (inside[k] - uv[k]) / h)));
+            }
+        }
         let uv = inverter.invert(p, hint, work)?;
         let lifted = surface_jet(inverter.surface, uv, work)?.p;
         let off = distance(lifted, p);

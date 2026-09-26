@@ -19,6 +19,21 @@ impl AxisDomain {
                 _ => true,
             }
     }
+    /// The value, or the domain end it lies within 4 ulps of: convex combinations of
+    /// points on a closed end (a pcurve on a boundary, a probe on a pole line) round
+    /// that far outside. Anything farther is outside the domain.
+    pub fn snap(self, value: f64) -> Option<f64> {
+        if !value.is_finite() {
+            return None;
+        }
+        let near = |end: f64| (value - end).abs() <= 4. * f64::EPSILON * end.abs().max(1.);
+        match self {
+            Self::Closed { min, .. } if value < min => near(min).then_some(min),
+            Self::Closed { max, .. } if value > max => near(max).then_some(max),
+            Self::LowerBounded { min } if value < min => near(min).then_some(min),
+            _ => Some(value),
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SurfaceKind {
@@ -113,9 +128,9 @@ impl<S: Space> Surface<S> {
         finite(u)?;
         finite(v)?;
         let domains = self.domain();
-        if !domains[0].contains(u) || !domains[1].contains(v) {
+        let (Some(u), Some(v)) = (domains[0].snap(u), domains[1].snap(v)) else {
             return Err(Error::ParameterOutsideDomain);
-        }
+        };
         let (s, c) = u.sin_cos();
         let zero = [0.; 3];
         let (p, du, dv, duu, duv, dvv) = match self.shape {

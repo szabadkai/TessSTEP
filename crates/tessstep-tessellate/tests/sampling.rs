@@ -179,6 +179,8 @@ fn shared_edge_face_boundaries_keep_identical_positions_and_distinct_seam_uv() {
 fn shared_edge_collapsed_curves_and_endpoint_snaps_are_diagnosed() {
     use tessstep_curves::spline::{NurbsCurve, SplineLimits};
     use tessstep_math::Point;
+    // A closed edge whose curve stays at its vertex is collapsed: it closes a chart
+    // at a pole or apex, so it samples its seeds at the vertex without tangents.
     let mut r = disk();
     r.edges[0].range = [0., 1.];
     r.edges[0].curve = CurveGeometry::Nurbs(
@@ -195,6 +197,46 @@ fn shared_edge_collapsed_curves_and_endpoint_snaps_are_diagnosed() {
         .validate(tolerance(), ValidationLimits::default())
         .unwrap()
         .normalize();
+    assert!(n.is_collapsed(EdgeId(0)) && n.is_singular_vertex(VertexId(0)));
+    let s = sample_edges(&n, tol(1e-3, 0.1), SamplingLimits::default()).unwrap();
+    let samples = s.edge(EdgeId(0)).unwrap().samples();
+    assert_eq!(
+        samples.iter().map(|s| s.parameter).collect::<Vec<_>>(),
+        [0., 1.]
+    );
+    assert!(
+        samples
+            .iter()
+            .all(|s| s.position == n.data().vertices[0].position)
+    );
+    // Its pcurve must still lie on the face: the unit-circle pcurve does not.
+    assert!(matches!(
+        s.face_boundary(FaceId(0), tessstep_trim::Options::default(), 10000)
+            .unwrap_err(),
+        BoundaryError::Trim(tessstep_trim::Error {
+            kind: tessstep_trim::ErrorKind::CurveSurfaceMismatch,
+            ..
+        })
+    ));
+    // An open edge with a stationary point has no sampling tangent there.
+    let mut r = square();
+    let [a, b] = [0, 1].map(|i| r.vertices[i].position);
+    r.edges[0].range = [0., 1.];
+    r.edges[0].curve = CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            2,
+            &[0., 0., 0., 1., 1., 1.],
+            &[a, b, b],
+            &[1.; 3],
+            SplineLimits::default(),
+        )
+        .unwrap(),
+    );
+    let n = r
+        .validate(tolerance(), ValidationLimits::default())
+        .unwrap()
+        .normalize();
+    assert!(!n.is_collapsed(EdgeId(0)));
     assert_eq!(
         sample_edges(&n, tol(1e-3, 0.1), SamplingLimits::default())
             .unwrap_err()

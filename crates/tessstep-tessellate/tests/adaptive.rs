@@ -28,6 +28,16 @@ fn frame(z: f64) -> PlaneFrame<tessstep_math::ModelSpace, 3> {
     .unwrap()
 }
 fn verify(mesh: &tessstep_mesh::Mesh, n: &NormalizedBrep, tolerance: TessellationTolerance) {
+    verify_within(mesh, n, tolerance, 1.02);
+}
+/// Errors are sampled by the implementation, not certified: `slack` bounds how far
+/// denser independent probes may exceed the tolerances.
+fn verify_within(
+    mesh: &tessstep_mesh::Mesh,
+    n: &NormalizedBrep,
+    tolerance: TessellationTolerance,
+    slack: f64,
+) {
     let d = mesh.data();
     for (i, &tri) in d.triangles.iter().enumerate() {
         let points = tri
@@ -40,16 +50,40 @@ fn verify(mesh: &tessstep_mesh::Mesh, n: &NormalizedBrep, tolerance: Tessellatio
             .normalized()
             .unwrap();
         let face = &n.data().faces[d.face_ids[i] as usize];
+        let outward = normal;
         if face.orientation.is_reversed() {
             normal = normal.vector().scaled(-1.).unwrap().normalized().unwrap();
         }
+        // Corners at a surface singularity (the pole or apex of the tests' charts).
+        let singular: Vec<usize> = (0..3)
+            .filter(|&k| {
+                face.surface
+                    .evaluate(d.uvs[i][k])
+                    .unwrap()
+                    .normal(NumericalTolerance::default())
+                    .is_err()
+            })
+            .collect();
         // Independent dense barycentric probes, beyond the implementation's stencil.
         // Chord error is the surface's distance from the facet plane; tangential
         // parametric offsets are not surface deviation.
         for a in 0..=8 {
             for b in 0..=8 - a {
                 let weights = [a as f64 / 8., b as f64 / 8., (8 - a - b) as f64 / 8.];
-                let uv = [0, 1].map(|k| (0..3).map(|j| weights[j] * d.uvs[i][j][k]).sum());
+                let mut uv: [f64; 2] =
+                    [0, 1].map(|k| (0..3).map(|j| weights[j] * d.uvs[i][j][k]).sum());
+                // At a pole or apex corner the longitude follows the opposite edge:
+                // the facet is the polar wedge between that edge's rays.
+                if let [s] = singular.as_slice() {
+                    let rest = 1. - weights[*s];
+                    if rest > 0. {
+                        uv[0] = (0..3)
+                            .filter(|j| j != s)
+                            .map(|j| weights[j] * d.uvs[i][j][0])
+                            .sum::<f64>()
+                            / rest;
+                    }
+                }
                 let jet = face.surface.evaluate(uv).unwrap();
                 let offset = jet
                     .position
@@ -58,15 +92,25 @@ fn verify(mesh: &tessstep_mesh::Mesh, n: &NormalizedBrep, tolerance: Tessellatio
                     .dot(normal.vector())
                     .unwrap()
                     .abs();
-                assert!(offset <= tolerance.chord().as_metres() * 1.02 + 1e-12);
+                assert!(offset <= tolerance.chord().as_metres() * slack + 1e-12);
+                // Poles and apices have no surface normal; they are mesh corners.
+                let Ok(surface_normal) = jet.normal(NumericalTolerance::default()) else {
+                    assert!(weights.contains(&1.), "singular probe inside a triangle");
+                    continue;
+                };
                 assert!(
-                    jet.normal(NumericalTolerance::default())
-                        .unwrap()
-                        .angle_to(normal)
-                        .unwrap()
-                        .as_radians()
-                        <= tolerance.normal_angle().as_radians() * 1.02 + 1e-12
+                    surface_normal.angle_to(normal).unwrap().as_radians()
+                        <= tolerance.normal_angle().as_radians() * slack + 1e-12
                 );
+                // Per-corner normals point to the facet's side.
+                if weights.contains(&1.) {
+                    let k = weights.iter().position(|&w| w == 1.).unwrap();
+                    let corner = Vector::<tessstep_math::ModelSpace, 3>::new(d.normals[i][k])
+                        .unwrap()
+                        .normalized()
+                        .unwrap();
+                    assert!(corner.angle_to(outward).unwrap().as_radians() < 0.5);
+                }
             }
         }
     }
@@ -471,4 +515,40 @@ fn adaptive_planar_holes_and_inward_solid_are_explicit() {
             .kind,
         TessellationErrorKind::Mesh(tessstep_mesh::Error::NonPositiveVolume)
     ));
+}
+#[test]
+fn pole_and_apex_charts_close_with_collapsed_edges() {
+    use std::f64::consts::PI;
+    for (raw, volume, pole) in [
+        (hemisphere(), 2. * PI / 3., [0., 0., 1.]),
+        (apex_cone(), PI / 3., [0.; 3]),
+    ] {
+        let n = normalize(raw);
+        assert!(n.is_collapsed(EdgeId(2)) || n.is_collapsed(EdgeId(0)));
+        for chord in [0.02, 0.005] {
+            let t = tol(chord, 0.3);
+            let m = tessellate_solid(&n, SolidId(0), t, TessellationOptions::default()).unwrap();
+            assert!(m.is_watertight());
+            assert_eq!(m.statistics().components, 1);
+            // Inscribed facets lose at most one chord of thickness over the area.
+            let area = 4. * PI;
+            let v = m.statistics().signed_volume;
+            assert!(
+                v < volume + 1e-9 && v > volume - area * chord,
+                "{v} vs {volume}"
+            );
+            verify_within(&m, &n, t, 1.05);
+            // Every sample of the collapsed edge welds to the one pole vertex.
+            let at: Vec<_> = m
+                .data()
+                .positions
+                .iter()
+                .filter(|p| (0..3).all(|k| (p[k] - pole[k]).abs() < 1e-12))
+                .collect();
+            assert_eq!(at.len(), 1);
+            let again =
+                tessellate_solid(&n, SolidId(0), t, TessellationOptions::default()).unwrap();
+            assert_eq!(m.data().triangles, again.data().triangles);
+        }
+    }
 }

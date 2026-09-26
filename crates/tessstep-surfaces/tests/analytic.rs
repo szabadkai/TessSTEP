@@ -75,6 +75,22 @@ fn analytic_surfaces_known_values_and_singularities() {
     );
     assert_eq!(s.evaluate(0., 2.), Err(Error::ParameterOutsideDomain));
     assert_eq!(k.evaluate(0., -1.), Err(Error::ParameterOutsideDomain));
+    // Rounding within 4 ulps of a closed end evaluates at the end; farther does not.
+    let pole = std::f64::consts::FRAC_PI_2;
+    let above = f64::from_bits(pole.to_bits() + 2);
+    assert_eq!(
+        s.evaluate(0.3, above).unwrap(),
+        s.evaluate(0.3, pole).unwrap()
+    );
+    assert_eq!(
+        s.evaluate(0.3, pole + 1e-12),
+        Err(Error::ParameterOutsideDomain)
+    );
+    assert_eq!(
+        k.evaluate(0.3, -1e-300).unwrap(),
+        k.evaluate(0.3, 0.).unwrap()
+    );
+    assert_eq!(k.evaluate(0.3, -1e-12), Err(Error::ParameterOutsideDomain));
 }
 #[test]
 fn analytic_surface_partials_match_finite_differences() {

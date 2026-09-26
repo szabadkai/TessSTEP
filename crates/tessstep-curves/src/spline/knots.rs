@@ -85,9 +85,7 @@ impl KnotVector {
     }
     pub fn span(&self, u: f64, side: KnotSide) -> Result<usize, SplineError> {
         let [min, max] = self.domain();
-        if !u.is_finite() || u < min || u > max {
-            return Err(SplineError::OutsideDomain);
-        }
+        let u = self.snap(u).ok_or(SplineError::OutsideDomain)?;
         let left = u == max || (side == KnotSide::Left && u != min);
         let end = if left {
             self.knots.partition_point(|&k| k < u)
@@ -101,7 +99,23 @@ impl KnotVector {
     }
     /// Iterative Cox-de Boor recurrence and differentiated lower-degree recurrence.
     /// Repeated-knot terms with zero denominator contribute zero.
+    /// The parameter, or the domain end it lies within 4 ulps of (rounding of
+    /// convex combinations on a boundary); None when it is outside the domain.
+    pub fn snap(&self, u: f64) -> Option<f64> {
+        let [min, max] = self.domain();
+        let near = |end: f64| (u - end).abs() <= 4. * f64::EPSILON * end.abs().max(max - min);
+        if !u.is_finite() {
+            None
+        } else if u < min {
+            near(min).then_some(min)
+        } else if u > max {
+            near(max).then_some(max)
+        } else {
+            Some(u)
+        }
+    }
     pub fn basis_on_side(&self, u: f64, side: KnotSide) -> Result<BasisSample, SplineError> {
+        let u = self.snap(u).ok_or(SplineError::OutsideDomain)?;
         let span = self.span(u, side)?;
         let p = self.degree;
         let start = span - p;

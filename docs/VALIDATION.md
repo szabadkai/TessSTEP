@@ -1,3 +1,35 @@
+# Curved import: pole and apex charts — 2026-09-26
+
+Faces that reach a sphere pole, a cone apex or a collapsed B-spline side now close their
+chart with collapsed edges instead of failing: loop joins at singular vertices,
+enclosing loops with a pole seam, `VERTEX_LOOP` bounds and full spheres; see
+[CURVED_IMPORT.md](CURVED_IMPORT.md#face-charts), [TOPOLOGY.md](TOPOLOGY.md#collapsed-edges)
+and [TESSELLATION.md](TESSELLATION.md#poles-and-apices). Supporting changes: exact
+meridian pcurves, one-sided pcurve limits at pole ends, explicit detection of curves
+through a pole (which the weak Jacobian test missed), distinct-point NURBS inversion
+seeds with a step off singular seeds, and 4-ulp end snapping in closed surface and
+knot domains (convex combinations on a B-spline boundary previously fell outside it and
+failed every pcurve probe).
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --release` | 236 tests/doctests passed, including `pole_and_apex_charts_close_with_collapsed_edges`, `topology_collapsed_edges_close_pole_and_apex_charts`, `brep_poles_and_apices_close_with_collapsed_edges` |
+| Workspace fmt, Clippy (`-D warnings`, all targets/features) and rustdoc | passed |
+| Python verification tests; kernel, CLI, EXPRESS, schema, product, metamorphic, architecture checks | passed (41 tests) |
+| Fixture provenance and generated conformance | passed; 86 fixtures |
+| `check_geometry.py --require-external` | 51 reviewed outcomes passed (new: hemisphere, vertex-loop and seamed cone tips, sphere bounded by a vertex loop, pole-to-pole seamed sphere, collapsed B-spline tetrahedron base, rejected regular vertex loop) |
+| `check_capi.py --library-dir target/release` (no sanitizers; local ASan hang) | installed C/C++ package checks passed |
+
+`python3 scripts/corpus.py --check` passed with 89 changed inputs and no regressions:
+roots producing solid meshes rose from 419 to 521 of 1,173 (geometry `unsupported`
+185 → 91 roots). Reviewed movements: 101 roots now mesh; 34 formerly unsupported roots
+reach specific later failures (open single-face test shells, planar loop orientation,
+trim self-intersections and off-surface edges now reported after planning succeeds);
+24 fail on tessellation budgets; 4 dodgy test loops that double back are now reported
+as such. The baseline was saved after this review. Remaining blockers by frequency:
+open or inconsistently oriented shells (193), edges off their surface (69), broken wires
+(37), swept surfaces (53), tessellation budgets (41) and cavity shells (22).
+
 # Curved import: edge splits, sphere re-charting and survey tolerance — 2026-09-26
 
 Annular faces whose loop vertices are not aligned now split the crossed loop edge

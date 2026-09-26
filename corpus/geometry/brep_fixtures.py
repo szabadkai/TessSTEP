@@ -288,8 +288,8 @@ def fixtures():
     s.write("brep-sphere-cap.step", faces)
 
     # Hemisphere R=10 on a planar disk: every sphere frame puts a pole on or inside
-    # the face, so it needs pole charts, which are unsupported.
-    s = Step("Original unsupported hemisphere R=10 mm on a planar base")
+    # the face, so a seam to the enclosed pole and a collapsed pole edge close its chart.
+    s = Step("Original hemisphere R=10 mm on a planar base; every sphere frame has a pole on or inside the face")
     v = s.vertex((10, 0, 0))
     rim = s.edge(v, v, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
     sphere = s.add(f"SPHERICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
@@ -299,18 +299,86 @@ def fixtures():
     ]
     s.write("brep-hemisphere.step", faces)
 
-    # Negative: cone tip closed by a VERTEX_LOOP at the apex.
-    s = Step("Original unsupported solid: cone tip bounded by a vertex loop")
+    # Cone tip R=10 h=10 closed by a VERTEX_LOOP at the apex.
+    s = Step("Original cone R=10 h=10 mm whose lateral face is bounded by its base circle and a vertex loop at the apex")
     apex = s.vertex((0, 0, 10))
     v0 = s.vertex((10, 0, 0))
     base = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
     cone = s.add(f"CONICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, -1), (1, 0, 0))},10.,{num(math.pi / 4)})")
     vertex_loop = s.add(f"VERTEX_LOOP('',#{apex})")
     faces = [
-        s.face([s.bound([(base, False)]), s.add(f"FACE_BOUND('',#{vertex_loop},.T.)")], cone),
+        s.face([s.bound([(base, True)]), s.add(f"FACE_BOUND('',#{vertex_loop},.T.)")], cone),
         s.face([s.bound([(base, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
     ]
     s.write("brep-vertex-loop.step", faces)
+
+    # Cone tip R=10 h=10 whose lateral loop runs up a generator seam to the apex vertex
+    # and back: the loop meets the apex, where a collapsed edge joins its chart ends.
+    s = Step("Original cone R=10 h=10 mm whose lateral loop runs up a seam generator to the apex and back")
+    apex = s.vertex((0, 0, 10))
+    v0 = s.vertex((10, 0, 0))
+    base = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    generator = s.edge(v0, apex, s.line((10, 0, 0), (-1 / math.sqrt(2), 0, 1 / math.sqrt(2))))
+    cone = s.add(f"CONICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, -1), (1, 0, 0))},10.,{num(math.pi / 4)})")
+    faces = [
+        s.face([s.bound([(base, True), (generator, True), (generator, False)], outer=True)], cone),
+        s.face([s.bound([(base, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-cone-seam.step", faces)
+
+    # Full sphere R=10 bounded only by a VERTEX_LOOP on the STEP frame's equator: the
+    # face is planned in the frame whose pole is that vertex, between both poles.
+    s = Step("Original sphere R=10 mm bounded by one vertex loop")
+    point = s.vertex((10, 0, 0))
+    sphere = s.add(f"SPHERICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    vertex_loop = s.add(f"VERTEX_LOOP('',#{point})")
+    s.write("brep-sphere.step", [s.face([s.add(f"FACE_BOUND('',#{vertex_loop},.T.)")], sphere)])
+
+    # Full sphere R=10 with a meridian seam edge from the south to the north pole,
+    # used in both directions: exact meridian pcurves and a collapsed edge at each pole.
+    s = Step("Original sphere R=10 mm bounded by a pole-to-pole meridian seam edge")
+    south, north = s.vertex((0, 0, -10)), s.vertex((0, 0, 10))
+    meridian = s.edge(south, north, s.circle((0, 0, 0), (0, -1, 0), (0, 0, -1), 10))
+    sphere = s.add(f"SPHERICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    s.write("brep-sphere-seam.step", [s.face([s.bound([(meridian, True), (meridian, False)], outer=True)], sphere)])
+
+    # Tetrahedron with legs of 10 mm whose base is a bilinear B-spline patch with its
+    # u=0 side collapsed to the corner A: the base loop meets that side at A, where a
+    # collapsed edge joins its chart ends.
+    s = Step("Original 10 mm tetrahedron whose base is a bilinear B-spline patch with one side collapsed to a corner")
+    a, b, c, d = (0, 0, 0), (10, 0, 0), (0, 10, 0), (0, 0, 10)
+    va, vb, vc, vd = (s.vertex(p) for p in (a, b, c, d))
+
+    def segment(p, q, vp, vq):
+        return s.edge(vp, vq, s.line(p, [q[k] - p[k] for k in range(3)]))
+
+    ab, bc, ca = segment(a, b, va, vb), segment(b, c, vb, vc), segment(c, a, vc, va)
+    ad, bd, cd = segment(a, d, va, vd), segment(b, d, vb, vd), segment(c, d, vc, vd)
+    pa = s.point(a)
+    patch = s.add(f"B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#{pa},#{pa}),(#{s.point(b)},#{s.point(c)})),"
+                  ".UNSPECIFIED.,.F.,.F.,.F.,(2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.)")
+    root3 = 1 / math.sqrt(3)
+    faces = [
+        # The patch normal is +z; the base faces -z.
+        s.face([s.bound([(ca, False), (bc, False), (ab, False)], outer=True)], patch, same=False),
+        s.face([s.bound([(ab, True), (bd, True), (ad, False)], outer=True)], s.plane(a, (0, -1, 0))),
+        s.face([s.bound([(ad, True), (cd, False), (ca, True)], outer=True)], s.plane(a, (-1, 0, 0), (0, 1, 0))),
+        s.face([s.bound([(bc, True), (cd, True), (bd, False)], outer=True)],
+               s.plane(b, (root3, root3, root3), (-1 / math.sqrt(2), 1 / math.sqrt(2), 0))),
+    ]
+    s.write("brep-bspline-pole.step", faces)
+
+    # Negative: a VERTEX_LOOP at a regular point of a cone.
+    s = Step("Original unsupported solid: vertex loop away from the cone apex")
+    v0 = s.vertex((10, 0, 0))
+    base = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    cone = s.add(f"CONICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, -1), (1, 0, 0))},10.,{num(math.pi / 4)})")
+    vertex_loop = s.add(f"VERTEX_LOOP('',#{v0})")
+    faces = [
+        s.face([s.bound([(base, True)]), s.add(f"FACE_BOUND('',#{vertex_loop},.T.)")], cone),
+        s.face([s.bound([(base, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-regular-vertex-loop.step", faces)
 
     # Negative: planar face with two counterclockwise loops and no FACE_OUTER_BOUND.
     s = Step("Original rejected solid: ambiguous outer bound on a planar face")

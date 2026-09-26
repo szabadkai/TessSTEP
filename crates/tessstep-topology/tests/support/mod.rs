@@ -313,3 +313,224 @@ pub fn nurbs_bump() -> RawBrep {
     );
     r
 }
+/// A constant degree-1 curve at `at` over `[0, span]`, with quarter-span knots:
+/// the 3D curve of a collapsed edge at a pole or apex.
+pub fn collapsed_curve(at: [f64; 3], span: f64) -> CurveGeometry<tessstep_math::ModelSpace, 3> {
+    use tessstep_curves::spline::{NurbsCurve, SplineLimits};
+    let q = span / 4.;
+    CurveGeometry::Nurbs(
+        NurbsCurve::new(
+            1,
+            &[0., 0., q, 2. * q, 3. * q, span, span],
+            &[Point::new(at).unwrap(); 5],
+            &[1.; 5],
+            SplineLimits::default(),
+        )
+        .unwrap(),
+    )
+}
+fn line2(origin: [f64; 2], tangent: [f64; 2], range: [f64; 2]) -> Pcurve {
+    Pcurve {
+        curve: CurveGeometry::Analytic(
+            Curve::line(Point::new(origin).unwrap(), Vector::new(tangent).unwrap()).unwrap(),
+        ),
+        range,
+    }
+}
+fn frame3(o: [f64; 3], x: [f64; 3], y: [f64; 3]) -> PlaneFrame<tessstep_math::ModelSpace, 3> {
+    PlaneFrame::new(
+        Point::new(o).unwrap(),
+        Vector::new(x).unwrap(),
+        Vector::new(y).unwrap(),
+        NumericalTolerance::default(),
+    )
+    .unwrap()
+}
+fn coedge(edge: usize, forward: bool, pcurve: Pcurve) -> Coedge {
+    Coedge {
+        edge: EdgeId(edge),
+        orientation: if forward {
+            Orientation::Forward
+        } else {
+            Orientation::Reversed
+        },
+        pcurve: Some(pcurve),
+    }
+}
+fn unit_circle_pcurve() -> Pcurve {
+    let frame2 = PlaneFrame::new(
+        Point::new([0.; 2]).unwrap(),
+        Vector::new([1., 0.]).unwrap(),
+        Vector::new([0., 1.]).unwrap(),
+        NumericalTolerance::default(),
+    )
+    .unwrap();
+    Pcurve {
+        curve: CurveGeometry::Analytic(Curve::circle(frame2, Length::metres(1.).unwrap()).unwrap()),
+        range: [0., std::f64::consts::TAU],
+    }
+}
+/// Upper unit hemisphere closed by the unit disk at z = 0. The sphere chart is a
+/// rectangle: equator, a meridian seam to the north pole, a collapsed edge along the
+/// pole line and the seam back down.
+pub fn hemisphere() -> RawBrep {
+    use std::f64::consts::{FRAC_PI_2, TAU};
+    let sphere = tessstep_surfaces::Surface::sphere(
+        frame3([0.; 3], [1., 0., 0.], [0., 1., 0.]),
+        Length::metres(1.).unwrap(),
+    )
+    .unwrap();
+    RawBrep {
+        vertices: vec![
+            Vertex {
+                position: Point::new([1., 0., 0.]).unwrap(),
+            },
+            Vertex {
+                position: Point::new([0., 0., 1.]).unwrap(),
+            },
+        ],
+        edges: vec![
+            Edge {
+                vertices: [VertexId(0); 2],
+                curve: CurveGeometry::Analytic(
+                    Curve::circle(
+                        frame3([0.; 3], [1., 0., 0.], [0., 1., 0.]),
+                        Length::metres(1.).unwrap(),
+                    )
+                    .unwrap(),
+                ),
+                range: [0., TAU],
+            },
+            Edge {
+                vertices: [VertexId(0), VertexId(1)],
+                curve: CurveGeometry::Analytic(
+                    Curve::circle(
+                        frame3([0.; 3], [1., 0., 0.], [0., 0., 1.]),
+                        Length::metres(1.).unwrap(),
+                    )
+                    .unwrap(),
+                ),
+                range: [0., FRAC_PI_2],
+            },
+            Edge {
+                vertices: [VertexId(1); 2],
+                curve: collapsed_curve([0., 0., 1.], TAU),
+                range: [0., TAU],
+            },
+        ],
+        coedges: vec![
+            coedge(0, true, line2([0., 0.], [1., 0.], [0., TAU])),
+            coedge(1, true, line2([0., 0.], [0., 1.], [0., FRAC_PI_2])),
+            coedge(2, true, line2([TAU, FRAC_PI_2], [-1., 0.], [0., TAU])),
+            coedge(1, false, line2([0., 0.], [0., 1.], [0., FRAC_PI_2])),
+            coedge(0, true, unit_circle_pcurve()),
+        ],
+        wires: vec![
+            Wire {
+                coedges: (0..4).map(CoedgeId).collect(),
+            },
+            Wire {
+                coedges: vec![CoedgeId(4)],
+            },
+        ],
+        faces: vec![
+            Face {
+                surface: SurfaceGeometry::Analytic(sphere),
+                outer: WireId(0),
+                holes: vec![],
+                orientation: Orientation::Forward,
+            },
+            Face {
+                surface: plane(),
+                outer: WireId(1),
+                holes: vec![],
+                orientation: Orientation::Reversed,
+            },
+        ],
+        shells: vec![Shell {
+            faces: vec![FaceId(0), FaceId(1)],
+            closed: true,
+        }],
+        solids: vec![Solid { shell: ShellId(0) }],
+    }
+}
+/// Right circular cone with its apex at the origin, 45 degree semi-angle and unit top
+/// disk at z = 1. The cone chart closes at the apex with a collapsed edge.
+pub fn apex_cone() -> RawBrep {
+    use std::f64::consts::{FRAC_PI_4, SQRT_2, TAU};
+    let cone = tessstep_surfaces::Surface::cone(
+        frame3([0.; 3], [1., 0., 0.], [0., 1., 0.]),
+        Angle::radians(FRAC_PI_4).unwrap(),
+    )
+    .unwrap();
+    let top = frame3([0., 0., 1.], [1., 0., 0.], [0., 1., 0.]);
+    RawBrep {
+        vertices: vec![
+            Vertex {
+                position: Point::new([0.; 3]).unwrap(),
+            },
+            Vertex {
+                position: Point::new([1., 0., 1.]).unwrap(),
+            },
+        ],
+        edges: vec![
+            Edge {
+                vertices: [VertexId(0); 2],
+                curve: collapsed_curve([0.; 3], TAU),
+                range: [0., TAU],
+            },
+            Edge {
+                vertices: [VertexId(0), VertexId(1)],
+                curve: CurveGeometry::Analytic(
+                    Curve::line(
+                        Point::new([0.; 3]).unwrap(),
+                        Vector::new([FRAC_PI_4.sin(), 0., FRAC_PI_4.cos()]).unwrap(),
+                    )
+                    .unwrap(),
+                ),
+                range: [0., SQRT_2],
+            },
+            Edge {
+                vertices: [VertexId(1); 2],
+                curve: CurveGeometry::Analytic(
+                    Curve::circle(top, Length::metres(1.).unwrap()).unwrap(),
+                ),
+                range: [0., TAU],
+            },
+        ],
+        coedges: vec![
+            coedge(0, true, line2([0., 0.], [1., 0.], [0., TAU])),
+            coedge(1, true, line2([0., 0.], [0., 1.], [0., SQRT_2])),
+            coedge(2, false, line2([0., SQRT_2], [1., 0.], [0., TAU])),
+            coedge(1, false, line2([0., 0.], [0., 1.], [0., SQRT_2])),
+            coedge(2, true, unit_circle_pcurve()),
+        ],
+        wires: vec![
+            Wire {
+                coedges: (0..4).map(CoedgeId).collect(),
+            },
+            Wire {
+                coedges: vec![CoedgeId(4)],
+            },
+        ],
+        faces: vec![
+            Face {
+                surface: SurfaceGeometry::Analytic(cone),
+                outer: WireId(0),
+                holes: vec![],
+                orientation: Orientation::Forward,
+            },
+            Face {
+                surface: SurfaceGeometry::Analytic(tessstep_surfaces::Surface::plane(top)),
+                outer: WireId(1),
+                holes: vec![],
+                orientation: Orientation::Forward,
+            },
+        ],
+        shells: vec![Shell {
+            faces: vec![FaceId(0), FaceId(1)],
+            closed: true,
+        }],
+        solids: vec![Solid { shell: ShellId(0) }],
+    }
+}

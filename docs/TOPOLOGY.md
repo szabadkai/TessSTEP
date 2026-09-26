@@ -38,9 +38,22 @@ owned closed shell. Cavity shells and nesting semantics are not implemented.
 
 These are structural validity states: validation does **not** certify self-intersection,
 face/surface agreement, continuous curve interiors, shell outwardness, positive volume,
-or containment. UV reconstruction checks sampled pcurve agreement separately. Collapsed
-curves and surface singularities are diagnosed by downstream operations; structural
-acceptance does not establish regular geometry. No mesh or watertightness claim follows.
+or containment. UV reconstruction checks sampled pcurve agreement separately. Surface
+singularities are diagnosed by downstream operations; structural acceptance does not
+establish regular geometry. No mesh or watertightness claim follows.
+
+## Collapsed edges
+
+A closed edge whose curve stays within the model tolerance of its vertex (checked at
+the quarter, mid and three-quarter parameters) is *collapsed*
+(`NormalizedBrep::is_collapsed`). It represents a singular line of a face chart, such
+as a sphere pole or cone apex, not a 3D boundary: it may have a single use in a closed
+shell, bounds only the face whose chart it closes, and its two ends form one
+vertex-link incidence. Its vertex is *singular* (`NormalizedBrep::is_singular_vertex`):
+trimming, boundary mapping and tessellation accept singular surface normals on
+collapsed edges and at singular vertices. A closed edge that leaves its vertex is not
+collapsed and follows the ordinary two-use rule. Evidence:
+`topology_collapsed_edges_close_pole_and_apex_charts`.
 
 ## Bounds and evidence
 

@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "run_id": "2026-09-26T17-59-54-625347Z",
-  "source_fingerprint": "7c757b57c1fcd08ff99e40de33ce3547c924d437bef1166f480edbc6b1512a7b",
+  "run_id": "2026-09-26T19-27-00-928247Z",
+  "source_fingerprint": "19a1705bf22c1f4a8c0bdf632397310ebf44648c3be9d5603030fe3237da2531",
   "cases": [
     {
       "sha256": "e486bfb50625f5270d2b239c004c61f30c9f2fd8f230e395a8c10cbb8c45cb09",
@@ -35967,7 +35967,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -37378,7 +37378,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -38827,7 +38827,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -39121,7 +39121,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -39268,7 +39268,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -46614,7 +46614,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -58383,8 +58383,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 5325,
@@ -58446,8 +58446,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 14668,
@@ -58488,8 +58488,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 4992,
@@ -58509,8 +58509,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 7792,
@@ -58572,8 +58572,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 6433,
@@ -58614,8 +58614,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 17160,
@@ -58677,8 +58677,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 22759,
@@ -58698,8 +58698,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 15520,
@@ -58719,8 +58719,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 4350,
@@ -58740,8 +58740,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 22304,
@@ -58782,7 +58782,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -58803,7 +58803,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -58824,8 +58824,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 10034,
@@ -58845,7 +58845,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
+        "geometry": "unsupported",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -58888,15 +58888,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 10072,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 1
     },
     {
       "sha256": "f1215fe15a78085a9fa78dd81714caf774b59071be92580b04ebfdc19f52a1bd",
@@ -58930,8 +58930,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 21230,
@@ -58972,8 +58972,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 11780,
@@ -59087,7 +59087,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 10
+      "geometry_accepted_roots": 11
     },
     {
       "sha256": "f010d704036b6de0319f2abb58ac11dedc8a5a3cb12a198e377c4b0adf2bd8f9",
@@ -59228,15 +59228,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
-        "tessellation": "rejected"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 3399,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 3
     },
     {
       "sha256": "a61da2a6ee158d9b22c03de4952090529f303edc3ff98724551ed0370fcb186a",
@@ -59312,8 +59312,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 23517,
@@ -59417,7 +59417,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial"
       },
       "diagnostic_counts": {},
@@ -59425,7 +59425,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 1
+      "geometry_accepted_roots": 3
     },
     {
       "sha256": "022e285ff6860fddacd17406fa0591eaa3f2c1effc455b238699917011a3850f",
@@ -59459,15 +59459,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
-        "tessellation": "rejected"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 6484,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "4dfb97d57c4b8c3b36d1f6f079f8e9d209d7be718acee279eda2e9e6bc7567ca",
@@ -59690,15 +59690,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
-        "tessellation": "rejected"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 6425,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "6fd9de5045891a199e0fc8a8ce3fed4197bd405c8e850841190818013a295468",
@@ -59963,8 +59963,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 5130,
@@ -59984,8 +59984,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "partial",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 2770,
@@ -60026,7 +60026,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
+        "geometry": "unsupported",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -60091,15 +60091,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
-        "tessellation": "partial"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 425,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 1
+      "geometry_accepted_roots": 2
     },
     {
       "sha256": "b005f2cfad95ff7a966d19938a3205ff778ef89c0b919f3b27c152dbf4863db0",
@@ -60219,8 +60219,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 4145,
@@ -60303,8 +60303,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 10467,
@@ -60324,7 +60324,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -60345,7 +60345,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial"
       },
       "diagnostic_counts": {},
@@ -60353,7 +60353,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 15
+      "geometry_accepted_roots": 21
     },
     {
       "sha256": "c1805ac3f71703243e7c2b48a514d903bf361ccfa43a213e3f5f315ac95db42f",
@@ -60410,15 +60410,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
-        "tessellation": "rejected"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 6445,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "c5422021503712a9715233d2d7b2ca9cd8c9f2f19a8c7fda616c852139c89ded",
@@ -60432,7 +60432,7 @@
         "schema": "not_configured",
         "product": "not_configured",
         "geometry": "accepted",
-        "tessellation": "rejected"
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 2174,
@@ -60473,8 +60473,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 11268,
@@ -60494,8 +60494,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 4549,
@@ -60687,8 +60687,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 7001,
@@ -60927,7 +60927,7 @@
         "schema": "not_configured",
         "product": "not_configured",
         "geometry": "partial",
-        "tessellation": "rejected"
+        "tessellation": "partial"
       },
       "diagnostic_counts": {
         "TS1103": 1
@@ -60936,7 +60936,7 @@
       "missing_references": 1,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 4
     },
     {
       "sha256": "2af285c3d1ca084cf875badd91b2cc2093a892c91b53e31b09df77d7e2b15cc8",
@@ -60993,8 +60993,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 9262,
@@ -61056,8 +61056,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 15075,
@@ -61505,7 +61505,7 @@
         "schema": "not_configured",
         "product": "not_configured",
         "geometry": "accepted",
-        "tessellation": "rejected"
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 17398,
@@ -61613,8 +61613,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 17926,
@@ -61634,7 +61634,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -61699,8 +61699,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 4350,
@@ -61720,7 +61720,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -61783,7 +61783,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial"
       },
       "diagnostic_counts": {},
@@ -61791,7 +61791,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 1
+      "geometry_accepted_roots": 3
     },
     {
       "sha256": "ed88a57f9ffcf45368d6e91dc44a394a6731fc6b27e6ef059de988fd24be21ed",
@@ -61804,7 +61804,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial"
       },
       "diagnostic_counts": {},
@@ -61812,7 +61812,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 1
+      "geometry_accepted_roots": 2
     },
     {
       "sha256": "0368e220f6e06677773357766dba0cd9747dc0c66a0736c1c8415cb5e9393baf",
@@ -61833,7 +61833,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 1
+      "geometry_accepted_roots": 2
     },
     {
       "sha256": "c1575d3ab61f101294eef419ba62c30ae1a67c8a389676397405002d729e6af4",
@@ -61896,7 +61896,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 1
+      "geometry_accepted_roots": 2
     },
     {
       "sha256": "9d753c72a454cd5ac7f7fb9cd72c97f0900a0091208e0db6576d18123168ce73",
@@ -61993,8 +61993,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 15075,
@@ -62014,15 +62014,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 11066,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 1
     },
     {
       "sha256": "d151816e63eb57425ea7fe70dfd9b4eaa09edd4b639805a96ee2f1bdeeb96115",
@@ -62623,8 +62623,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 569,
@@ -62960,14 +62960,14 @@
         "schema": "not_configured",
         "product": "not_configured",
         "geometry": "accepted",
-        "tessellation": "partial"
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 3056,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 4
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "208e8eb1fd95f564f5a5c0ed60f6539537edda6303ca7c60854bb292e2873bbc",
@@ -63022,15 +63022,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 2260,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "a31e9cb7282ef6133bec67d577897ccc9d92afef307dc3832a039163c0268bd0",
@@ -63106,7 +63106,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial"
       },
       "diagnostic_counts": {},
@@ -63639,7 +63639,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 6
     },
     {
       "sha256": "8a39ac93f2a63f93500793ed9fa8ab5de7e6ccdfde8b4ec215fda5873e028c3b",
@@ -63681,7 +63681,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 4
     },
     {
       "sha256": "dc2db5e7868fabd3829bf9eb114f33701543b284e12336be57946a09e9dac8d5",
@@ -63702,7 +63702,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 4
     },
     {
       "sha256": "d797542cd9240d8b78ed834fc43dcb722663b5a088082379c0ad56106caf7262",
@@ -63723,7 +63723,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 4
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "f6ed83e213a266168be8011dc141c5a46fc6ead8b774d2984b70ef051cb781ce",
@@ -63744,7 +63744,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 3
     },
     {
       "sha256": "abcb9079a781aa06bdeafd7be1e623e8d09c59d5b1ae1a208b8b4d11fd5f93ee",
@@ -63765,7 +63765,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 3
     },
     {
       "sha256": "094491e90330dce28ba29a74e9d9f544def008b5af9e3cd9bbc8d582732fdf8e",
@@ -63786,7 +63786,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 4
     },
     {
       "sha256": "d83bf13994a77768e6b0f143f978aab52a8476e511e73aab53c47f24f4af1487",
@@ -63807,7 +63807,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "e3e75a2f3d2be97b2dd33afc043a19773597f856b2fd99502ab8ee3fb26faba9",
@@ -63870,7 +63870,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 3
+      "geometry_accepted_roots": 6
     },
     {
       "sha256": "42d9da25355e10904ac01ac2b7126f1a296c9b2c43026994cf0f321d9bb65192",
@@ -63883,7 +63883,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial"
       },
       "diagnostic_counts": {},
@@ -64311,7 +64311,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 8
+      "geometry_accepted_roots": 9
     },
     {
       "sha256": "3a3b383c90b9c662a34e5c2a53b4e9d684a28e4ff8b6807b843666c641319e89",
@@ -64332,7 +64332,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 3
+      "geometry_accepted_roots": 7
     },
     {
       "sha256": "a2a04ef2d86bfcb721665e02e811459b966968b86e4e74e4a2092514c5fa085d",
@@ -64353,7 +64353,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 1
+      "geometry_accepted_roots": 2
     },
     {
       "sha256": "cdc3bef17f296b31764f579ea7634f3b22433a62bc17e9d5a646a4c8e51e92f5",
@@ -64374,7 +64374,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 3
     },
     {
       "sha256": "bf9ecc8772a9765d59d1b190a3617d52a5cd43f00aa68f49036eacd22ce40a38",
@@ -64437,7 +64437,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 4
+      "geometry_accepted_roots": 6
     },
     {
       "sha256": "cfe077313b04ba9527be5aa113df78cd36c1542dbafad1cdb5670a2b68b9e229",
@@ -64458,7 +64458,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 3
+      "geometry_accepted_roots": 6
     },
     {
       "sha256": "ed25f4b251d30c413b28b21b6ec808c0ba4c8baefc28a83e6bc0618b7fb99fde",
@@ -64681,7 +64681,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -64920,7 +64920,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 3
+      "geometry_accepted_roots": 7
     },
     {
       "sha256": "7b13ec12fee5e7bfd4eb816f4b1c2167df556a34c4301d4ae8dc6508b04deac4",
@@ -64941,7 +64941,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 3
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "c04f9b5af943ccc1b0a9b58dc78b5750a710ce80248e89758da8716b99642e61",
@@ -64962,7 +64962,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 3
+      "geometry_accepted_roots": 6
     },
     {
       "sha256": "f4b46728d8b452b06868264346c93b780f2dbedae7f41c37c2a023c212c7e9bd",
@@ -65676,7 +65676,7 @@
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 8
+      "geometry_accepted_roots": 9
     },
     {
       "sha256": "ff9a1f0bb07e4dd0c94af50644b2ca384e029881631fb1201b538577d668dc9d",
@@ -66340,15 +66340,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 2278,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "b8423a02004de81a3d8431ee83f1883b0268303420d9dad1c457711dd6f532b0",
@@ -67413,15 +67413,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 219,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 1
     },
     {
       "sha256": "812e86410fb51ee8bdef596f753d206d22320a65fd12fa88b28f0869c17dee62",
@@ -67434,15 +67434,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 557,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 1
     },
     {
       "sha256": "5fc5aa3c5c13dba4ab428aa1f6b5514035c4f78a7c95fbea7d0f0ce420fd2b63",
@@ -67455,15 +67455,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 257,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 1
     },
     {
       "sha256": "e86d288afae4f77b1b8503290bd995389188d7c4f7fe2abc15be98025f49d309",
@@ -67476,15 +67476,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 657,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 1
     },
     {
       "sha256": "91904b67b8953631367b233f8164f223a22a57e552d756140c53d3be518196ce",
@@ -67497,15 +67497,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 133,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 1
     },
     {
       "sha256": "8ff0486893f6e68bce0136639eb47f800bf25a653d2f80ae3eac889ff7a74892",
@@ -67959,15 +67959,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
-        "tessellation": "rejected"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 6425,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 0
+      "geometry_accepted_roots": 5
     },
     {
       "sha256": "25e727cdc4d738064da7907d604bd4ceeb4e941c6fdc201f3df04c0b94671661",
@@ -67980,15 +67980,15 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "partial",
-        "tessellation": "partial"
+        "geometry": "accepted",
+        "tessellation": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 1189,
       "missing_references": 0,
       "schema_result": null,
       "product_result": null,
-      "geometry_accepted_roots": 2
+      "geometry_accepted_roots": 3
     },
     {
       "sha256": "eb234e26bca411a6da39c311e74d5a47b5e7a1248ae589a3a86cd2dee1f91f9b",

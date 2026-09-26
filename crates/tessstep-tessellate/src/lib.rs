@@ -200,6 +200,21 @@ fn sample_edges_seeded<'a>(
                     }
                 };
             let mut out = Vec::new();
+            if brep.is_collapsed(EdgeId(i)) {
+                // A collapsed edge is a point: its samples only carry parameters, so
+                // face charts can place UV samples along their singular line.
+                let at = brep.data().vertices[edge.vertices[0].0].position;
+                for &parameter in &seeds {
+                    budget.push(
+                        &mut out,
+                        Sample {
+                            parameter,
+                            position: at,
+                        },
+                    )?;
+                }
+                return Ok(out);
+            }
             let first = evaluate(edge.range[0], KnotSide::Right, budget)?;
             budget.push(
                 &mut out,
@@ -403,8 +418,17 @@ impl SharedEdges<'_> {
                     let jet = surface
                         .evaluate(uv)
                         .map_err(|_| BoundaryError::Geometry(use_.coedge))?;
-                    jet.normal(tessstep_math::NumericalTolerance::default())
-                        .map_err(|_| BoundaryError::Geometry(use_.coedge))?;
+                    // Singular normals are permitted on collapsed edges and at their
+                    // vertices, where the chart meets a pole or apex.
+                    let singular = self.brep.is_collapsed(c.edge)
+                        || (sample.parameter == edge.range[0]
+                            && self.brep.is_singular_vertex(edge.vertices[0]))
+                        || (sample.parameter == edge.range[1]
+                            && self.brep.is_singular_vertex(edge.vertices[1]));
+                    if !singular {
+                        jet.normal(tessstep_math::NumericalTolerance::default())
+                            .map_err(|_| BoundaryError::Geometry(use_.coedge))?;
+                    }
                     if jet
                         .position
                         .distance(sample.position)

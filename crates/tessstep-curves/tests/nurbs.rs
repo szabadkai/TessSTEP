@@ -226,9 +226,13 @@ fn spline_limits_and_malformed_inputs_are_rejected() {
         Err(SplineError::ResourceLimit)
     );
     let c = C::new(1, &k, &p, &[1.; 2], limits).unwrap();
-    for u in [-0.1, 1.1, f64::NAN, f64::INFINITY] {
+    for u in [-0.1, 1.1, 1. + 1e-12, f64::NAN, f64::INFINITY] {
         assert_eq!(c.evaluate(u), Err(SplineError::OutsideDomain));
     }
+    // Rounding within 4 ulps of a domain end evaluates at the end.
+    let end = f64::from_bits(1f64.to_bits() + 3);
+    assert_eq!(c.evaluate(end), c.evaluate(1.));
+    assert_eq!(c.evaluate(-1e-300), c.evaluate(0.));
     assert_eq!(
         c.insert_knot(
             0.5,

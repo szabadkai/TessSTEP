@@ -26,7 +26,8 @@ No axes or modeling tolerances are defaulted by the geometry evaluator.
 
 `evaluate(u,v)` returns position, du, dv, duu, duv and dvv atomically; all stored
 coordinates and derivatives must be finite. Periodic parameters are accepted without
-manual wrapping. Sphere latitude and cone slant domains are checked exactly. Standard
+manual wrapping. Sphere latitude and cone slant domains are checked with the 4-ulp
+end snap described in [NUMERICAL_ROBUSTNESS.md](NUMERICAL_ROBUSTNESS.md). Standard
 floating-point trig, cancellation/underflow and conservative overflow failures follow
 [NUMERICAL_ROBUSTNESS.md](NUMERICAL_ROBUSTNESS.md); no certified error is claimed.
 

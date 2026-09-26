@@ -41,7 +41,11 @@ publishing a partial cache. Periodic seeding and knot boundaries avoid common al
 but fixed interior probes do **not** certify the global error of arbitrary rational
 curves between probes. No exact predicates or certified Hausdorff bound are claimed.
 Small tolerances may fail through depth, floating-point spacing or resource limits.
-Collapsed curves are diagnosed; automatic singular-edge repair is not implemented.
+A curve with a stationary point on an open edge fails with `SingularTangent`. A
+*collapsed* edge (see [topology](TOPOLOGY.md#collapsed-edges)) is a point: it emits
+its seeds (knots plus requested parameters) as parameter-only samples at its vertex,
+without tangent or chord checks, so face charts can place UV samples along a pole or
+apex line. Automatic singular-edge repair is not implemented.
 
 Tests independently verify circle sagitta/tangent bounds, tighter-tolerance refinement,
 line minimal sampling, canonical vertex identity, zero-copy reversed/shared/seam views,
@@ -139,9 +143,38 @@ Delaunay predicates. Edge flips have a strict angular margin and a flip ceiling 
 Refinement is isotropic in the metric chart, so doubly curved faces at very small
 chords can exceed the default vertex and work budgets. Singular normals,
 collapsed curves, missing/non-affine pcurve correspondence and unresolved tolerances
-fail explicitly. Pole/apex handling, automatic singular-edge repair, and explicit
-crease-aligned meshing within a nonsmooth NURBS face remain unsupported; smooth patches
-on either side can be separate faces. Resource-limited failure is not a partial mesh.
+fail explicitly, except at poles and apices closed by collapsed edges (below).
+Automatic singular-edge repair and explicit crease-aligned meshing within a
+nonsmooth NURBS face remain unsupported; smooth patches on either side can be
+separate faces. Resource-limited failure is not a partial mesh.
+
+### Poles and apices
+
+A face whose chart reaches a surface singularity (a sphere pole, a cone apex) closes
+its UV polygon with a collapsed edge along the singular line. Each sample of that edge
+is a distinct UV *pole copy* of one mesh vertex (`Source::Vertex`), so all of them weld
+to the singular vertex. A pole copy's coordinate along the pole line is arbitrary, and
+the tessellator treats it that way:
+
+* A triangle with one pole copy is probed as a *polar wedge*: its coordinate along the
+  pole line follows the opposite edge (barycentric weights renormalized over the other
+  two corners). The probed region is the fan the 3D facet spans, and adjacent fans
+  share their rays from the pole, whatever pole copy each triangle uses.
+* A triangle with two copies of the same pole is a UV sliver with no 3D extent. It is
+  always accepted and dropped from the mesh; the fans around it cover that surface.
+* Edge lengths for split selection are 3D chords when an edge ends at a pole copy, and
+  such an edge is split on the ray to its other end rather than at its UV midpoint.
+  Lawson flips skip quadrilaterals that contain a pole copy. Both avoid chasing an
+  arbitrary chart point toward the pole with needle triangles.
+* Singular corners have no surface normal: probes there check only chord distance, and
+  each triangle's corner normal is the limit from inside its polar wedge. Output UVs of
+  pole copies are their triangle's polar coordinate.
+
+The hemisphere and apex-cone kernel tests
+(`pole_and_apex_charts_close_with_collapsed_edges`) check watertightness, one welded
+pole vertex, the chord-dependent volume bound, dense independent polar-wedge probes
+(within 5% of the tolerances) and determinism. Charts that reach a singularity on a
+NURBS surface side are not yet recognized; see [curved import](CURVED_IMPORT.md).
 
 ## Owned shell and solid meshes (Milestone 17)
 

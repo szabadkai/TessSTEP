@@ -75,7 +75,11 @@ See [CURVES.md](CURVES.md) for formulas, parameterization and remaining limitati
 ## Surface and rational spline extension
 
 Analytic surfaces return five partial vectors and diagnose a singular normal separately.
-Exact sphere poles and cone apex preserve their zero azimuth derivative. NURBS uses
+Exact sphere poles and cone apex preserve their zero azimuth derivative. Closed
+parameter domains (sphere latitude, cone slant, NURBS knot domains) evaluate a value
+within 4 ulps of an end at that end: a pcurve along a B-spline boundary or a probe
+on a pole line is a convex combination of on-boundary points and rounds that far
+outside. Anything farther is `ParameterOutsideDomain`/`OutsideDomain`. NURBS uses
 bounded iterative basis recurrence and homogeneous quotient derivatives with positive
 weights. Active-support scaling reduces common weight magnitudes; zero relative scales
 are rejected during construction. Finite checks do not certify conditioning, continuity

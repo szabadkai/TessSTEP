@@ -163,3 +163,37 @@ fn topology_closed_edges_keep_two_endpoint_incidences() {
     assert_eq!(n.edge_uses(EdgeId(0)).unwrap().len(), 2);
     assert_eq!(n.edge_uses(EdgeId(2)).unwrap().len(), 2);
 }
+#[test]
+fn topology_collapsed_edges_close_pole_and_apex_charts() {
+    for (raw, collapsed, pole) in [(hemisphere(), 2, 1), (apex_cone(), 0, 0)] {
+        let n = raw
+            .clone()
+            .validate(tolerance(), ValidationLimits::default())
+            .unwrap()
+            .normalize();
+        // The collapsed edge has one use in a closed shell and its vertex is singular.
+        assert!(n.is_collapsed(EdgeId(collapsed)));
+        assert_eq!(n.edge_uses(EdgeId(collapsed)).unwrap().len(), 1);
+        assert!(n.is_singular_vertex(VertexId(pole)));
+        assert!(!n.is_singular_vertex(VertexId(1 - pole)));
+        assert!((0..3).filter(|&e| n.is_collapsed(EdgeId(e))).count() == 1);
+        // A closed edge that leaves its vertex is not collapsed: its single use opens
+        // the shell.
+        let mut open = raw;
+        let at = open.vertices[pole].position.coordinates();
+        open.edges[collapsed].curve = CurveGeometry::Analytic(
+            tessstep_curves::Curve::circle(
+                tessstep_curves::PlaneFrame::new(
+                    tessstep_math::Point::new([at[0] - 1e-3, at[1], at[2]]).unwrap(),
+                    tessstep_math::Vector::new([1., 0., 0.]).unwrap(),
+                    tessstep_math::Vector::new([0., 1., 0.]).unwrap(),
+                    tessstep_math::NumericalTolerance::default(),
+                )
+                .unwrap(),
+                tessstep_math::Length::metres(1e-3).unwrap(),
+            )
+            .unwrap(),
+        );
+        assert_eq!(defect(open), Defect::OpenShell);
+    }
+}

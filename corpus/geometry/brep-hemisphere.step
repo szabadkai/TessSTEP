@@ -1,6 +1,6 @@
 ISO-10303-21;
 HEADER;
-FILE_DESCRIPTION(('Original unsupported hemisphere R=10 mm on a planar base'),'2;1');
+FILE_DESCRIPTION(('Original hemisphere R=10 mm on a planar base; every sphere frame has a pole on or inside the face'),'2;1');
 FILE_NAME('brep-hemisphere.step','2026-09-26',('TessSTEP'),('TessSTEP'),'authored fixture','','');
 FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));
 ENDSEC;

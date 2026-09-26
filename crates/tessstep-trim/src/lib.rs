@@ -340,6 +340,8 @@ fn build_loop(
             if p1 < p0 {
                 fractions.reverse();
             }
+            let e = &raw.edges[c.edge.0];
+            let collapsed = brep.is_collapsed(c.edge);
             let eval = |s: f64, side: KnotSide, budget: &mut Budget| -> Result<UvSample, Error> {
                 budget.sample()?;
                 let uv = evaluate_pcurve(pc, s, side)?;
@@ -347,10 +349,15 @@ fn build_loop(
                     .surface
                     .evaluate(uv)
                     .map_err(|_| err(ErrorKind::Geometry))?;
-                surface
-                    .normal(NumericalTolerance::default())
-                    .map_err(|_| err(ErrorKind::SingularSurface))?;
-                let e = &raw.edges[c.edge.0];
+                // Collapsed edges and their vertices lie on singular chart lines.
+                let singular = collapsed
+                    || (s == 0. && brep.is_singular_vertex(e.vertices[0]))
+                    || (s == 1. && brep.is_singular_vertex(e.vertices[1]));
+                if !singular {
+                    surface
+                        .normal(NumericalTolerance::default())
+                        .map_err(|_| err(ErrorKind::SingularSurface))?;
+                }
                 let u = parameter(e.range, s);
                 let point = e
                     .curve
