@@ -881,6 +881,7 @@ fn physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode() {
     let slot = decode::OmittedSlot {
         entity: DeclarationId(0),
         attribute: "number",
+        allow_unset: false,
     };
     assert_eq!(
         decode::decode_reachable(&doc, &SCHEMAS, "TEST", &[root], Limits::default())
@@ -913,6 +914,26 @@ fn physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode() {
             .kind,
             ErrorKind::TypeMismatch
         );
+    }
+    let tolerant = decode::OmittedSlot {
+        allow_unset: true,
+        ..slot
+    };
+    for (source, accepted) in [
+        ("#1=BASE($,$);", true),
+        ("#1=BASE(*,$);", true),
+        ("#1=BASE(1,$);", false),
+    ] {
+        let doc = parse(source);
+        let result = decode::decode_reachable_profile(
+            &doc,
+            &SCHEMAS,
+            "TEST",
+            &[root],
+            &[tolerant],
+            Limits::default(),
+        );
+        assert_eq!(result.is_ok(), accepted, "{source}");
     }
     for slots in [
         vec![slot, slot],
@@ -996,6 +1017,7 @@ fn physical_profile_links_are_retained_without_expanding_their_targets() {
     let omitted = decode::OmittedSlot {
         entity: DeclarationId(0),
         attribute: "next",
+        allow_unset: false,
     };
     for (omitted, links) in [
         (vec![], vec![link, link]),

@@ -71,7 +71,7 @@ class ReportingTests(unittest.TestCase):
         suite = ET.fromstring(corpus_summary.junit(report))
         self.assertEqual(suite.get("tests"), "2")
         self.assertEqual(suite.get("failures"), "0")
-        self.assertIn("not implemented", corpus_summary.markdown(report))
+        self.assertIn("not an AP validity verdict", corpus_summary.markdown(report))
 
     def test_regressions_and_missing_inputs_fail_junit(self):
         report = self.report()

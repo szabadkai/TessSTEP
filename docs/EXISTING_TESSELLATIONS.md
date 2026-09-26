@@ -64,7 +64,9 @@ may be open or disconnected. Inverted solids are rejected, not reoriented. As wi
 B-rep meshes, closure is combinatorial and does not prove nonintersection.
 
 Errors use the shared import error with `Profile`, `Geometry` and `Topology` stages.
-The tessellation stage does not apply. `ImportLimits::max_work` bounds decoding and
+The tessellation stage does not apply. Entity types outside the profile are named in
+the diagnostic. `ImportOptions::strict` has no effect: this profile tolerates no
+exporter deviations. `ImportOptions::max_work` bounds decoding and
 adapter work, `max_records` counts faces and coordinate lists, and
 `tessstep_mesh::Limits` bounds vertices, triangles and mesh validation work.
 
@@ -84,13 +86,13 @@ cargo run -p tessstep-import --example tessellated -- ~/step-corpus/vendor/nist-
 ```
 
 ```rust
-use tessstep_import::{ImportLimits, import_tessellated};
+use tessstep_import::{ImportOptions, import_tessellated};
 let document = tessstep_model::parse(bytes, tessstep_part21::ParseLimits::default())?;
 let imported = import_tessellated(
     &document,
     tessstep_part21::EntityId::new(1000).unwrap(),
     tessstep_math::LengthUnit::MILLIMETRE,
-    ImportLimits::default(),
+    ImportOptions::default(),
     tessstep_mesh::Limits::default(),
 )?;
 let mesh = imported.mesh(); // metres; face_ids are STEP face IDs

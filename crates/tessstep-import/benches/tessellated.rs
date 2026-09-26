@@ -1,6 +1,6 @@
 //! Existing-tessellation import throughput on a generated closed grid box.
 use std::{collections::BTreeMap, fmt::Write, hint::black_box, time::Instant};
-use tessstep_import::{ImportLimits, import_tessellated};
+use tessstep_import::{ImportOptions, import_tessellated};
 use tessstep_math::LengthUnit;
 use tessstep_part21::{EntityId, ParseLimits};
 const N: i64 = 100;
@@ -64,9 +64,10 @@ fn main() {
          FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;\n{data}ENDSEC;END-ISO-10303-21;\n"
     );
     let doc = tessstep_model::parse(text.as_bytes(), ParseLimits::default()).unwrap();
-    let limits = ImportLimits {
+    let limits = ImportOptions {
         max_work: 50_000_000,
         max_records: 100_000,
+        ..ImportOptions::default()
     };
     let import = || {
         import_tessellated(

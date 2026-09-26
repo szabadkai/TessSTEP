@@ -8,7 +8,7 @@ const EDGE: &str = include_str!("../../../corpus/geometry/tessellated-edge.step"
 fn import_root(
     text: &str,
     root: u64,
-    limits: ImportLimits,
+    limits: ImportOptions,
     mesh: tessstep_mesh::Limits,
 ) -> Result<ImportedTessellation, Error> {
     let doc = tessstep_model::parse(text.as_bytes(), ParseLimits::default()).unwrap();
@@ -24,7 +24,7 @@ fn import(text: &str) -> Result<ImportedTessellation, Error> {
     import_root(
         text,
         1000,
-        ImportLimits::default(),
+        ImportOptions::default(),
         tessstep_mesh::Limits::default(),
     )
 }
@@ -148,7 +148,7 @@ fn surface_sets_import_directly() {
     let imported = import_root(
         &text,
         2,
-        ImportLimits::default(),
+        ImportOptions::default(),
         tessstep_mesh::Limits::default(),
     )
     .unwrap();
@@ -164,7 +164,7 @@ fn surface_sets_import_directly() {
     let imported = import_root(
         &complex,
         2,
-        ImportLimits::default(),
+        ImportOptions::default(),
         tessstep_mesh::Limits::default(),
     )
     .unwrap();
@@ -176,7 +176,7 @@ fn surface_sets_import_directly() {
         import_root(
             &short,
             2,
-            ImportLimits::default(),
+            ImportOptions::default(),
             tessstep_mesh::Limits::default()
         )
         .unwrap_err()
@@ -263,12 +263,18 @@ fn tessellated_solid_rejections_are_typed_and_located() {
         failure(EDGE),
         (Stage::Profile, ErrorKind::Unsupported, Some(101))
     );
+    assert!(
+        import(EDGE)
+            .unwrap_err()
+            .message
+            .contains("TESSELLATED_EDGE is outside the tessstep_tessellated import profile")
+    );
     // Faces, coordinate lists and unrelated entities are not tessellated roots.
     for root in [1, 2] {
         let e = import_root(
             &tetra("4", "4", "()", "()", TETRA),
             root,
-            ImportLimits::default(),
+            ImportOptions::default(),
             tessstep_mesh::Limits::default(),
         )
         .unwrap_err();
@@ -284,35 +290,35 @@ fn tessellated_solid_rejections_are_typed_and_located() {
 fn tessellated_budgets_order_and_mutation_smoke() {
     for (limits, mesh) in [
         (
-            ImportLimits {
+            ImportOptions {
                 max_work: 0,
-                ..ImportLimits::default()
+                ..ImportOptions::default()
             },
             tessstep_mesh::Limits::default(),
         ),
         (
-            ImportLimits {
+            ImportOptions {
                 max_records: 3,
-                ..ImportLimits::default()
+                ..ImportOptions::default()
             },
             tessstep_mesh::Limits::default(),
         ),
         (
-            ImportLimits::default(),
+            ImportOptions::default(),
             tessstep_mesh::Limits {
                 max_triangles: 11,
                 ..tessstep_mesh::Limits::default()
             },
         ),
         (
-            ImportLimits::default(),
+            ImportOptions::default(),
             tessstep_mesh::Limits {
                 max_vertices: 7,
                 ..tessstep_mesh::Limits::default()
             },
         ),
         (
-            ImportLimits::default(),
+            ImportOptions::default(),
             tessstep_mesh::Limits {
                 max_work: 10,
                 ..tessstep_mesh::Limits::default()
@@ -348,9 +354,10 @@ fn tessellated_budgets_order_and_mutation_smoke() {
                 &doc,
                 EntityId::new(1000).unwrap(),
                 LengthUnit::MILLIMETRE,
-                ImportLimits {
+                ImportOptions {
                     max_work: 100_000,
                     max_records: 1000,
+                    ..ImportOptions::default()
                 },
                 tessstep_mesh::Limits::default(),
             );
@@ -382,7 +389,7 @@ fn tessellated_unmodified_linked_exporter_solid() {
         &doc,
         EntityId::new(11436).unwrap(),
         LengthUnit::MILLIMETRE,
-        ImportLimits::default(),
+        ImportOptions::default(),
         tessstep_mesh::Limits::default(),
     )
     .unwrap();

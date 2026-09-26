@@ -26,11 +26,20 @@ def markdown(report):
     lines += [f"| {status} | {count} |" for status,count in stats["verdicts"].items()]
     lines += ["", "| Stage | Executed / total | Outcomes |", "| --- | ---: | --- |"]
     lines += [f'| {stage} | {s["tested"]} / {s["total"]} | ' + ', '.join(f'{k}: {v}' for k,v in s['statuses'].items()) + ' |' for stage,s in stats['stages'].items()]
+    g = stats["geometry"]
+    if g["files_surveyed"]:
+        cell = lambda text: html.escape(str(text)).replace("|", "&#124;").replace("\n", " ")
+        lines += ["", f'**Solid import:** {g["root_count"]:,} roots in {g["files_with_roots"]:,} files; '
+                  f'{g["geometry_roots"]:,} passed geometry/topology; {g["accepted_roots"]:,} produced solid meshes.', "",
+                  "| First failing stage : kind | Roots |", "| --- | ---: |"]
+        lines += [f"| {cell(k)} | {v:,} |" for k, v in g["outcomes"].items()]
+        lines += ["", "| Top failure categories | Roots |", "| --- | ---: |"]
+        lines += [f"| {cell(k)} | {v:,} |" for k, v in list(g["categories"].items())[:10]]
     lines += ["", "| Source | Unique | Clean | Reference errors | Rejected | Failed checks |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
     lines += [f'| {html.escape(name).replace(chr(124), "&#124;").replace(chr(10), " ")} | {s["unique_inputs"]} | {s["statuses"].get("clean",0)} | {s["statuses"].get("reference_errors",0)} | {s["statuses"].get("rejected",0)} | {s["verdicts"].get("failed",0)} |' for name,s in stats['sources'].items()]
     lines += ["", f'Baseline changes: `{dict(Counter(c["kind"] for c in changes))}`.', "",
               "Physical acceptance is not CAD conformance; a reviewed adversarial rejection can pass.",
-              "Unconfigured/skipped stages are not passes. Geometry and tessellation APIs have constructed-model tests; external STEP integration is not implemented in this runner.",
+              "Unconfigured/skipped stages are not passes. Geometry and tessellation import every solid root with bounded selected-root profiles at an assumed unit scale; profile rejection is not an AP validity verdict.",
               "See the separate kernel test report for constructed geometry, mesh and C ABI test evidence.", "",
               "Artifacts contain searchable HTML, JSON, Markdown, JUnit and CSV; no external CAD inputs.",
               f'Executable SHA-256: `{report["binary_sha256"]}`', ""]

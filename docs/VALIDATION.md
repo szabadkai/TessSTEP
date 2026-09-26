@@ -5,25 +5,28 @@ triangulated surface sets built from `TRIANGULATED_FACE` / `COMPLEX_TRIANGULATED
 over shared `COORDINATES_LIST`s, directly into owned meshes without retessellation.
 Opt-in decoder link slots retain B-rep provenance links without decoding them. See
 [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). Rust only; no C/C++ entry point
-is claimed yet.
+is claimed yet. The checks below ran after merging the strict import policy and corpus
+solid-import stage from `main`.
 
 Observed locally on macOS arm64, rustc 1.98.1:
 
 | Check | Result |
 | --- | --- |
-| `cargo test --workspace --locked` | 214 tests/doctests passed |
+| `cargo test --workspace --locked` | 217 tests/doctests passed |
 | Workspace fmt, Clippy and rustdoc with warnings denied | passed |
 | Architecture, authored fixture provenance and generated conformance | passed; 19 packages, 66 fixtures |
-| Python verification tests | 37 passed |
+| Python verification tests | 41 passed |
 | CLI, EXPRESS, schema, product and metamorphic checks | passed |
-| `check_geometry.py --require-external` | 26 reviewed outcomes passed, including 4 authored tessellated fixtures and 3 hash-pinned exporter files |
+| `check_geometry.py --require-external` | 28 reviewed outcomes passed, including 4 authored tessellated fixtures and 3 hash-pinned exporter files |
 | `cargo check --manifest-path fuzz/Cargo.toml --locked` (unnested copy) | passed with the new `tessellated_import` target; no coverage-guided run |
 | `cargo bench -p tessstep-import --bench tessellated` | 120,000 triangles, 28 imports in 2.03 s (about 72 ms each) |
 
 `python3 scripts/corpus.py --check` passed: 3,230 paths / 3,227 unique inputs in
-52.5 s, with 2,821 clean, 38 reference-error and 368 rejected physical outcomes, all
-compatible with the reviewed baseline and no changes. In this runner, geometry and
-tessellation remain `not_integrated`; the baseline was not refreshed.
+97.2 s, with 2,821 clean, 38 reference-error and 368 rejected physical outcomes, all
+compatible with the reviewed baseline and zero baseline changes. The solid-import
+stage is unchanged (33 accepted, 3 partial, 382 unsupported, 146 rejected, 1 resource
+limit, 2,294 without solid roots), so link slots do not alter planar decoding. That
+stage does not yet survey tessellated roots; the baseline was not refreshed.
 
 A separate sweep ran the `tessellated` example over every tessellated root in the
 external corpus, at an assumed 0.001 metres per unit, with surface sets capped at
@@ -39,6 +42,80 @@ three per file:
 Every real exported shape tessellation imports. The rejected surface sets are
 mostly PMI glyph fills, whose winding disagrees with their single annotation-plane
 normal. Presentation tessellations are outside this milestone.
+
+# Strict/tolerant planar import policy and baseline refresh — 2026-09-26
+
+The planar importer now accepts `$` in the derived `ORIENTED_EDGE` endpoint slots
+by default. The slots are derived, so their values are never read. An explicit
+strict switch rejects `$` there: `ImportOptions::strict` in Rust, a new additive
+16-byte `ts_import_policy` record with `TS_IMPORT_STRICT` in C, and `ImportPolicy`
+in C++. Explicit vertex references in those slots stay rejected in both modes.
+The frozen 80-byte options layout is unchanged. `ImportLimits` was renamed
+`ImportOptions`.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | 210 tests/doctests passed |
+| Workspace fmt, Clippy and rustdoc with warnings denied | passed |
+| Planar/faceted file-stage report with `--require-external` | 21 reviewed outcomes passed, including strict and tolerant runs of the `$` fixture |
+| Installed C11/C++17 consumers (without sanitizers; see below) | passed; relocated Debug/Release and C-only packages |
+| ABI symbol check | exactly 40 C symbols; policy record 16 bytes; previous layouts unchanged |
+
+Local ASan runs hang inside the sanitizer runtime's own initialization on this
+macOS 27 host, before consumer code runs. Sanitized consumers remain covered by CI.
+
+Before the refresh, `python3 scripts/corpus.py --check --repeat 2` against the
+previous baseline passed with unchanged physical outcomes (2,821 clean, 38
+reference-error, 368 rejected) and no regressions. All 3,227 entries changed only
+because the geometry stages were newly measured. The tolerance moved 177 roots
+past the profile stage, but all of them then fail topology checks: 80 open shells,
+31 inconsistent orientations, 31 broken wires among the reported roots, all in the
+deliberately defective dodgy-step-files set. Accepted roots stay at 30. After this
+review, `--save-baseline` replaced `corpus/baseline.json`; a following `--check` ran
+with zero baseline changes, and `fetch_corpus.py` verification matches the inventory.
+
+# Corpus solid import stage and named profile diagnostics — 2026-09-26
+
+The external corpus runner now imports every `MANIFOLD_SOLID_BREP`,
+`BREP_WITH_VOIDS` and `FACETED_BREP` root with the existing selected-root
+profiles, through the `tessstep-import` `survey` example. Per-root profile,
+geometry/topology and tessellation outcomes replace `not_integrated`; see
+[corpus testing](corpus-testing.md#solid-import-stage). Profile rejection of an
+entity type now names it (every component of a complex instance, marking those
+outside the profile) as outside the import profile, not as unknown to STEP.
+No new geometry support is claimed.
+
+Observed locally on macOS arm64, rustc 1.98.1:
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | 208 tests/doctests passed |
+| Workspace fmt, Clippy and rustdoc with warnings denied | passed |
+| Architecture, authored fixture provenance and generated conformance | passed; 19 packages, 61 fixtures |
+| Python verification tests | 41 passed |
+| Planar/faceted file-stage report with `--require-external` | 19 reviewed outcomes passed |
+
+`python3 scripts/corpus.py --check --repeat 2` passed: 3,230 paths / 3,227 unique
+inputs in 251.8 s, with 2,821 clean, 38 reference-error and 368 rejected physical
+outcomes, unchanged from the reviewed baseline. Every input reports a `changed`
+baseline entry because the geometry stages are newly measured; there are no
+regressions, crashes or timeouts. The baseline was not refreshed.
+
+At the assumed 0.001 metres per source unit, the survey examined 2,859 physically
+accepted inputs. 565 contain 1,173 solid roots; 38 roots pass profile, geometry and
+topology and 30 produce solid meshes (file stages: 33 accepted, 3 partial, 382
+unsupported, 146 rejected, 1 resource limit, 2,294 without solid roots). Root
+failures by first stage: 922 profile-unsupported, 194 profile-invalid, 6 missing
+entities, 12 geometry/topology, 8 tessellation, 1 resource limit.
+
+The dominant categories are curved geometry outside the planar profile
+(`CYLINDRICAL_SURFACE` 190, `CIRCLE` 149, `SURFACE_CURVE` 117,
+`B_SPLINE_CURVE_WITH_KNOTS` 92, complex rational B-spline curves 73, `CONICAL_SURFACE`
+56, complex rational B-spline surfaces 53, `SPHERICAL_SURFACE` 52) and 185 roots
+whose `ORIENTED_EDGE` endpoint slots hold `$` instead of `*`. The slowest input took
+1.5 s for the survey. Surface models (`SHELL_BASED_SURFACE_MODEL`) are not surveyed.
+
+The records below describe earlier validation snapshots.
 
 # Edge-based planar STEP import — 2026-09-26
 

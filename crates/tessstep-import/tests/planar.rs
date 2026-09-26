@@ -12,7 +12,7 @@ fn import(text: &str) -> Result<ImportedSolid, Error> {
         EntityId::new(1000).unwrap(),
         LengthUnit::MILLIMETRE,
         model_tolerance(),
-        ImportLimits::default(),
+        ImportOptions::default(),
     )
 }
 fn mesh(solid: &ImportedSolid) -> tessstep_mesh::Mesh {
@@ -157,11 +157,6 @@ fn planar_import_rejects_geometry_contradictions_without_welding() {
         ),
         (
             "#3005=ORIENTED_EDGE('',*,*,#3004,.T.)",
-            "#3005=ORIENTED_EDGE('',$,*,#3004,.T.)",
-            Stage::Profile,
-        ),
-        (
-            "#3005=ORIENTED_EDGE('',*,*,#3004,.T.)",
             "#3005=ORIENTED_EDGE('',#2001,*,#3004,.T.)",
             Stage::Profile,
         ),
@@ -189,16 +184,43 @@ fn planar_import_rejects_geometry_contradictions_without_welding() {
     assert_eq!(import(&curved).unwrap_err().kind, ErrorKind::Unsupported);
 }
 #[test]
+fn planar_unsupported_entities_are_named_as_outside_the_profile() {
+    let curved = BOX.replace("#3003=LINE('',#3000,#3002)", "#3003=CIRCLE('',#104,10.)");
+    let error = import(&curved).unwrap_err();
+    assert_eq!(
+        (error.kind, error.stage, error.entity),
+        (ErrorKind::Unsupported, Stage::Profile, EntityId::new(3003))
+    );
+    assert_eq!(
+        error.message,
+        "CIRCLE is outside the tessstep_planar import profile"
+    );
+    let complex = BOX.replace(
+        "#3003=LINE('',#3000,#3002)",
+        "#3003=(BOUNDED_CURVE()CURVE()LINE(#3000,#3002)REPRESENTATION_ITEM(''))",
+    );
+    let error = import(&complex).unwrap_err();
+    assert_eq!(
+        (error.kind, error.entity),
+        (ErrorKind::Unsupported, EntityId::new(3003))
+    );
+    assert_eq!(
+        error.message,
+        "complex instance (BOUNDED_CURVE, CURVE, LINE, REPRESENTATION_ITEM) has components \
+         outside the tessstep_planar import profile: BOUNDED_CURVE, CURVE"
+    );
+}
+#[test]
 fn planar_scope_budgets_order_and_mutation_smoke() {
     let doc = tessstep_model::parse(BOX.as_bytes(), ParseLimits::default()).unwrap();
     for limits in [
-        ImportLimits {
+        ImportOptions {
             max_work: 0,
-            ..ImportLimits::default()
+            ..ImportOptions::default()
         },
-        ImportLimits {
+        ImportOptions {
             max_records: 0,
-            ..ImportLimits::default()
+            ..ImportOptions::default()
         },
     ] {
         assert_eq!(
@@ -237,9 +259,10 @@ fn planar_scope_budgets_order_and_mutation_smoke() {
                 EntityId::new(1000).unwrap(),
                 LengthUnit::MILLIMETRE,
                 model_tolerance(),
-                ImportLimits {
+                ImportOptions {
                     max_work: 100_000,
                     max_records: 1000,
+                    ..ImportOptions::default()
                 },
             );
         }
@@ -269,7 +292,7 @@ fn planar_unmodified_exporter_cuboid() {
         EntityId::new(121).unwrap(),
         LengthUnit::METRE,
         model_tolerance(),
-        ImportLimits::default(),
+        ImportOptions::default(),
     )
     .unwrap();
     let mesh = mesh(&solid);
@@ -280,4 +303,58 @@ fn planar_unmodified_exporter_cuboid() {
             .iter()
             .all(|id| (106..=111).contains(id))
     );
+}
+#[test]
+fn planar_unset_derived_slots_are_tolerated_unless_strict() {
+    let unset = BOX.replace("ORIENTED_EDGE('',*,*,", "ORIENTED_EDGE('',$,$,");
+    assert_ne!(unset, BOX);
+    let tolerant = mesh(&import(&unset).unwrap());
+    check_box(&tolerant, [0.01, 0.02, 0.03], 6e-6);
+    let reference = mesh(&import(BOX).unwrap());
+    assert_eq!(tolerant.data().positions, reference.data().positions);
+    assert_eq!(tolerant.data().triangles, reference.data().triangles);
+    assert_eq!(tolerant.data().face_ids, reference.data().face_ids);
+    let doc = tessstep_model::parse(unset.as_bytes(), ParseLimits::default()).unwrap();
+    let strict = ImportOptions {
+        strict: true,
+        ..ImportOptions::default()
+    };
+    let error = import_planar_solid(
+        &doc,
+        EntityId::new(1000).unwrap(),
+        LengthUnit::MILLIMETRE,
+        model_tolerance(),
+        strict,
+    )
+    .unwrap_err();
+    assert_eq!(
+        (error.kind, error.stage),
+        (ErrorKind::InvalidGeometry, Stage::Profile)
+    );
+    let doc = tessstep_model::parse(BOX.as_bytes(), ParseLimits::default()).unwrap();
+    import_planar_solid(
+        &doc,
+        EntityId::new(1000).unwrap(),
+        LengthUnit::MILLIMETRE,
+        model_tolerance(),
+        strict,
+    )
+    .unwrap();
+    let mixed = BOX.replace(
+        "#3005=ORIENTED_EDGE('',*,*,#3004,.T.)",
+        "#3005=ORIENTED_EDGE('',$,*,#3004,.T.)",
+    );
+    import(&mixed).unwrap();
+    for other in ["#2001,#2002,", "#2001,$,"] {
+        let explicit = BOX.replacen(
+            "ORIENTED_EDGE('',*,*,",
+            &format!("ORIENTED_EDGE('',{other}"),
+            1,
+        );
+        assert_eq!(
+            import(&explicit).unwrap_err().stage,
+            Stage::Profile,
+            "{other}"
+        );
+    }
 }

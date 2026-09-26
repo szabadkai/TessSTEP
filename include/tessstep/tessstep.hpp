@@ -94,6 +94,12 @@ using PlanarOptions = ts_planar_options;
 inline PlanarOptions default_planar_options() noexcept {
     PlanarOptions options{}; ts_planar_options_init(&options); return options;
 }
+// flags 0 is the tolerant default; set flags |= TS_IMPORT_STRICT to reject
+// accepted exporter deviations (see ts_import_policy).
+using ImportPolicy = ts_import_policy;
+inline ImportPolicy default_import_policy() noexcept {
+    ImportPolicy policy{}; ts_import_policy_init(&policy); return policy;
+}
 class Mesh;
 class Document {
     std::unique_ptr<ts_document, detail::DocumentDeleter> handle_;
@@ -127,7 +133,7 @@ public:
     Result<Mesh> tessellate_faceted(uint64_t entity_id, double metres_per_unit,
         const FacetedOptions* options = nullptr) const;
     Result<Mesh> tessellate_planar(uint64_t entity_id, double metres_per_unit,
-        const PlanarOptions* options = nullptr) const;
+        const PlanarOptions* options = nullptr, const ImportPolicy* policy = nullptr) const;
     // A moved-from Document is safe to destroy, reassign or query. Queries return
     // invalid_argument. Concurrent const queries require the wrapper to stay alive.
     Result<DocumentInfo> info() const {
@@ -233,11 +239,11 @@ inline Result<Mesh> Document::tessellate_faceted(uint64_t entity_id, double metr
 }
 
 inline Result<Mesh> Document::tessellate_planar(uint64_t entity_id, double metres_per_unit,
-    const PlanarOptions* options) const {
+    const PlanarOptions* options, const ImportPolicy* policy) const {
     ts_mesh* raw = nullptr;
     ts_import_error failure{};
-    const auto status = ts_document_tessellate_planar(handle_.get(), entity_id,
-        metres_per_unit, options, &raw, &failure);
+    const auto status = ts_document_tessellate_planar_with_policy(handle_.get(), entity_id,
+        metres_per_unit, options, policy, &raw, &failure);
     Mesh mesh(raw);
     if (status != TS_OK) {
         auto error = detail::error(status);

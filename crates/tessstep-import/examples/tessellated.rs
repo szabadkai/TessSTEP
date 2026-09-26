@@ -30,7 +30,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         &doc,
         root,
         unit,
-        ImportLimits::default(),
+        ImportOptions::default(),
         tessstep_mesh::Limits::default(),
     );
     match result {

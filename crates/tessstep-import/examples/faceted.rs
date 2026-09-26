@@ -27,7 +27,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     )?;
     let model = ModelTolerance::new(Length::metres(1e-8)?, Angle::radians(1e-8)?)?;
     let tolerance = TessellationTolerance::new(Length::metres(1e-6)?, Angle::radians(0.1)?)?;
-    let result = import_faceted_solid(&doc, root, unit, model, ImportLimits::default())
+    let result = import_faceted_solid(&doc, root, unit, model, ImportOptions::default())
         .and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
     match result {
         Ok(mesh) => {

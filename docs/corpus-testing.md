@@ -44,9 +44,38 @@ shared copies do not inflate unique coverage.
 | `nondeterministic` | Repeated physical parsing produced different JSON bytes |
 
 Without configured validators, schema/product validation is `not_configured`.
-Geometry and tessellation are `not_integrated` in this runner; the workspace's
-constructed-model tests are reported separately. A stage blocked by an earlier
-failure is `not_run`. None of these are passes. Physical acceptance does not establish correct CAD geometry.
+A stage blocked by an earlier failure is `not_run`. None of these are passes.
+
+## Solid import stage
+
+After physical acceptance, the runner executes the `tessstep-import` `survey`
+example on each unique input. It imports every `MANIFOLD_SOLID_BREP`,
+`BREP_WITH_VOIDS` and `FACETED_BREP` root: faceted roots use the faceted
+profile, all others the edge-based planar profile, both with the tolerant default
+policy (see [STEP_IMPORT.md](STEP_IMPORT.md)). Each root reports profile,
+geometry/topology and tessellation outcomes independently, with the failing
+stage, error kind, entity, entity type and message.
+
+The file-level `geometry` stage is `accepted` when every root passes
+profile/geometry/topology, `partial` when only some do, `no_solid_roots` when
+the file has none, and otherwise the dominant root failure (`unsupported`,
+`rejected` or `resource_limit`). `tessellation` is computed the same way over
+roots that reached it, and is `not_run` when none did. Profile rejection is not
+an AP validity verdict: the profiles are reduced, selected-root subsets.
+
+Files do not supply their unit yet: the survey assumes
+`--geometry-metres-per-unit` (default `0.001`, millimetres). The scale changes
+only absolute tolerance comparisons, not which entity types are supported.
+Each report records this assumption and the survey executable hash.
+
+`geometry_result` keeps root counts, outcome counts per failing stage and kind,
+the ten most frequent failure categories (with entity IDs replaced by `N`), the
+most frequent entity types outside the profile, and details for the first 20
+roots. The HTML report and `summary.md` aggregate these per root across the
+corpus, so they show which failures dominate as adapters land. A decrease in a
+file's accepted-root count, or a stage that stops being `accepted`, is a
+baseline regression. Baselines saved before this stage existed compare as
+`unmeasured`, so the first survey run reports changes, not regressions. Physical acceptance does not establish correct CAD geometry.
 Rejection of a deliberately malformed fixture may be correct. The external
 defect catalog includes schema, geometric and runtime expectations, so its
 entries are not automatically converted into parser pass/fail assertions.
@@ -187,5 +216,5 @@ structural decoding. Accepted matrices, graph counts and uncertainty values are 
 
 Without a checker, product remains `not_configured`. Older unmeasured baseline
 entries compare equivalently, avoiding artificial outcome changes. The physical
-baseline is not rewritten. No semantic result is inferred for the external AP
-corpus; its geometry and tessellation stages remain `not_integrated` in this runner.
+baseline is not rewritten. No product result is inferred for the external AP
+corpus; its geometry and tessellation stages come from the solid import survey above.

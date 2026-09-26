@@ -139,7 +139,8 @@ bounded import profiles and must not be presented as full-document validation.
 `decode_reachable_profile` additionally takes explicit `OmittedSlot` declarations
 for physical profile mappings. Each names a resolved entity declaration and an
 unambiguous inherited/local attribute. Only that entity/subtype's named slot accepts
-`*`; all other values in that slot are rejected. Duplicate or absent slot definitions
+`*`, plus `$` when the slot sets `allow_unset`; all other values in that slot are
+rejected. Duplicate or absent slot definitions
 are invalid metadata. Work is charged for policy checks and inherited memberships.
 This opt-in mapping is used for planar `ORIENTED_EDGE` endpoint slots, whose semantics
 are implemented by the geometry adapter. It does not weaken either ordinary decoder,

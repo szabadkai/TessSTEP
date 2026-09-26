@@ -13,9 +13,10 @@ fuzz_target!(|data: &[u8]| {
             &document,
             tessstep_part21::EntityId::new(1000).unwrap(),
             tessstep_math::LengthUnit::MILLIMETRE,
-            tessstep_import::ImportLimits {
+            tessstep_import::ImportOptions {
                 max_work: 65536,
                 max_records: 256,
+                ..tessstep_import::ImportOptions::default()
             },
             tessstep_mesh::Limits {
                 max_vertices: 4096,

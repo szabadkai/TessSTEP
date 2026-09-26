@@ -1,4 +1,4 @@
-//! Usage: cargo run -p tessstep-import --example planar -- FILE ROOT_ID METRES_PER_UNIT
+//! Usage: cargo run -p tessstep-import --example planar -- FILE ROOT_ID METRES_PER_UNIT [--strict]
 //! Reports selected-root profile/geometry/tessellation stages independently as JSON.
 #![forbid(unsafe_code)]
 use std::{fs::File, io::BufReader};
@@ -16,8 +16,9 @@ fn main() {
 }
 fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
-    if args.len() != 4 {
-        return Err("usage: planar FILE ROOT_ID METRES_PER_UNIT".into());
+    let strict = args.len() == 5 && args[4] == "--strict";
+    if args.len() != 4 && !strict {
+        return Err("usage: planar FILE ROOT_ID METRES_PER_UNIT [--strict]".into());
     }
     let root = EntityId::new(args[2].parse()?).ok_or("root must be nonzero")?;
     let unit = LengthUnit::metres_per_unit(args[3].parse()?)?;
@@ -27,7 +28,11 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     )?;
     let model = ModelTolerance::new(Length::metres(1e-8)?, Angle::radians(1e-8)?)?;
     let tolerance = TessellationTolerance::new(Length::metres(1e-6)?, Angle::radians(0.1)?)?;
-    let result = import_planar_solid(&doc, root, unit, model, ImportLimits::default())
+    let options = ImportOptions {
+        strict,
+        ..ImportOptions::default()
+    };
+    let result = import_planar_solid(&doc, root, unit, model, options)
         .and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
     match result {
         Ok(mesh) => {

@@ -7,6 +7,11 @@ ABI 1 physical-document operations, a C++17 wrapper and a shared CMake package.
 Owned triangle-mesh import/read-only views, explicit assembly asset scenes and appearance layers are also implemented. Schema decoding,
 general B-rep construction and curved STEP tessellation are not exposed yet.
 The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
+The planar profile's conformance policy is a separate 16-byte `ts_import_policy`
+record with a flags word (`TS_IMPORT_STRICT`), passed to
+`ts_document_tessellate_planar_with_policy`. It leaves the frozen options layout
+unchanged. Unknown flag bits are rejected, so future opt-in policies can be added
+to the same record.
 
 ## Using the first slice
 

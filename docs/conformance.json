@@ -510,13 +510,25 @@
       "feature": "Explicit physical-profile derived slots",
       "status": "implemented",
       "test": "physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode",
-      "limitations": "Named opt-in * slots only; no general DERIVE evaluation or AP semantics"
+      "limitations": "Named opt-in slots accept * (and $ unless strict); no general DERIVE evaluation or AP semantics"
     },
     {
       "feature": "C/C++ planar STEP import",
       "status": "implemented",
       "test": "c_abi_planar_import_owns_mesh_and_preserves_error_contract",
       "limitations": "Additive ABI 1 functions; same options layout and retained mesh ownership; external exporter test requires pinned corpus"
+    },
+    {
+      "feature": "Named out-of-profile import diagnostics",
+      "status": "implemented",
+      "test": "planar_unsupported_entities_are_named_as_outside_the_profile",
+      "limitations": "Names simple and complex-instance record types outside the reduced import profile; no statement about AP schema membership"
+    },
+    {
+      "feature": "Strict/tolerant planar import policy",
+      "status": "implemented",
+      "test": "planar_unset_derived_slots_are_tolerated_unless_strict",
+      "limitations": "Tolerant default accepts $ in derived ORIENTED_EDGE endpoint slots; strict rejects it; C ts_import_policy flags and C++ ImportPolicy; no other deviations tolerated"
     },
     {
       "feature": "Existing triangulated tessellation import",

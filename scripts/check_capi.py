@@ -14,6 +14,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SYMBOLS = {
     "ts_planar_options_init", "ts_document_tessellate_planar",
+    "ts_import_policy_init", "ts_document_tessellate_planar_with_policy",
     "ts_faceted_options_init", "ts_document_tessellate_faceted",
     "ts_appearance_options_init", "ts_appearance_create", "ts_appearance_retain", "ts_appearance_release",
     "ts_appearance_get_info", "ts_appearance_material_at", "ts_appearance_binding_at",
@@ -77,6 +78,7 @@ def verify_installed(package, *, sanitizers=False):
         shutil.copytree(ROOT / "tests/capi", source)
         shutil.copy2(ROOT / "corpus/geometry/box.step", source / "faceted.step")
         shutil.copy2(ROOT / "corpus/geometry/planar-box.step", source / "planar.step")
+        shutil.copy2(ROOT / "corpus/geometry/planar-placeholder.step", source / "placeholder.step")
         external = Path(os.environ.get("TESSSTEP_CORPUS", str(Path.home() / "step-corpus"))) / "vendor/foxtrot/examples/cuboid.step"
         if external.is_file():
             expected = json.loads((ROOT / "corpus/geometry/external-planar.json").read_text())

@@ -146,10 +146,13 @@ pub fn decode_reachable<'a>(
 pub struct OmittedSlot {
     pub entity: DeclarationId,
     pub attribute: &'static str,
+    /// Also accept `$`, a common nonconformant exporter encoding of the same slot.
+    pub allow_unset: bool,
 }
 
 /// Decode a selected reference closure under an explicit physical mapping profile.
-/// Only declared slots accept `*`, and those slots reject every other value.
+/// Only declared slots accept `*` (or `$` when the slot allows it), and those slots
+/// reject every other value.
 /// Ordinary `decode` and `decode_reachable` never permit this override. Metadata
 /// rules/unsupported diagnostics are still checked without suppression.
 pub fn decode_reachable_profile<'a>(
@@ -406,20 +409,21 @@ fn decode_scope<'a>(
                 cx.attribute = Some(attribute.name);
                 cx.source = Some(value.source);
                 let link = cx.is_link(&resolved, &types, owner, attribute)?;
-                let mut placeholder = false;
+                let mut placeholder = None;
                 for slot in omitted {
                     cx.tick()?;
                     if slot.attribute == attribute.name {
                         for index in 0..cx.types[&entity.id].len() {
                             cx.tick()?;
                             if cx.types[&entity.id][index] == slot.entity {
-                                placeholder = true;
+                                placeholder = Some(slot.allow_unset);
                             }
                         }
                     }
                 }
-                if placeholder {
-                    if !matches!(value.kind, ValueKind::Omitted) {
+                if let Some(allow_unset) = placeholder {
+                    let unset = allow_unset && matches!(value.kind, ValueKind::Null);
+                    if !matches!(value.kind, ValueKind::Omitted) && !unset {
                         return Err(cx.error(
                             ErrorKind::TypeMismatch,
                             "physical-profile slot requires a derived marker",

@@ -1,6 +1,6 @@
 //! Existing triangulated tessellations to owned meshes, without retessellation.
 //! Vertices are identified by (COORDINATES_LIST, point index), never by proximity.
-use crate::{Error, ErrorKind, ImportLimits, Stage};
+use crate::{Error, ErrorKind, ImportOptions, Stage};
 use std::collections::BTreeMap;
 use tessstep_math::{LengthUnit, ModelSpace, Point, Vector};
 use tessstep_mesh::{Mesh, MeshData};
@@ -71,11 +71,12 @@ impl ImportedTessellation {
 /// must still be edge/vertex manifold with consistent winding. Supplied normals must
 /// agree with triangle winding and are otherwise rejected, never flipped. No
 /// retessellation, repair, proximity welding, unit inference or placement is applied.
+/// `options.strict` has no effect: this profile tolerates no exporter deviations.
 pub fn import_tessellated(
     document: &Document,
     root: EntityId,
     unit: LengthUnit,
-    limits: ImportLimits,
+    options: ImportOptions,
     mesh_limits: tessstep_mesh::Limits,
 ) -> Result<ImportedTessellation, Error> {
     use crate::tessellated_profile::schema_tessstep_tessellated as schema;
@@ -102,7 +103,7 @@ pub fn import_tessellated(
         &[],
         &links,
         decode::Limits {
-            max_work: limits.max_work,
+            max_work: options.max_work,
             ..decode::Limits::default()
         },
     )
@@ -118,13 +119,22 @@ pub fn import_tessellated(
         stage: Stage::Profile,
         entity: e.entity,
         source: e.source,
-        message: e.to_string(),
+        message: if e.kind == decode::ErrorKind::UnknownEntity {
+            crate::outside_profile(
+                document,
+                &crate::tessellated_profile::SCHEMA_SET,
+                "tessstep_tessellated",
+                e.entity,
+            )
+        } else {
+            e.to_string()
+        },
     })?;
     let mut c = Context {
         decoded: &decoded,
         current: root,
-        remaining: limits.max_work,
-        records: limits.max_records.min(1_000_000),
+        remaining: options.max_work,
+        records: options.max_records.min(1_000_000),
         unit,
         mesh_limits,
         lists: BTreeMap::new(),

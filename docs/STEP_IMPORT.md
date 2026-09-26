@@ -36,8 +36,13 @@ orientation and face sense. Plane projection builds linear pcurves with affine
 parameter correspondence. Off-line/off-plane endpoints and contradictory directions
 fail rather than replacing the line with an invented segment.
 
-Both physical `ORIENTED_EDGE` endpoint slots must be `*`. An explicit physical-profile
-mapping recognizes exactly those named slots. The adapter derives their meaning
+Both physical `ORIENTED_EDGE` endpoint slots must be `*`. By default the importer
+also accepts `$` there, a common exporter deviation that carries no geometry: the
+slots are derived, so their values are never read. `ImportOptions::strict` (C:
+`TS_IMPORT_STRICT` in a `ts_import_policy` passed to
+`ts_document_tessellate_planar_with_policy`; C++: `ImportPolicy`) rejects `$` in those
+slots. Explicit vertex references in them are rejected in both modes. An explicit
+physical-profile mapping recognizes exactly those named slots. The adapter derives their meaning
 from `EDGE_ELEMENT` and `ORIENTATION`. Ordinary schema decoding still rejects
 unsupported derived attributes: no general EXPRESS DERIVE evaluation or suppression
 of schema diagnostics is claimed.
@@ -47,6 +52,9 @@ and manifold solid checks run before a mesh is published. Successful solid meshe
 have one closed manifold component and positive algebraic volume. These checks do
 not prove nonintersection or complete CAD validity. Unsupported geometry, malformed
 winding and missing references produce typed errors without a partial mesh.
+An entity type outside the reduced profile is reported by name (every component of
+a complex instance, marking those outside the profile), as outside the import
+profile rather than as unknown to STEP.
 
 Curved edges/surfaces, `BREP_WITH_VOIDS`, enclosed cavity shells, multiple bounds
 without an explicit outer, assembly placement, automatic units, STEP appearance and
@@ -84,7 +92,7 @@ let model_tolerance = math::ModelTolerance::new(
     math::Length::metres(1e-8)?, math::Angle::radians(1e-8)?)?;
 let solid = import::import_faceted_solid(&document,
     part21::EntityId::new(1000).unwrap(), math::LengthUnit::MILLIMETRE,
-    model_tolerance, import::ImportLimits::default())?;
+    model_tolerance, import::ImportOptions::default())?;
 let tolerance = math::TessellationTolerance::new(
     math::Length::metres(1e-6)?, math::Angle::radians(0.1)?)?;
 let mesh = solid.tessellate(tolerance, import::TessellationOptions::default())?;
@@ -151,14 +159,17 @@ When available, four external adversarial faceted fixtures are additionally chec
 for rejection/unsupported outcomes. The unmodified exporter cuboid is tested through
 the Rust pipeline and relocated C++ consumers, including dimensions, volume, normals
 and mesh lifetimes. This establishes one reviewed exporter case, not general CAD
-coverage. The existing full external corpus remains a separate physical
-compatibility run; its unconfigured semantic stages are not counted as passes.
+coverage. The full external corpus run imports every solid root with these
+profiles and reports per-root outcomes by stage and error category; see
+[corpus testing](corpus-testing.md#solid-import-stage). Those are observations,
+not reviewed expectations.
 Installed C11/C++17 consumers exercise file parsing, conversion, errors, units and
 mesh/view lifetime after document release in relocated Debug/Release packages.
 
 
 The edge-based suite adds a box, a through-hole, off-line endpoint, incorrect edge
-sense, invalid derived-slot marker, open shell and unsupported curve cases. Independent
+sense, `$` derived-slot marker (accepted by default, rejected when strict), open shell
+and unsupported curve cases. Independent
 Rust tests cover reversed edge/bound/face combinations, shifted line origins,
 nonunit vector magnitudes, source-face identity, no proximity welding, order
 invariance and 300 deterministic byte mutations. `check_geometry.py --require-external`

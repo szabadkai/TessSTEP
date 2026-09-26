@@ -178,6 +178,18 @@ static void planar_contract(const char* path, uint64_t root, double scale, doubl
 }
 int main(int argc, char** argv) {
     planar_contract("planar.step",1000,0.001,6e-6,0.01,0.02,0.03);
+    {
+        std::ifstream file("placeholder.step",std::ios::binary); assert(file);
+        const std::string bytes{std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>()};
+        auto parsed = Document::parse(bytes); assert(parsed);
+        assert(parsed.value().tessellate_planar(1000,0.001));
+        auto policy = default_import_policy();
+        assert(policy.flags == 0 && parsed.value().tessellate_planar(1000,0.001,nullptr,&policy));
+        policy.flags |= TS_IMPORT_STRICT;
+        auto strict = parsed.value().tessellate_planar(1000,0.001,nullptr,&policy);
+        assert(!strict && strict.error().code == ErrorCode::invalid_geometry);
+        assert(strict.error().import_failure.stage == ImportStage::profile);
+    }
     if(argc == 2) planar_contract(argv[1],121,1.,0.000098322384,0.0508,0.0254,0.0762);
     faceted_contract();
     appearance_contract();

@@ -215,13 +215,32 @@ TS_API ts_status TS_CALL ts_document_tessellate_faceted(const ts_document *docum
 /* Planar edge-based MANIFOLD_SOLID_BREP profile. Same units, ownership, output
  * clearing, budgets and error contract as ts_document_tessellate_faceted.
  * EDGE_LOOP/ORIENTED_EDGE/EDGE_CURVE/LINE and VERTEX_POINT are supported.
- * Both derived ORIENTED_EDGE endpoint slots must be *. A single FACE_BOUND is
- * accepted as the outer; multiple bounds require one explicit FACE_OUTER_BOUND.
- * Shared identity follows STEP vertices/edges; no proximity welding or healing. */
+ * Both derived ORIENTED_EDGE endpoint slots must be * or $ (the tolerant default
+ * policy below). A single FACE_BOUND is accepted as the outer; multiple bounds
+ * require one explicit FACE_OUTER_BOUND. Shared identity follows STEP
+ * vertices/edges; no proximity welding or healing. */
 typedef ts_faceted_options ts_planar_options;
 TS_API ts_status TS_CALL ts_planar_options_init(ts_planar_options *out);
 TS_API ts_status TS_CALL ts_document_tessellate_planar(const ts_document *document,
     uint64_t entity_id, double metres_per_unit, const ts_planar_options *options,
+    ts_mesh **out, ts_import_error *error);
+
+/* Profile conformance policy; additive ABI 1 16-byte record. Initialize with
+ * ts_import_policy_init. flags 0 is the tolerant default used by
+ * ts_document_tessellate_planar. TS_IMPORT_STRICT rejects exporter deviations the
+ * default accepts without changing geometry: $ instead of * in derived
+ * ORIENTED_EDGE endpoint slots. Unknown flag bits or nonzero reserved fail with
+ * TS_INVALID_ARGUMENT after clearing outputs. */
+#define TS_IMPORT_STRICT 1u
+typedef struct ts_import_policy {
+    uint32_t struct_size, abi_version, flags, reserved;
+} ts_import_policy;
+TS_API ts_status TS_CALL ts_import_policy_init(ts_import_policy *out);
+/* ts_document_tessellate_planar with an explicit policy; NULL policy selects the
+ * tolerant default. policy is borrowed during the call only. */
+TS_API ts_status TS_CALL ts_document_tessellate_planar_with_policy(
+    const ts_document *document, uint64_t entity_id, double metres_per_unit,
+    const ts_planar_options *options, const ts_import_policy *policy,
     ts_mesh **out, ts_import_error *error);
 
 
