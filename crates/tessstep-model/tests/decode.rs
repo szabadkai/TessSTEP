@@ -882,6 +882,7 @@ fn physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode() {
         entity: DeclarationId(0),
         attribute: "number",
         allow_unset: false,
+        allow_value: false,
     };
     assert_eq!(
         decode::decode_reachable(&doc, &SCHEMAS, "TEST", &[root], Limits::default())
@@ -931,6 +932,29 @@ fn physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode() {
             "TEST",
             &[root],
             &[tolerant],
+            Limits::default(),
+        );
+        assert_eq!(result.is_ok(), accepted, "{source}");
+    }
+    // An explicit value instead of `*` is accepted only when allowed, and is still
+    // checked against the declared domain.
+    let valued = decode::OmittedSlot {
+        allow_value: true,
+        ..slot
+    };
+    for (source, accepted) in [
+        ("#1=BASE(*,$);", true),
+        ("#1=BASE(1,$);", true),
+        ("#1=BASE('x',$);", false),
+        ("#1=BASE($,$);", false),
+    ] {
+        let doc = parse(source);
+        let result = decode::decode_reachable_profile(
+            &doc,
+            &SCHEMAS,
+            "TEST",
+            &[root],
+            &[valued],
             Limits::default(),
         );
         assert_eq!(result.is_ok(), accepted, "{source}");
@@ -1018,6 +1042,7 @@ fn physical_profile_links_are_retained_without_expanding_their_targets() {
         entity: DeclarationId(0),
         attribute: "next",
         allow_unset: false,
+        allow_value: false,
     };
     for (omitted, links) in [
         (vec![], vec![link, link]),

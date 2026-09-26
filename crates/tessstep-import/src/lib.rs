@@ -25,9 +25,17 @@ mod pcurve;
 mod planar;
 mod tessellated;
 pub use brep::{Adaptations, import_brep_solid};
-pub use discovery::{ContextUnits, SolidKind, SolidRoot, discover_solids};
+pub use discovery::{
+    ContextUnits, Pairing, PresentationRoot, RepresentationChoice, RepresentationPreference,
+    RootRef, SolidKind, SolidRoot, TessellatedRoot, discover_presentations, discover_solids,
+    discover_tessellations, select_representations,
+};
 pub use planar::import_planar_solid;
-pub use tessellated::{ImportedTessellation, TessellatedFace, TessellatedKind, import_tessellated};
+pub use tessellated::{
+    EdgeConnection, ImportedPresentation, ImportedTessellation, PresentationItem,
+    PresentationItemKind, PresentationLimits, TessellatedEdge, TessellatedFace, TessellatedKind,
+    TessellatedVertex, import_presentation, import_tessellated,
+};
 
 use std::collections::BTreeMap;
 use tessstep_curves::{Curve, PlaneFrame};
@@ -248,11 +256,13 @@ fn import_solid(
             entity: oriented,
             attribute: "EDGE_START",
             allow_unset: !options.strict,
+            allow_value: false,
         },
         decode::OmittedSlot {
             entity: oriented,
             attribute: "EDGE_END",
             allow_unset: !options.strict,
+            allow_value: false,
         },
     ];
     let schema_name = if planar {

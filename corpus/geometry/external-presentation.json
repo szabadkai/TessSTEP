@@ -1,0 +1,38 @@
+[
+  {
+    "path": "vendor/nist-pmi/unpacked/NIST-PMI-STEP-Files/nist_ctc_02_asme1_ap242-e2.stp",
+    "sha256": "99a0a2079ddeb64d05c2432cbe931fa17c89da60d8b0bcb0b11bd0ed94fa2e68",
+    "source": "nist-pmi in corpus/sources.json; unmodified AP242 export, repositioned annotation 'Linear Size.1' with curve and fill sets",
+    "root": 1023,
+    "metres_per_unit": 0.001,
+    "strict_status": "accepted",
+    "geometric_set": 977,
+    "styles": 1,
+    "repositioned_items": 4,
+    "vertices": 273,
+    "polylines": 5,
+    "polyline_points": 44,
+    "triangles": 211,
+    "skipped_degenerate": 1,
+    "zero_area_triangles": 2,
+    "pnmax_deviations": 0
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/bug31685_1.stp",
+    "sha256": "1e304a48322d01f0904e9bab4f424aacc791577c816f0ad768757fbd74e0951c",
+    "source": "opencascade-dataset in corpus/sources.json; unmodified HOOPS Exchange export of a SOLIDWORKS MBD model whose fills understate pnmax",
+    "root": 26,
+    "metres_per_unit": 0.001,
+    "strict_status": "rejected",
+    "geometric_set": 27,
+    "styles": 1,
+    "repositioned_items": 0,
+    "vertices": 741,
+    "polylines": 4,
+    "polyline_points": 128,
+    "triangles": 595,
+    "skipped_degenerate": 0,
+    "zero_area_triangles": 0,
+    "pnmax_deviations": 6
+  }
+]

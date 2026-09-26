@@ -5,6 +5,8 @@ const CUBE: &str = include_str!("../../../corpus/geometry/tessellated-cube.step"
 const SHELL: &str = include_str!("../../../corpus/geometry/tessellated-shell.step");
 const OPEN: &str = include_str!("../../../corpus/geometry/tessellated-open-solid.step");
 const EDGE: &str = include_str!("../../../corpus/geometry/tessellated-edge.step");
+const CONNECTED: &str = include_str!("../../../corpus/geometry/tessellated-connected.step");
+const BEZIER: &str = include_str!("../../../corpus/geometry/tessellated-bezier.step");
 fn import_root(
     text: &str,
     root: u64,
@@ -195,7 +197,17 @@ fn tessellated_solid_rejections_are_typed_and_located() {
             (Stage::Topology, ErrorKind::InvalidGeometry, Some(1000)),
         ),
         (tetra("5", "4", "()", "()", TETRA), geometry(1)),
-        (tetra("4", "3", "()", "()", TETRA), geometry(2)),
+        (tetra("4", "5", "()", "()", TETRA), geometry(2)),
+        (
+            tetra(
+                "4",
+                "3",
+                "((-1.,-1.,-1.),(3.,-1.,-1.),(-1.,3.,-1.))",
+                "()",
+                TETRA,
+            ),
+            geometry(2),
+        ),
         (
             tetra("4", "4", "()", "()", "((1,3,2),(1,2,5))"),
             geometry(2),
@@ -224,6 +236,23 @@ fn tessellated_solid_rejections_are_typed_and_located() {
     ] {
         assert_eq!(failure(&text), expected, "{text}");
     }
+    // Without pnindex, a pnmax below npoints only misstates the count: the tolerant
+    // default indexes the whole list and counts the deviation; strict rejects it.
+    let understated = tetra("4", "3", "()", "()", TETRA);
+    let imported = import(&understated).unwrap();
+    assert_eq!(imported.pnmax_deviations(), 1);
+    assert_eq!(
+        import(&tetra("4", "4", "()", "()", TETRA))
+            .unwrap()
+            .pnmax_deviations(),
+        0
+    );
+    let strict = ImportOptions {
+        strict: true,
+        ..ImportOptions::default()
+    };
+    let e = import_root(&understated, 1000, strict, tessstep_mesh::Limits::default()).unwrap_err();
+    assert_eq!((e.stage, e.kind, e.entity.map(EntityId::get)), geometry(2));
     // Per-point normals follow pnindex order and must agree with winding.
     let outward = "((-1.,-1.,-1.),(3.,-1.,-1.),(-1.,3.,-1.),(-1.,-1.,3.))";
     let imported = import(&tetra("4", "4", outward, "()", TETRA)).unwrap();
@@ -260,15 +289,12 @@ fn tessellated_solid_rejections_are_typed_and_located() {
         (Stage::Topology, ErrorKind::InvalidGeometry, Some(1000))
     );
     assert_eq!(
-        failure(EDGE),
+        failure(BEZIER),
         (Stage::Profile, ErrorKind::Unsupported, Some(101))
     );
-    assert!(
-        import(EDGE)
-            .unwrap_err()
-            .message
-            .contains("TESSELLATED_EDGE is outside the tessstep_tessellated import profile")
-    );
+    assert!(import(BEZIER).unwrap_err().message.contains(
+        "CUBIC_BEZIER_TRIANGULATED_FACE is outside the tessstep_tessellated import profile"
+    ));
     // Faces, coordinate lists and unrelated entities are not tessellated roots.
     for root in [1, 2] {
         let e = import_root(
@@ -285,6 +311,153 @@ fn tessellated_solid_rejections_are_typed_and_located() {
         "COMPLEX_TRIANGULATED_FACE('right',#1,8,(),$,(),(),())",
     );
     assert_eq!(failure(&empty), geometry(105));
+}
+#[test]
+fn edge_and_vertex_items_add_no_triangles() {
+    let imported = import(EDGE).unwrap();
+    let mesh = imported.mesh();
+    assert_eq!(
+        (mesh.data().positions.len(), mesh.data().triangles.len()),
+        (4, 2)
+    );
+    let [edge] = imported.edges() else {
+        panic!("one edge")
+    };
+    assert_eq!((edge.entity.get(), edge.geometric_link), (101, None));
+    assert_eq!(edge.connection, None);
+    assert_eq!(edge.points.len(), 5);
+    assert_eq!(edge.points[1], [0.01, 0., 0.]);
+    // Every strip point is a face corner under (list, index) identity; the strip
+    // closes on its first vertex.
+    let corners: Vec<u32> = edge.vertices.iter().map(|v| v.unwrap()).collect();
+    assert_eq!(corners[0], corners[4]);
+    assert_eq!(
+        corners[..4]
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        4
+    );
+    let [corner, centre] = imported.vertices() else {
+        panic!("two vertices")
+    };
+    assert_eq!(corner.position, [0.01, 0.02, 0.]);
+    assert_eq!(
+        mesh.data().positions[corner.vertex.unwrap() as usize],
+        corner.position
+    );
+    // A point in its own coordinate list is never matched to the face by proximity.
+    assert_eq!((centre.position, centre.vertex), ([0.005, 0.01, 0.], None));
+    let geometry = |entity| (Stage::Geometry, ErrorKind::InvalidGeometry, Some(entity));
+    for (from, to, entity) in [
+        ("(1,2,3,4,1)", "(1,2,2,3)", 101),
+        ("(1,2,3,4,1)", "(1,2,5)", 101),
+        ("#1,$,3);", "#1,$,5);", 102),
+        ("#1,$,3);", "#1,$,0);", 102),
+    ] {
+        assert_eq!(failure(&EDGE.replace(from, to)), geometry(entity), "{to}");
+    }
+}
+#[test]
+fn connecting_edges_join_only_the_identities_they_declare() {
+    let imported = import(CONNECTED).unwrap();
+    let mesh = imported.mesh();
+    mesh.require_solid().unwrap();
+    assert_eq!(
+        (mesh.data().positions.len(), mesh.data().triangles.len()),
+        (8, 12)
+    );
+    assert!((mesh.statistics().signed_volume - 6e-6).abs() < 6e-6 * 1e-12);
+    // 32 identities (8 corners + 6 faces x 4) collapse to 8 mesh vertices.
+    assert_eq!(imported.joined_points(), 24);
+    assert_eq!(imported.edges().len(), 13);
+    let first = imported.edges()[0].connection.unwrap();
+    assert_eq!(
+        (first.faces.map(EntityId::get), first.smooth),
+        ([100, 102], None)
+    );
+    assert!(
+        imported.edges()[1..12]
+            .iter()
+            .all(|e| e.connection.unwrap().smooth == Some(false))
+    );
+    let diagonal = &imported.edges()[12];
+    assert_eq!(diagonal.connection, None);
+    let vertices: std::collections::BTreeSet<u32> = imported
+        .vertices()
+        .iter()
+        .map(|v| {
+            let id = v.vertex.unwrap();
+            assert_eq!(mesh.data().positions[id as usize], v.position);
+            id
+        })
+        .collect();
+    assert_eq!(vertices.len(), 8);
+    assert!(
+        diagonal
+            .vertices
+            .iter()
+            .all(|v| vertices.contains(&v.unwrap()))
+    );
+    // Without connecting edges the faces share no identity and the solid is open.
+    let (head, tail) = CONNECTED.split_once("#200,").unwrap();
+    let unjoined = format!("{head}{}", tail.split_once("#212,").unwrap().1);
+    assert_eq!(
+        failure(&unjoined),
+        (Stage::Topology, ErrorKind::InvalidGeometry, Some(1000))
+    );
+    let geometry = |entity| (Stage::Geometry, ErrorKind::InvalidGeometry, Some(entity));
+    let stray = CONNECTED.replace(
+        "#1000=",
+        "#106=TRIANGULATED_FACE('stray',#10,4,(),$,(),((1,2,3)));\n#1000=",
+    );
+    for (text, entity, message) in [
+        // Joined identities must have equal coordinates.
+        (
+            CONNECTED.replace("'right',4,((10.,0.,0.),", "'right',4,((10.,0.,1.E-6),"),
+            201,
+            "different coordinates",
+        ),
+        // Each strip segment must be a triangle edge of both faces.
+        (
+            CONNECTED.replace(",#100,#103,(3,2),(4,1));", ",#100,#103,(3,2),(4,2));"),
+            202,
+            "triangle edge",
+        ),
+        // A free boundary written as a connecting edge to an unrelated face.
+        (
+            CONNECTED.replace(",#100,#102,(1,4),(1,2));", ",#100,#104,(1,4),(1,2));"),
+            200,
+            "different coordinates",
+        ),
+        (
+            stray.replace(",#100,#102,(1,4),(1,2));", ",#100,#106,(1,4),(1,2));"),
+            200,
+            "not an item",
+        ),
+        (
+            CONNECTED.replace(",#100,#102,(1,4),(1,2));", ",#100,#102,(1,4,3),(1,2));"),
+            200,
+            "length",
+        ),
+        (
+            CONNECTED.replace(",#100,#102,(1,4),(1,2));", ",#100,#102,(1,5),(1,2));"),
+            200,
+            "pnmax",
+        ),
+        (
+            CONNECTED.replace("#1,$,(1,2),.U.,", "#1,$,(1,1),.U.,"),
+            200,
+            "consecutive",
+        ),
+    ] {
+        let e = import(&text).unwrap_err();
+        assert_eq!(
+            (e.stage, e.kind, e.entity.map(EntityId::get)),
+            geometry(entity)
+        );
+        assert!(e.message.contains(message), "{}", e.message);
+    }
 }
 #[test]
 fn tessellated_budgets_order_and_mutation_smoke() {

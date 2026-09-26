@@ -243,6 +243,125 @@ TS_API ts_status TS_CALL ts_document_tessellate_planar_with_policy(
     const ts_planar_options *options, const ts_import_policy *policy,
     ts_mesh **out, ts_import_error *error);
 
+/* Existing triangulated tessellations (Milestone 20): a selected TESSELLATED_SOLID,
+ * TESSELLATED_SHELL or triangulated surface set becomes an owned mesh WITHOUT
+ * retessellation. TRIANGULATED_FACE / COMPLEX_TRIANGULATED_FACE triangles, strips
+ * and fans are published as given (strip/fan triangles that repeat an index are
+ * skipped and counted). Vertex identity is (COORDINATES_LIST, point index), never
+ * proximity; TESSELLATED_CONNECTING_EDGE joins exactly the points it declares equal
+ * (equal coordinates, segments on both faces' triangles). TESSELLATED_EDGE and
+ * TESSELLATED_VERTEX items add no triangles; only their counts are reported here.
+ * Supplied normals must agree with winding (never flipped); solids must form one
+ * closed component with positive volume. Links are retained, never decoded.
+ * Budgets as ts_faceted_options (zero means zero); max_work also bounds mesh
+ * validation. flags 0 is the tolerant default: without PNINDEX a PNMAX below
+ * NPOINTS (at most one normal) indexes the whole list and is counted.
+ * TS_IMPORT_STRICT rejects it. Unknown flags/reserved fail with TS_INVALID_ARGUMENT.
+ * Additive ABI 1 records: 48-byte options, 80-byte info. */
+#define TS_TESSELLATED_SOLID 1u
+#define TS_TESSELLATED_SHELL 2u
+#define TS_TESSELLATED_SURFACE_SET 3u
+typedef struct ts_tessellated_options {
+    uint32_t struct_size, abi_version;
+    uint64_t max_work, max_records, max_vertices, max_triangles;
+    uint32_t flags, reserved;
+} ts_tessellated_options;
+/* All-zero unless the import succeeds. link_id is the solid's GEOMETRIC_LINK or the
+ * shell's TOPOLOGICAL_LINK (zero when absent); IDs are physical STEP IDs. */
+typedef struct ts_tessellated_info {
+    uint32_t kind, reserved;
+    uint64_t root_id, link_id;
+    uint64_t face_count, linked_face_count, edge_count, vertex_count;
+    uint64_t skipped_degenerate, joined_points, pnmax_deviations;
+} ts_tessellated_info;
+TS_API ts_status TS_CALL ts_tessellated_options_init(ts_tessellated_options *out);
+/* Same document, unit, ownership, output-clearing and error contract as
+ * ts_document_tessellate_faceted; there is no tessellation stage. out is required;
+ * info and error are optional and cleared before validation. Success transfers one
+ * mesh acquisition (release with ts_mesh_release) whose face_ids are the physical
+ * STEP IDs of the tessellated faces (or of the surface set), corner normals are
+ * supplied or faceted, UVs zero. */
+TS_API ts_status TS_CALL ts_document_import_tessellated(const ts_document *document,
+    uint64_t entity_id, double metres_per_unit, const ts_tessellated_options *options,
+    ts_mesh **out, ts_tessellated_info *info, ts_import_error *error);
+
+/* Presentation tessellations: a selected TESSELLATED_ANNOTATION_OCCURRENCE (styling
+ * a TESSELLATED_GEOMETRIC_SET) or TESSELLATED_GEOMETRIC_SET as placed graphics:
+ * one polyline per TESSELLATED_CURVE_SET line strip, TESSELLATED_POINT_SET points
+ * and surface-set fill triangles. REPOSITIONED_TESSELLATED_ITEM placements are
+ * composed and applied; positions are metres in the containing representation's
+ * coordinate system. Graphics are NOT meshes: fills need not be manifold, oriented
+ * or of positive area (zero-area triangles are kept and counted), supplied normals
+ * are checked for shape only and not published, styles are retained as entity IDs
+ * without decoding. Vertex identity is (coordinate list, index, placement).
+ * Options add max_polyline_points and max_depth (geometric-set nesting, the
+ * selected set counting one) to the tessellated budgets; flags as above.
+ * Additive ABI 1 records: 64-byte options and info, 24-byte item, 104-byte view. */
+typedef struct ts_presentation ts_presentation;
+#define TS_PRESENTATION_CURVE_SET 1u
+#define TS_PRESENTATION_POINT_SET 2u
+#define TS_PRESENTATION_SURFACE_SET 3u
+typedef struct ts_presentation_options {
+    uint32_t struct_size, abi_version;
+    uint64_t max_work, max_records, max_vertices, max_triangles;
+    uint64_t max_polyline_points, max_depth;
+    uint32_t flags, reserved;
+} ts_presentation_options;
+/* occurrence_id is zero when a geometric set was selected directly. */
+typedef struct ts_presentation_info {
+    uint64_t root_id, occurrence_id, geometric_set_id, style_count, item_count;
+    uint64_t skipped_degenerate, zero_area_triangles, pnmax_deviations;
+} ts_presentation_info;
+/* One leaf use, in depth-first child order; placements counts the composed
+ * repositionings, including the item's own. supplied_normals is 0 or 1. */
+typedef struct ts_presentation_item {
+    uint64_t entity_id;
+    uint32_t kind, supplied_normals;
+    uint64_t placements;
+} ts_presentation_item;
+/* Immutable arrays borrowed without copying until the last presentation release.
+ * An array is NULL exactly when its count is zero (polyline_offsets is never NULL).
+ * positions: 3*vertex_count doubles. polyline_points: vertex indices; polyline i
+ * spans [polyline_offsets[i], polyline_offsets[i+1]) (polyline_count+1 offsets,
+ * the first zero). triangles: 3*triangle_count indices in the file's winding.
+ * *_items: the physical STEP ID of each primitive's source set. */
+typedef struct ts_presentation_view {
+    const double *positions;
+    size_t vertex_count;
+    const uint32_t *polyline_points;
+    size_t polyline_point_count;
+    const uint64_t *polyline_offsets;
+    const uint64_t *polyline_items;
+    size_t polyline_count;
+    const uint32_t *triangles;
+    const uint64_t *triangle_items;
+    size_t triangle_count;
+    const uint32_t *points;
+    const uint64_t *point_items;
+    size_t point_count;
+} ts_presentation_view;
+TS_API ts_status TS_CALL ts_presentation_options_init(ts_presentation_options *out);
+/* Document/unit/output/error contract of ts_document_import_tessellated; there is
+ * no tessellation stage. Success transfers one presentation acquisition, independent
+ * of the document, released with ts_presentation_release. */
+TS_API ts_status TS_CALL ts_document_import_presentation(const ts_document *document,
+    uint64_t entity_id, double metres_per_unit, const ts_presentation_options *options,
+    ts_presentation **out, ts_import_error *error);
+TS_API ts_status TS_CALL ts_presentation_retain(const ts_presentation *presentation);
+TS_API void TS_CALL ts_presentation_release(const ts_presentation *presentation);
+/* Scalar copies; outputs are cleared on failure. Concurrent immutable queries are
+ * allowed while an acquisition stays alive. Out-of-range indices are TS_NOT_FOUND. */
+TS_API ts_status TS_CALL ts_presentation_get_info(const ts_presentation *presentation,
+    ts_presentation_info *out);
+TS_API ts_status TS_CALL ts_presentation_item_at(const ts_presentation *presentation,
+    size_t index, ts_presentation_item *out);
+/* Style assignment entity IDs of the occurrence, in file order. */
+TS_API ts_status TS_CALL ts_presentation_style_at(const ts_presentation *presentation,
+    size_t index, uint64_t *out);
+/* Zero-copy view; copying it does not retain. Retain explicitly for longer use. */
+TS_API ts_status TS_CALL ts_presentation_get_view(const ts_presentation *presentation,
+    ts_presentation_view *out);
+
 
 
 /* Immutable assembly scenes. Assets share retained mesh buffers; instances are an

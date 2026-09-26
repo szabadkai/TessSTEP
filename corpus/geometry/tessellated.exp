@@ -1,16 +1,38 @@
 (* Original bounded import profile, not an ISO schema. Matches the physical
-   attributes of triangulated tessellated solids, shells, faces and surface sets;
-   excludes general AP rules. Link attributes are generalized to
-   representation_item: the importer retains their targets without decoding them. *)
+   attributes of triangulated tessellated solids, shells, faces, edges, vertices and
+   surface sets, and of tessellated geometric sets (curve, point and surface sets,
+   optionally repositioned) and the annotation occurrences that style them;
+   excludes general AP rules. The supertype chain mirrors the physical component
+   names of complex REPOSITIONED_TESSELLATED_ITEM instances. Link attributes, style
+   assignments and styled items are generalized to representation_item: the
+   importer retains link and style targets without decoding them and checks that an
+   annotation occurrence styles a tessellated geometric set. *)
 SCHEMA tessstep_tessellated;
 ENTITY representation_item;
  name : STRING;
 END_ENTITY;
-ENTITY coordinates_list SUBTYPE OF (representation_item);
+ENTITY geometric_representation_item SUBTYPE OF (representation_item);
+END_ENTITY;
+ENTITY cartesian_point SUBTYPE OF (geometric_representation_item);
+ coordinates : LIST [3:3] OF REAL;
+END_ENTITY;
+ENTITY direction SUBTYPE OF (geometric_representation_item);
+ direction_ratios : LIST [3:3] OF REAL;
+END_ENTITY;
+ENTITY axis2_placement_3d SUBTYPE OF (geometric_representation_item);
+ location : cartesian_point;
+ axis : OPTIONAL direction;
+ ref_direction : OPTIONAL direction;
+END_ENTITY;
+ENTITY tessellated_item ABSTRACT SUBTYPE OF (geometric_representation_item);
+END_ENTITY;
+ENTITY coordinates_list SUBTYPE OF (tessellated_item);
  npoints : INTEGER;
  position_coords : LIST [1:?] OF LIST [3:3] OF REAL;
 END_ENTITY;
-ENTITY tessellated_face ABSTRACT SUBTYPE OF (representation_item);
+ENTITY tessellated_structured_item SUBTYPE OF (tessellated_item);
+END_ENTITY;
+ENTITY tessellated_face ABSTRACT SUBTYPE OF (tessellated_structured_item);
  coordinates : coordinates_list;
  pnmax : INTEGER;
  normals : LIST [0:?] OF LIST [3:3] OF REAL;
@@ -25,15 +47,32 @@ ENTITY complex_triangulated_face SUBTYPE OF (tessellated_face);
  triangle_strips : LIST [0:?] OF LIST [3:?] OF INTEGER;
  triangle_fans : LIST [0:?] OF LIST [3:?] OF INTEGER;
 END_ENTITY;
-ENTITY tessellated_solid SUBTYPE OF (representation_item);
- items : SET [1:?] OF tessellated_face;
+ENTITY tessellated_vertex SUBTYPE OF (tessellated_structured_item);
+ coordinates : coordinates_list;
+ topological_link : OPTIONAL representation_item;
+ point_index : INTEGER;
+END_ENTITY;
+ENTITY tessellated_edge SUBTYPE OF (tessellated_structured_item);
+ coordinates : coordinates_list;
+ geometric_link : OPTIONAL representation_item;
+ line_strip : LIST [2:?] OF INTEGER;
+END_ENTITY;
+ENTITY tessellated_connecting_edge SUBTYPE OF (tessellated_edge);
+ smooth : LOGICAL;
+ face1 : tessellated_face;
+ face2 : tessellated_face;
+ line_strip_face1 : LIST [2:?] OF INTEGER;
+ line_strip_face2 : LIST [2:?] OF INTEGER;
+END_ENTITY;
+ENTITY tessellated_solid SUBTYPE OF (tessellated_item);
+ items : SET [1:?] OF tessellated_structured_item;
  geometric_link : OPTIONAL representation_item;
 END_ENTITY;
-ENTITY tessellated_shell SUBTYPE OF (representation_item);
- items : SET [1:?] OF tessellated_face;
+ENTITY tessellated_shell SUBTYPE OF (tessellated_item);
+ items : SET [1:?] OF tessellated_structured_item;
  topological_link : OPTIONAL representation_item;
 END_ENTITY;
-ENTITY tessellated_surface_set ABSTRACT SUBTYPE OF (representation_item);
+ENTITY tessellated_surface_set ABSTRACT SUBTYPE OF (tessellated_item);
  coordinates : coordinates_list;
  pnmax : INTEGER;
  normals : LIST [0:?] OF LIST [3:3] OF REAL;
@@ -46,5 +85,27 @@ ENTITY complex_triangulated_surface_set SUBTYPE OF (tessellated_surface_set);
  pnindex : LIST [0:?] OF INTEGER;
  triangle_strips : LIST [0:?] OF LIST [3:?] OF INTEGER;
  triangle_fans : LIST [0:?] OF LIST [3:?] OF INTEGER;
+END_ENTITY;
+ENTITY tessellated_curve_set SUBTYPE OF (tessellated_item);
+ coordinates : coordinates_list;
+ line_strips : LIST [1:?] OF LIST [2:?] OF INTEGER;
+END_ENTITY;
+ENTITY tessellated_point_set SUBTYPE OF (tessellated_item);
+ coordinates : coordinates_list;
+ point_list : LIST [1:?] OF INTEGER;
+END_ENTITY;
+ENTITY tessellated_geometric_set SUBTYPE OF (tessellated_item);
+ children : SET [1:?] OF tessellated_item;
+END_ENTITY;
+ENTITY repositioned_tessellated_item SUBTYPE OF (tessellated_item);
+ location : axis2_placement_3d;
+END_ENTITY;
+ENTITY styled_item SUBTYPE OF (representation_item);
+ styles : SET [0:?] OF representation_item;
+ item : representation_item;
+END_ENTITY;
+ENTITY annotation_occurrence SUBTYPE OF (styled_item);
+END_ENTITY;
+ENTITY tessellated_annotation_occurrence SUBTYPE OF (annotation_occurrence);
 END_ENTITY;
 END_SCHEMA;

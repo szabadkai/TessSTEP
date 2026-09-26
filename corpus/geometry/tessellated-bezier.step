@@ -1,0 +1,13 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('Original tessellated shell with a CUBIC_BEZIER_TRIANGULATED_FACE item outside the import profile'),'2;1');
+FILE_NAME('tessellated-bezier.step','2026-09-26',('TessSTEP'),('TessSTEP'),'authored fixture','','');
+FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));
+ENDSEC;
+DATA;
+#1=COORDINATES_LIST('',10,((0.,0.,0.),(10.,0.,0.),(20.,0.,0.),(30.,0.,0.),(0.,10.,0.),(10.,10.,0.),(20.,10.,0.),(0.,20.,0.),(10.,20.,0.),(0.,30.,0.)));
+#100=TRIANGULATED_FACE('flat',#1,10,(),$,(),((1,2,5)));
+#101=CUBIC_BEZIER_TRIANGULATED_FACE('patch',#1,10,(),$,((1,2,3,4,5,6,7,8,9,10)));
+#1000=TESSELLATED_SHELL('bezier',(#100,#101),$);
+ENDSEC;
+END-ISO-10303-21;

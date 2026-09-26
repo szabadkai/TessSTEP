@@ -1,5 +1,6 @@
 (* Original bounded discovery profile, not an ISO schema. Matches the physical
-   attributes of shape representations, their geometric contexts, SI and
+   attributes of shape representations and draughting models (including their
+   characterized complex instances), their geometric contexts, SI and
    conversion-based units and uncertainty measures; excludes general AP rules.
    Representation items are generalized to representation_item: discovery retains
    those links without decoding them. *)
@@ -99,5 +100,15 @@ END_ENTITY;
 ENTITY manifold_surface_shape_representation SUBTYPE OF (shape_representation);
 END_ENTITY;
 ENTITY tessellated_shape_representation SUBTYPE OF (shape_representation);
+END_ENTITY;
+ENTITY draughting_model SUBTYPE OF (representation);
+END_ENTITY;
+(* The standard resolves the name clash with representation by derived
+   redeclaration; this profile renames the two physical attributes instead. *)
+ENTITY characterized_object;
+ object_name : STRING;
+ object_description : OPTIONAL STRING;
+END_ENTITY;
+ENTITY characterized_representation SUBTYPE OF (representation, characterized_object);
 END_ENTITY;
 END_SCHEMA;

@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0–5 with bounded local 3D product semantics and independent geometry Milestones 6–19; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery",
+  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated and presentation tessellation import with discovery, representation selection and C/C++ entry points (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery",
   "features": [
     {
       "feature": "streaming lexer",
@@ -190,15 +190,15 @@
     },
     {
       "feature": "public C ABI",
-      "status": "physical documents, meshes, assembly scenes and appearance implemented; faceted import implemented",
+      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar import and existing/presentation tessellation import implemented",
       "test": "c_abi_document_and_diagnostic_contract",
-      "limitations": "additive ABI 1; physical documents, triangle meshes, explicit scenes and appearance; schema/B-rep/tessellation APIs pending; selected planar faceted import, broader schema/B-rep APIs pending"
+      "limitations": "additive ABI 1; physical documents, triangle meshes, explicit scenes and appearance; selected faceted/planar solid import, existing tessellation import and presentation graphics; curved B-rep, discovery, schema and general B-rep APIs pending"
     },
     {
       "feature": "public C++ wrapper / CMake package",
-      "status": "physical documents, meshes, assembly scenes and appearance implemented; faceted import implemented",
+      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar import and existing/presentation tessellation import implemented",
       "test": "tests/capi/consumer.cpp",
-      "limitations": "C++17 RAII for documents/meshes/scenes/appearance, retained zero-copy mesh views and typed results; installed TessSTEP::TessSTEP target; static linkage pending; selected planar faceted import, broader schema/B-rep APIs pending"
+      "limitations": "C++17 RAII for documents/meshes/scenes/appearance/presentations, retained zero-copy mesh and presentation views and typed results; installed TessSTEP::TessSTEP target; static linkage pending; curved B-rep, discovery and broader schema/B-rep APIs pending"
     },
     {
       "feature": "Generated schema validator and corpus stage",
@@ -294,7 +294,7 @@
       "feature": "Bounded positive-weight NURBS curves",
       "status": "implemented",
       "test": "nurbs_curve_rational_circle_and_derivatives",
-      "limitations": "degrees 1–16; expanded knots, two derivatives, one-sided breaks; no zero/negative weights or automatic periodic wrapping"
+      "limitations": "degrees 1\u201316; expanded knots, two derivatives, one-sided breaks; no zero/negative weights or automatic periodic wrapping"
     },
     {
       "feature": "Homogeneous curve knot insertion",
@@ -528,7 +528,7 @@
       "feature": "Explicit physical-profile derived slots",
       "status": "implemented",
       "test": "physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode",
-      "limitations": "Named opt-in slots accept * (and $ unless strict); no general DERIVE evaluation or AP semantics"
+      "limitations": "Named opt-in slots accept * (and $ unless strict, or an explicitly written, domain-checked value where the slot allows it); no general DERIVE evaluation or AP semantics"
     },
     {
       "feature": "C/C++ planar STEP import",
@@ -552,13 +552,61 @@
       "feature": "Existing triangulated tessellation import",
       "status": "implemented",
       "test": "tessellated_solid_uses_every_encoding_without_retessellation",
-      "limitations": "TESSELLATED_SOLID/SHELL and triangulated surface sets; explicit triangles, strips and fans; coordinate-index identity, no proximity welding, repair or retessellation; Rust only"
+      "limitations": "TESSELLATED_SOLID/SHELL and triangulated surface sets; explicit triangles, strips and fans; coordinate-index identity, no proximity welding, repair or retessellation; Rust, C and C++"
     },
     {
       "feature": "Tessellated import rejections and budgets",
       "status": "implemented",
       "test": "tessellated_solid_rejections_are_typed_and_located",
-      "limitations": "Count, index, normal-winding, degeneracy, orientation and closure errors are rejected, never repaired"
+      "limitations": "Count, index, normal-winding, degeneracy, orientation and closure errors are rejected, never repaired; tolerant default accepts a PNMAX below NPOINTS without PNINDEX (counted), strict rejects it"
+    },
+    {
+      "feature": "Tessellated edge, vertex and connecting-edge items",
+      "status": "implemented",
+      "test": "connecting_edges_join_only_the_identities_they_declare",
+      "limitations": "Items add no triangles; connecting edges join exactly the declared points, which must have equal coordinates and lie on triangle edges of both faces; links retained; cubic Bezier faces and TESSELLATED_WIRE unsupported"
+    },
+    {
+      "feature": "Tessellated edge and vertex polylines",
+      "status": "implemented",
+      "test": "edge_and_vertex_items_add_no_triangles",
+      "limitations": "Line strips and points in metres with mesh-vertex correspondence under coordinate identity; repeated consecutive points and out-of-range indices rejected"
+    },
+    {
+      "feature": "Presentation tessellation import",
+      "status": "implemented",
+      "test": "annotation_occurrences_import_as_placed_graphics",
+      "limitations": "TESSELLATED_ANNOTATION_OCCURRENCE or TESSELLATED_GEOMETRIC_SET as polylines, points and fill triangles with composed REPOSITIONED_TESSELLATED_ITEM placements; not meshes; normals unused; styles retained undecoded; no style, text or view semantics"
+    },
+    {
+      "feature": "Presentation import rejections and budgets",
+      "status": "implemented",
+      "test": "presentation_rejections_are_typed_and_located",
+      "limitations": "Index, strip, count, placement, root and child-type errors are typed and located; explicit vertex, triangle, polyline, depth, record and work budgets"
+    },
+    {
+      "feature": "Tessellated and presentation root discovery",
+      "status": "implemented",
+      "test": "presentation_discovery_follows_callouts_into_draughting_models",
+      "limitations": "Shape tessellations and annotation occurrences with their representations' units, through callouts and annotation planes; characterized draughting models; missing or conflicting units are per-root errors"
+    },
+    {
+      "feature": "Representation selection between B-rep and tessellation",
+      "status": "implemented",
+      "test": "tessellated_discovery_and_representation_selection",
+      "limitations": "Pairs by explicit geometric/topological links, then by a transformation-free representation relationship only when unambiguous; explicit exact or tessellated preference; nothing imported or guessed"
+    },
+    {
+      "feature": "C/C++ existing tessellation import",
+      "status": "implemented",
+      "test": "c_abi_tessellated_import_owns_mesh_and_reports_provenance",
+      "limitations": "Additive ABI 1 options/info records; owned mesh acquisition with STEP face IDs; edge polylines and per-face links Rust-only; installed C/C++ consumers"
+    },
+    {
+      "feature": "C/C++ presentation graphics",
+      "status": "implemented",
+      "test": "c_abi_presentation_views_are_zero_copy_and_retained",
+      "limitations": "Additive ABI 1 retained handle with zero-copy views, scalar info/item/style queries and C++ RAII; installed C/C++ consumers"
     },
     {
       "feature": "Explicit physical-profile link slots",

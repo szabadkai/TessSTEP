@@ -8,8 +8,10 @@ mod appearance;
 pub use appearance::*;
 mod mesh;
 mod scene;
+mod tessellated;
 pub use mesh::*;
 pub use scene::*;
+pub use tessellated::*;
 
 use std::{panic::catch_unwind, ptr, sync::Arc};
 use tessstep_model::Document;

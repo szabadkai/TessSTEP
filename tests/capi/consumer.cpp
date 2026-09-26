@@ -176,7 +176,53 @@ static void planar_contract(const char* path, uint64_t root, double scale, doubl
         assert(std::abs(maximum-bounds[axis])<1e-12);
     }
 }
+static std::string read_file(const char* path) {
+    std::ifstream file(path,std::ios::binary); assert(file);
+    return {std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>()};
+}
+static void tessellated_contract() {
+    static_assert(!std::is_copy_constructible_v<Presentation>);
+    static_assert(std::is_nothrow_move_constructible_v<Presentation>);
+    static_assert(!std::is_copy_constructible_v<PresentationView>);
+    static_assert(std::is_nothrow_destructible_v<PresentationView>);
+    auto mesh = [] {
+        auto parsed = Document::parse(read_file("tessellated.step")); assert(parsed);
+        auto imported = parsed.value().import_tessellated(1000,0.001); assert(imported);
+        assert(imported.value().kind() == TessellatedKind::solid);
+        assert(imported.value().info.edge_count == 13 && imported.value().info.joined_points == 24);
+        auto options = default_tessellated_options();
+        options.flags = 2u;
+        auto bad = parsed.value().import_tessellated(1000,0.001,&options);
+        assert(!bad && bad.error().code == ErrorCode::invalid_argument);
+        auto list = parsed.value().import_tessellated(10,0.001);
+        assert(!list && list.error().code == ErrorCode::unsupported);
+        assert(list.error().import_failure.stage == ImportStage::geometry && list.error().import_failure.entity_id == 10);
+        return std::move(imported).value().mesh;
+    }(); // The document is gone; the mesh is independent.
+    auto view = mesh.view(); assert(view);
+    assert(view.value().data().vertex_count == 8 && view.value().data().boundary_edges == 0);
+    auto graphics = [] {
+        auto parsed = Document::parse(read_file("presentation.step")); assert(parsed);
+        auto imported = parsed.value().import_presentation(300,0.001); assert(imported);
+        auto missing = parsed.value().import_presentation(110,0.001);
+        assert(!missing && missing.error().code == ErrorCode::unsupported);
+        auto limits = default_presentation_options();
+        limits.max_depth = 0;
+        assert(parsed.value().import_presentation(300,0.001,&limits).error().code == ErrorCode::resource_limit);
+        Presentation presentation = std::move(imported).value();
+        assert(presentation.info().value().item_count == 4 && presentation.style_at(0).value() == 203);
+        assert(presentation.style_at(1).error().code == ErrorCode::not_found);
+        assert(static_cast<PresentationKind>(presentation.item_at(1).value().kind) == PresentationKind::surface_set);
+        return std::move(presentation.view()).value();
+    }(); // The view retains the graphics after the Presentation is destroyed.
+    const auto& data = graphics.data();
+    assert(data.vertex_count == 12 && data.polyline_count == 3 && data.polyline_offsets[3] == 9);
+    assert(data.triangle_count == 3 && data.point_count == 1 && data.positions[0] == 0.1);
+    PresentationView moved = std::move(graphics);
+    assert(moved.data().polyline_count == 3 && !graphics.data().positions);
+}
 int main(int argc, char** argv) {
+    tessellated_contract();
     planar_contract("planar.step",1000,0.001,6e-6,0.01,0.02,0.03);
     {
         std::ifstream file("placeholder.step",std::ios::binary); assert(file);

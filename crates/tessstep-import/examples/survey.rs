@@ -1,10 +1,15 @@
 //! Usage: cargo run -p tessstep-import --example survey -- FILE METRES_PER_UNIT [MAX_ROOTS]
 //! Imports every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the
-//! matching selected-root profile and reports per-root stage outcomes as JSON.
+//! matching selected-root profile, every shape tessellation root with the existing
+//! tessellation profile, and every tessellated annotation occurrence with the
+//! presentation profile, and reports per-root stage outcomes as JSON.
 //! Each root uses the units of its representation context when discovery finds them,
 //! and the declared length uncertainty as its model tolerance, floored at 1e-7 m;
 //! METRES_PER_UNIT, radians and 1e-7 m are the explicit fallback. Each root reports
-//! which applied, the declared uncertainty and the tolerance and chord it used.
+//! which applied, the declared uncertainty and the tolerance and chord it used, and
+//! whether representation selection (preferring exact B-reps) selected it or paired
+//! it as an alternative of another root. MAX_ROOTS bounds shape roots and, separately,
+//! annotation occurrences.
 #![forbid(unsafe_code)]
 use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
 use tessstep_import::*;
@@ -28,7 +33,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let unit = LengthUnit::metres_per_unit(scale)?;
     let max_roots: usize = args.get(3).map_or(Ok(1000), |s| s.parse())?;
     let mut out =
-        format!("{{\"format_version\":1,\"scope\":\"solid-survey\",\"metres_per_unit\":{scale}");
+        format!("{{\"format_version\":2,\"scope\":\"shape-survey\",\"metres_per_unit\":{scale}");
     let doc = match tessstep_model::parse(
         BufReader::new(File::open(&args[1])?),
         ParseLimits::default(),
@@ -37,17 +42,50 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) => {
             eprintln!("{e}");
             println!(
-                "{out},\"parse\":\"rejected\",\"root_count\":0,\"truncated\":false,\"roots\":[]}}"
+                "{out},\"parse\":\"rejected\",\"root_count\":0,\"truncated\":false,\"roots\":[],\"presentation\":null}}"
             );
             return Ok(());
         }
     };
     let roots = discover_solids(&doc, ImportOptions::default())?;
+    let tessellations = discover_tessellations(&doc, ImportOptions::default())?;
+    let choices = select_representations(
+        &doc,
+        &roots,
+        &tessellations,
+        RepresentationPreference::Exact,
+        ImportOptions::default(),
+    )?;
+    // Each root's selection status and the entity IDs of its group's other members.
+    let entity = |r: &RootRef| match *r {
+        RootRef::Solid(i) => roots[i].entity,
+        RootRef::Tessellation(i) => tessellations[i].entity,
+    };
+    let mut selection = std::collections::BTreeMap::new();
+    for choice in &choices {
+        let members: Vec<RootRef> = std::iter::once(choice.selected)
+            .chain(choice.alternatives.iter().copied())
+            .collect();
+        for (k, member) in members.iter().enumerate() {
+            let others: Vec<String> = members
+                .iter()
+                .filter(|m| *m != member)
+                .map(|m| entity(m).get().to_string())
+                .collect();
+            selection.insert(
+                entity(member),
+                (
+                    if k == 0 { "selected" } else { "alternative" },
+                    others.join(","),
+                ),
+            );
+        }
+    }
+    let total = roots.len() + tessellations.len();
     write!(
         out,
-        ",\"parse\":\"accepted\",\"root_count\":{},\"truncated\":{},\"roots\":[",
-        roots.len(),
-        roots.len() > max_roots
+        ",\"parse\":\"accepted\",\"root_count\":{total},\"truncated\":{},\"roots\":[",
+        total > max_roots
     )?;
     for (index, root) in roots.iter().take(max_roots).enumerate() {
         let started = Instant::now();
@@ -102,9 +140,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if index > 0 {
             out.push(',');
         }
+        let (chosen, paired) = &selection[&id];
         write!(
             out,
-            "{{\"id\":{},\"type\":\"{kind}\",\"profile\":\"{}\",\"units\":\"{units}\",\"metres_per_unit\":{},\"model_tolerance_m\":{distance:e},\"declared_uncertainty_m\":{},",
+            "{{\"id\":{},\"type\":\"{kind}\",\"profile\":\"{}\",\"selection\":\"{chosen}\",\"paired_with\":[{paired}],\"units\":\"{units}\",\"metres_per_unit\":{},\"model_tolerance_m\":{distance:e},\"declared_uncertainty_m\":{},",
             id.get(),
             if faceted { "faceted" } else { "brep" },
             length.scale(),
@@ -118,7 +157,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 mesh.data().triangles.len(),
                 mesh.statistics().signed_volume
             )?,
-            Err(e) => failure(&mut out, &doc, &e)?,
+            Err(e) => failure(&mut out, &doc, &e, true)?,
         }
         write!(
             out,
@@ -126,22 +165,167 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             started.elapsed().as_secs_f64()
         )?;
     }
-    out.push_str("]}");
+    // Existing shape tessellations: no model tolerance or chord applies.
+    for (index, root) in tessellations
+        .iter()
+        .take(max_roots.saturating_sub(roots.len()))
+        .enumerate()
+    {
+        let started = Instant::now();
+        let (length, units) = match &root.units {
+            Ok(u) => (u.length, "context_units"),
+            Err(_) => (unit, "assumed"),
+        };
+        let result = import_tessellated(
+            &doc,
+            root.entity,
+            length,
+            ImportOptions::default(),
+            tessstep_mesh::Limits::default(),
+        );
+        if index > 0 || !roots.is_empty() {
+            out.push(',');
+        }
+        let (chosen, paired) = &selection[&root.entity];
+        write!(
+            out,
+            "{{\"id\":{},\"type\":\"{}\",\"profile\":\"tessellated\",\"selection\":\"{chosen}\",\"paired_with\":[{paired}],\"units\":\"{units}\",\"metres_per_unit\":{},\"model_tolerance_m\":null,\"declared_uncertainty_m\":null,",
+            root.entity.get(),
+            record_name(&doc, root.entity),
+            length.scale(),
+        )?;
+        match result {
+            Ok(imported) => {
+                let mesh = imported.mesh();
+                write!(
+                    out,
+                    "\"status\":\"accepted\",\"stages\":{{\"profile\":\"accepted\",\"geometry\":\"accepted\",\"tessellation\":\"not_applicable\"}},\"vertices\":{},\"triangles\":{},\"volume_m3\":{}",
+                    mesh.data().positions.len(),
+                    mesh.data().triangles.len(),
+                    mesh.statistics().signed_volume
+                )?
+            }
+            Err(e) => failure(&mut out, &doc, &e, false)?,
+        }
+        write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
+    }
+    out.push(']');
+    presentations(&mut out, &doc, unit, max_roots)?;
+    out.push('}');
     println!("{out}");
     Ok(())
 }
 
-fn failure(out: &mut String, doc: &Document, e: &Error) -> std::fmt::Result {
+fn record_name(doc: &Document, id: EntityId) -> String {
+    doc.entities()
+        .get(id)
+        .map(|entity| {
+            entity
+                .kind
+                .records()
+                .iter()
+                .map(|r| r.name.as_ref())
+                .collect::<Vec<_>>()
+                .join("+")
+        })
+        .unwrap_or_default()
+}
+
+/// Bounded presentation summary: counts, outcomes and the first failures.
+fn presentations(
+    out: &mut String,
+    doc: &Document,
+    unit: LengthUnit,
+    max_roots: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let roots = discover_presentations(doc, ImportOptions::default())?;
+    let mut outcomes = std::collections::BTreeMap::new();
+    let (mut accepted, mut polylines, mut triangles, mut points, mut zero_area) = (0, 0, 0, 0, 0);
+    let mut failures = String::new();
+    let mut failed = 0;
+    for root in roots.iter().take(max_roots) {
+        let length = root.units.as_ref().map_or(unit, |u| u.length);
+        match import_presentation(
+            doc,
+            root.entity,
+            length,
+            ImportOptions::default(),
+            PresentationLimits::default(),
+        ) {
+            Ok(p) => {
+                accepted += 1;
+                polylines += p.polyline_count();
+                triangles += p.triangles().len();
+                points += p.points().len();
+                zero_area += p.zero_area_triangles();
+                *outcomes.entry("accepted".to_string()).or_insert(0) += 1;
+            }
+            Err(e) => {
+                let kind = match e.kind {
+                    ErrorKind::InvalidOptions => "invalid_options",
+                    ErrorKind::MissingEntity => "missing_entity",
+                    ErrorKind::Unsupported => "unsupported",
+                    ErrorKind::InvalidGeometry => "invalid_geometry",
+                    ErrorKind::ResourceLimit => "resource_limit",
+                };
+                let stage = format!("{:?}", e.stage).to_lowercase();
+                *outcomes.entry(format!("{stage}:{kind}")).or_insert(0) += 1;
+                if failed < 5 {
+                    if failed > 0 {
+                        failures.push(',');
+                    }
+                    write!(
+                        failures,
+                        "{{\"id\":{},\"entity\":{},\"entity_type\":",
+                        root.entity.get(),
+                        e.entity.map_or(0, EntityId::get)
+                    )?;
+                    json_string(
+                        &mut failures,
+                        &e.entity.map(|id| record_name(doc, id)).unwrap_or_default(),
+                    )?;
+                    failures.push_str(",\"message\":");
+                    json_string(&mut failures, &e.message)?;
+                    failures.push('}');
+                }
+                failed += 1;
+            }
+        }
+    }
+    let with_units = roots.iter().filter(|r| r.units.is_ok()).count();
+    write!(
+        out,
+        ",\"presentation\":{{\"occurrence_count\":{},\"surveyed\":{},\"truncated\":{},\"with_context_units\":{with_units},\"accepted\":{accepted},\"polylines\":{polylines},\"triangles\":{triangles},\"points\":{points},\"zero_area_triangles\":{zero_area},\"outcomes\":{{",
+        roots.len(),
+        roots.len().min(max_roots),
+        roots.len() > max_roots
+    )?;
+    for (k, (outcome, n)) in outcomes.iter().enumerate() {
+        if k > 0 {
+            out.push(',');
+        }
+        write!(out, "\"{outcome}\":{n}")?;
+    }
+    write!(out, "}},\"failures\":[{failures}]}}")?;
+    Ok(())
+}
+
+/// `tessellates` is false for existing tessellations, whose tessellation stage never
+/// applies.
+fn failure(out: &mut String, doc: &Document, e: &Error, tessellates: bool) -> std::fmt::Result {
     let status = match e.kind {
         ErrorKind::Unsupported => "unsupported",
         ErrorKind::ResourceLimit => "resource_limit",
         _ => "rejected",
     };
-    let (profile, geometry, tessellation) = match e.stage {
+    let (profile, geometry, mut tessellation) = match e.stage {
         Stage::Profile => (status, "not_run", "not_run"),
         Stage::Geometry | Stage::Topology => ("accepted", status, "not_run"),
         Stage::Tessellation => ("accepted", "accepted", status),
     };
+    if !tessellates {
+        tessellation = "not_applicable";
+    }
     let kind = match e.kind {
         ErrorKind::InvalidOptions => "invalid_options",
         ErrorKind::MissingEntity => "missing_entity",

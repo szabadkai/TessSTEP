@@ -149,20 +149,32 @@ def inspect_schema(binary, schema_name, path, timeout, result, *, stage="schema"
 
 
 ROOT_FAILURES = ("unsupported", "rejected", "resource_limit")
+SURVEY_PROFILES = {"brep", "faceted", "tessellated"}
+PRESENTATION_KEYS = {"occurrence_count", "surveyed", "truncated", "with_context_units", "accepted", "polylines",
+                     "triangles", "points", "zero_area_triangles", "outcomes", "failures"}
 
 
 def summarize_survey(payload):
-    """Bound per-file evidence: counts and categories for every root, details for the first 20."""
+    """Bound per-file evidence: counts and categories for every root, details for the first 20.
+
+    Existing shape tessellations are roots without a tessellation stage: they count as
+    accepted when they import, which is when they produce meshes.
+    """
     roots = payload["roots"]
     failures = [r for r in roots if r["status"] != "accepted"]
     reached = lambda stage: [r for r in roots if r["stages"][stage] == "accepted"]
+    presentation = payload["presentation"]
     return {"metres_per_unit": payload["metres_per_unit"], "root_count": payload["root_count"],
             "surveyed_roots": len(roots), "truncated": payload["truncated"],
-            "geometry_roots": len(reached("geometry")), "accepted_roots": len(reached("tessellation")),
+            "geometry_roots": len(reached("geometry")), "accepted_roots": sum(r["status"] == "accepted" for r in roots),
+            "tessellated_roots": sum(r["profile"] == "tessellated" for r in roots),
+            "tessellated_accepted": sum(r["profile"] == "tessellated" and r["status"] == "accepted" for r in roots),
+            "alternative_roots": sum(r["selection"] == "alternative" for r in roots),
             "outcomes": dict(sorted(Counter("accepted" if r["status"] == "accepted" else f'{r["failed_stage"]}:{r["kind"]}' for r in roots).items())),
             # Entity IDs vary per file; digits are removed so categories aggregate.
             "categories": dict(Counter(re.sub(r"\d+", "N", r["message"]) for r in failures).most_common(10)),
             "unsupported_entity_types": dict(Counter(r["entity_type"] for r in failures if r["failed_stage"] == "profile" and r["kind"] == "unsupported").most_common(10)),
+            "presentation": presentation,
             "roots": [{k: v for k, v in r.items() if k != "seconds"} for r in roots[:20]]}
 
 
@@ -170,8 +182,14 @@ def stage_outcome(roots, stage):
     """All roots accepted, some accepted (partial), none reached, or the dominant failure.
 
     The file geometry stage covers profile, geometry and topology failures; the
-    tessellation stage counts only roots that reached tessellation.
+    tessellation stage counts only roots that reached tessellation, and is not
+    applicable when every root is an existing tessellation.
     """
+    if stage == "tessellation":
+        applicable = [r for r in roots if r["stages"]["tessellation"] != "not_applicable"]
+        if roots and not applicable:
+            return "not_applicable"
+        roots = applicable
     accepted = sum(r["stages"][stage] == "accepted" for r in roots)
     if roots and accepted == len(roots):
         return "accepted"
@@ -181,8 +199,25 @@ def stage_outcome(roots, stage):
     return max(sorted(failed), key=failed.get) if failed else "not_run"
 
 
+def valid_root(root):
+    tessellated = root.get("profile") == "tessellated"
+    return (root["status"] in ("accepted", *ROOT_FAILURES) and set(root["stages"]) == {"profile", "geometry", "tessellation"}
+            and root["profile"] in SURVEY_PROFILES and root["selection"] in ("selected", "alternative")
+            and isinstance(root["paired_with"], list)
+            and (root["stages"]["tessellation"] == "not_applicable") == tessellated)
+
+
+def valid_presentation(summary):
+    return (isinstance(summary, dict) and set(summary) == PRESENTATION_KEYS
+            and summary["surveyed"] == min(summary["occurrence_count"], summary["surveyed"])
+            and summary["truncated"] == (summary["occurrence_count"] > summary["surveyed"])
+            and 0 <= summary["accepted"] <= summary["surveyed"] and sum(summary["outcomes"].values()) == summary["surveyed"]
+            and isinstance(summary["failures"], list) and len(summary["failures"]) <= 5)
+
+
 def inspect_geometry(binary, path, timeout, result, metres_per_unit):
-    """Import every solid root with the selected-root profiles after physical acceptance."""
+    """Import every solid and shape tessellation root and every tessellated annotation
+    occurrence with the selected-root profiles after physical acceptance."""
     if result["stages"]["physical_parse"] != "accepted":
         result["stages"]["geometry"] = result["stages"]["tessellation"] = "not_run"
         return
@@ -197,21 +232,23 @@ def inspect_geometry(binary, path, timeout, result, metres_per_unit):
                 result["stages"]["geometry"] = result["stages"]["tessellation"] = result["status"]
             else:
                 if stdout.tell() > 16 * 1024 * 1024:
-                    raise ValueError("solid survey JSON exceeds 16 MiB")
+                    raise ValueError("shape survey JSON exceeds 16 MiB")
                 stdout.seek(0)
                 payload = json.load(stdout)
-                if payload.get("format_version") != 1 or payload.get("scope") != "solid-survey":
-                    raise ValueError("unsupported solid survey protocol")
+                if payload.get("format_version") != 2 or payload.get("scope") != "shape-survey":
+                    raise ValueError("unsupported shape survey protocol")
                 if payload.get("parse") != "accepted":
-                    raise ValueError("solid survey rejected a physically accepted input")
+                    raise ValueError("shape survey rejected a physically accepted input")
                 roots = payload["roots"]
                 if not isinstance(roots, list) or len(roots) != min(payload["root_count"], len(roots)) or payload["truncated"] != (payload["root_count"] > len(roots)):
-                    raise ValueError("solid survey root counts disagree")
+                    raise ValueError("shape survey root counts disagree")
                 for root in roots:
-                    if root["status"] not in ("accepted", *ROOT_FAILURES) or set(root["stages"]) != {"profile", "geometry", "tessellation"}:
-                        raise ValueError("invalid solid survey root outcome")
+                    if not valid_root(root):
+                        raise ValueError("invalid shape survey root outcome")
+                if not valid_presentation(payload.get("presentation")):
+                    raise ValueError("invalid presentation survey summary")
                 result["geometry_result"] = summarize_survey(payload)
-                result["stages"]["geometry"] = stage_outcome(roots, "geometry") if roots else "no_solid_roots"
+                result["stages"]["geometry"] = stage_outcome(roots, "geometry") if roots else "no_shape_roots"
                 result["stages"]["tessellation"] = stage_outcome(roots, "tessellation") if roots else "not_run"
         except subprocess.TimeoutExpired:
             result["status"] = "timeout"
@@ -234,9 +271,15 @@ def signature(case):
         for stage in ("geometry", "tessellation"):
             if result["stages"][stage] == "not_integrated":
                 result["stages"][stage] = "unmeasured"
-    # Saved baselines keep only this count, not the full per-file survey summary.
+    # Renamed when tessellated roots joined the survey; vocabulary is not a regression.
+    if result["stages"]["geometry"] == "no_solid_roots":
+        result["stages"]["geometry"] = "no_shape_roots"
+    # Saved baselines keep only these counts, not the full per-file survey summary.
     geometry = case.get("geometry_result")
     result["geometry_accepted_roots"] = geometry["accepted_roots"] if geometry else case.get("geometry_accepted_roots")
+    presentation = (geometry or {}).get("presentation")
+    result["presentation_accepted"] = (presentation["accepted"] if presentation and presentation["occurrence_count"]
+                                       else None if geometry else case.get("presentation_accepted"))
     return result
 
 
@@ -256,8 +299,9 @@ def compare(cases, previous):
             regression |= before["stages"].get("schema") == "accepted" and case["stages"].get("schema") != "accepted"
             regression |= before["stages"].get("product") == "accepted" and case["stages"].get("product") != "accepted"
             regression |= any(before["stages"].get(s) == "accepted" and case["stages"].get(s) != "accepted" for s in ("geometry", "tessellation"))
-            accepted_before, accepted_after = signature(before)["geometry_accepted_roots"], signature(case)["geometry_accepted_roots"]
-            regression |= accepted_before is not None and (accepted_after or 0) < accepted_before
+            for count in ("geometry_accepted_roots", "presentation_accepted"):
+                accepted_before, accepted_after = signature(before)[count], signature(case)[count]
+                regression |= accepted_before is not None and (accepted_after or 0) < accepted_before
             regression |= case["status"] in FAULTS and before["status"] not in FAULTS
             changes.append({"sha256": key, "path": case["paths"][0], "kind": "regression" if regression else "changed",
                             "before": before["status"], "after": case["status"],
@@ -355,7 +399,7 @@ def main():
     parser.add_argument("--schema-name", help="Explicit schema for the configured validator")
     parser.add_argument("--product-validator", type=Path, help="Product checker; requires the schema validator and uses its schema name")
     parser.add_argument("--geometry-metres-per-unit", type=float, default=0.001,
-                        help="Assumed source length unit for the solid import survey (default 0.001: millimetres); files' own units are not read yet")
+                        help="Fallback source length unit for roots without discovered context units (default 0.001: millimetres)")
     args = parser.parse_args()
     if not (math.isfinite(args.geometry_metres_per_unit) and args.geometry_metres_per_unit > 0):
         parser.error("--geometry-metres-per-unit must be finite and positive")
@@ -412,7 +456,7 @@ def main():
             schema_config = {"schema": args.schema_name, "binary_sha256": digest(schema_snapshot)}
         survey_snapshot = Path(directory) / survey.name
         shutil.copy2(survey, survey_snapshot)
-        geometry_config = {"scope": "every solid root; selected-root planar/faceted profiles", "policy": "tolerant default",
+        geometry_config = {"scope": "every solid and shape tessellation root and tessellated annotation occurrence; selected-root profiles; exact representations preferred", "policy": "tolerant default",
                            "metres_per_unit": args.geometry_metres_per_unit, "binary_sha256": digest(survey_snapshot)}
         product_snapshot = None
         product_config = None

@@ -96,4 +96,6 @@ STEP presentation/style adaptation, surface-side styles, texture images, vertex 
 line/point styles, physically based material properties, shader evaluation, color-space
 conversion, rendering and exporters remain future work. This module does not enable an
 external STEP appearance, geometry or tessellation corpus stage. Milestone 20 now
-imports existing tessellations; see [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).
+imports existing tessellations and tessellated annotations, whose style assignments it
+retains as entity IDs without decoding them; see
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).

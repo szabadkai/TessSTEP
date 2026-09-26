@@ -1,4 +1,4 @@
-//! Usage: cargo run -p tessstep-import --example tessellated -- FILE ROOT_ID METRES_PER_UNIT
+//! Usage: cargo run -p tessstep-import --example tessellated -- FILE ROOT_ID METRES_PER_UNIT [--strict]
 //! Reports selected-root profile and geometry/topology stages of an existing
 //! tessellation as JSON. No tessellation is performed, so that stage is not applicable.
 #![forbid(unsafe_code)]
@@ -17,8 +17,9 @@ fn main() {
 }
 fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
-    if args.len() != 4 {
-        return Err("usage: tessellated FILE ROOT_ID METRES_PER_UNIT".into());
+    let strict = args.len() == 5 && args[4] == "--strict";
+    if args.len() != 4 && !strict {
+        return Err("usage: tessellated FILE ROOT_ID METRES_PER_UNIT [--strict]".into());
     }
     let root = EntityId::new(args[2].parse()?).ok_or("root must be nonzero")?;
     let unit = LengthUnit::metres_per_unit(args[3].parse()?)?;
@@ -30,7 +31,10 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         &doc,
         root,
         unit,
-        ImportOptions::default(),
+        ImportOptions {
+            strict,
+            ..ImportOptions::default()
+        },
         tessstep_mesh::Limits::default(),
     );
     match result {
@@ -42,13 +46,22 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
                 TessellatedKind::SurfaceSet => "surface_set",
             };
             println!(
-                "{{\"format_version\":1,\"scope\":\"tessellated\",\"status\":\"accepted\",\"kind\":\"{kind}\",\"profile\":\"accepted\",\"geometry\":\"accepted\",\"tessellation\":\"not_applicable\",\"faces\":{},\"linked_faces\":{},\"skipped_degenerate\":{},\"vertices\":{},\"triangles\":{},\"boundary_edges\":{},\"components\":{},\"volume_m3\":{}}}",
+                "{{\"format_version\":1,\"scope\":\"tessellated\",\"status\":\"accepted\",\"kind\":\"{kind}\",\"profile\":\"accepted\",\"geometry\":\"accepted\",\"tessellation\":\"not_applicable\",\"faces\":{},\"linked_faces\":{},\"edges\":{},\"connecting_edges\":{},\"vertex_items\":{},\"joined_points\":{},\"pnmax_deviations\":{},\"skipped_degenerate\":{},\"vertices\":{},\"triangles\":{},\"boundary_edges\":{},\"components\":{},\"volume_m3\":{}}}",
                 imported.faces().len(),
                 imported
                     .faces()
                     .iter()
                     .filter(|f| f.geometric_link.is_some())
                     .count(),
+                imported.edges().len(),
+                imported
+                    .edges()
+                    .iter()
+                    .filter(|e| e.connection.is_some())
+                    .count(),
+                imported.vertices().len(),
+                imported.joined_points(),
+                imported.pnmax_deviations(),
                 imported.skipped_degenerate(),
                 mesh.data().positions.len(),
                 mesh.data().triangles.len(),

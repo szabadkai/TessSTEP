@@ -117,6 +117,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "presentation_import"
+path = "fuzz_targets/presentation_import.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "brep_import"
 path = "fuzz_targets/brep_import.rs"
 test = false

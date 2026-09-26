@@ -31,12 +31,12 @@ not establish schema or CAD validity.
 | Tessellation | Planar and regular curved-face refinement, owned shell/solid meshes, and manifold closure checks | Constructed B-reps; sampled error checks, no certified continuous bounds, singularity repair, or self-intersection proof |
 | Planar STEP import | Faceted and edge-based solids converted to owned meshes with original STEP face IDs | One closed shell; planar polygon or LINE/EDGE_LOOP boundaries; explicit root, units and tolerances |
 | Curved STEP import | Elementary and B-spline B-rep solids with computed pcurves, inferred outer bounds and inserted annulus seams; root and context-unit discovery | One closed shell; no cavity shells, swept surfaces, pole/apex charts or healing; Rust only ([CURVED_IMPORT.md](docs/CURVED_IMPORT.md)) |
-| Existing STEP tessellations | Tessellated solids, shells and triangulated surface sets imported as owned meshes without retessellation | Triangulated faces, strips and fans; coordinate-index identity; explicit root and units; Rust only |
+| Existing STEP tessellations | Tessellated solids, shells and triangulated surface sets imported as owned meshes without retessellation; tessellated annotations as placed polylines, points and fills; root discovery and B-rep/tessellation representation selection | Triangulated faces, strips, fans, edges and connecting edges; coordinate-index identity; annotation graphics are not meshes and styles are not interpreted |
 | Mesh scenes and appearance | Shared assets, nested affine instances, explicit baking, linear RGBA palettes, and inherited style overrides | No automatic STEP mesh binding or style adaptation, world-space tolerance guarantee, textures, or rendering |
-| C and C++ | Document inspection, planar/planar/faceted STEP tessellation, triangle-buffer import, retained mesh views, scenes, and appearance | Shared ABI 1 library and C++17 RAII; general schema decoding and constructed B-rep tessellation remain Rust APIs |
+| C and C++ | Document inspection, planar/faceted STEP tessellation, existing-tessellation and annotation import, triangle-buffer import, retained mesh and annotation views, scenes, and appearance | Shared ABI 1 library and C++17 RAII; general schema decoding, discovery and constructed B-rep tessellation remain Rust APIs |
 
 The [STEP import guide](docs/STEP_IMPORT.md) documents the first end-to-end slice;
-[existing tessellations](docs/EXISTING_TESSELLATIONS.md) documents direct mesh import.
+[existing tessellations](docs/EXISTING_TESSELLATIONS.md) documents direct mesh and annotation import.
 
 The [conformance table](docs/CONFORMANCE.md) records supported behavior and test
 evidence. See the [roadmap](docs/ROADMAP.md) for remaining work.
@@ -148,10 +148,12 @@ See [Part 21 parsing](docs/PART21.md) for format support and resource limits.
 
 The shared library exposes ABI 1 through the [C header](include/tessstep/tessstep.h).
 The [C++17 wrapper](include/tessstep/tessstep.hpp) provides move-only RAII ownership
-and typed results for documents, meshes, scenes, and appearance layers.
+and typed results for documents, meshes, annotation graphics, scenes, and appearance
+layers.
 
 Supported operations include physical-document inspection and diagnostics, selected
-planar/faceted STEP tessellation, triangle-buffer import, immutable mesh queries, assembly
+planar/faceted STEP tessellation, existing-tessellation and annotation import,
+triangle-buffer import, immutable mesh queries, assembly
 scene construction and instance baking, and appearance queries. C++ `MeshView`
 retains the mesh, so its zero-copy buffers remain valid after the originating
 `Mesh` is destroyed. Raw pointers remain borrowed from the view.

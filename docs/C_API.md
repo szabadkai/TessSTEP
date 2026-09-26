@@ -4,8 +4,9 @@ The C ABI and C++ wrapper are supported public interfaces. They carry the same
 compatibility, documentation and release-testing obligations as the public Rust
 API. This is a binding architectural requirement. The first implementation exports
 ABI 1 physical-document operations, a C++17 wrapper and a shared CMake package.
-Owned triangle-mesh import/read-only views, explicit assembly asset scenes and appearance layers are also implemented. Schema decoding,
-general B-rep construction and curved STEP tessellation are not exposed yet.
+Owned triangle-mesh import/read-only views, explicit assembly asset scenes and appearance layers are also implemented, as are
+existing-tessellation and presentation-graphics import from STEP documents (Milestone 20). Schema decoding,
+general B-rep construction, curved STEP tessellation and root discovery are not exposed yet.
 The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
 The planar profile's conformance policy is a separate 16-byte `ts_import_policy`
 record with a flags word (`TS_IMPORT_STRICT`), passed to
@@ -257,6 +258,57 @@ boundary. Options bound material/binding counts and logical work, including face
 and inheritance traversal. See [APPEARANCE.md](APPEARANCE.md) for limits and unsupported
 STEP style adaptation, surface-side styling, textures, lighting and rendering.
 
+## Existing tessellations and presentation graphics (Milestone 20)
+
+`ts_document_import_tessellated` / C++ `Document::import_tessellated` converts a
+selected `TESSELLATED_SOLID`, `TESSELLATED_SHELL` or triangulated surface set into an
+owned `ts_mesh` without retessellation. Rules are those of
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md): coordinate-index identity,
+connecting edges joining only the points they declare, normals that must agree with
+winding, and closure for solids. The mesh acquisition is independent of the document;
+its `face_ids` are the physical STEP IDs of the tessellated faces. The optional
+80-byte `ts_tessellated_info` reports kind, root and link IDs and face, linked-face,
+edge, vertex, skipped, joined and tolerated-deviation counts. It is cleared, like the
+optional `ts_import_error`, before validation and on every failure. Edge polylines,
+vertex items and per-face links stay Rust-only.
+
+`ts_document_import_presentation` / `Document::import_presentation` returns a
+retained `ts_presentation` handle for a tessellated annotation occurrence or geometric
+set: placed polylines, points and fill triangles in metres. `ts_presentation_get_view`
+returns a zero-copy 104-byte view of immutable scalar arrays (positions, polyline
+point indices with `polyline_count + 1` offsets, triangles, points and the source-set
+ID of every primitive). An array pointer is NULL exactly when its count is zero, except
+the offsets, which always hold at least one zero. Views borrow the handle until its
+last release; C++ `PresentationView` retains its own acquisition, so it survives the
+originating `Presentation`. `ts_presentation_get_info`, `ts_presentation_item_at` and
+`ts_presentation_style_at` return scalar copies, and out-of-range indices are
+`TS_NOT_FOUND`. Concurrent immutable queries are allowed while an acquisition lives.
+Graphics carry no mesh-validity claim, and styles are entity IDs only.
+
+Both entry points take new frozen options records: 48-byte `ts_tessellated_options`
+and 64-byte `ts_presentation_options`, the latter adding polyline-point and nesting
+budgets. Each carries its own `flags` word; `TS_IMPORT_STRICT` rejects the tolerated
+`pnmax` deviation, and unknown flags or nonzero reserved fields return
+`TS_INVALID_ARGUMENT` after clearing outputs. Status mapping and `ts_import_error`
+records follow the faceted/planar contract, without a tessellation stage.
+
+```cpp
+auto parsed = tessstep::Document::parse(bytes);
+if (!parsed) return 1;
+auto solid = parsed.value().import_tessellated(1000, 0.001);
+if (!solid) return 1; // solid.error().import_failure locates the failing entity
+auto mesh_view = solid.value().mesh.view();
+auto graphics = parsed.value().import_presentation(300, 0.001);
+if (!graphics) return 1;
+auto view = graphics.value().view(); // Zero-copy; retains the graphics.
+for (size_t i = 0; i < view.value().data().polyline_count; ++i) { /* draw a polyline */ }
+```
+
+Ten new functions bring the library to 50 C exports; the other new frozen layouts are
+the 80-byte tessellated info, 64-byte presentation info, 24-byte item and 104-byte
+view records on supported 64-bit targets. Existing ABI-1 records, symbols and statuses
+keep their contract. Discovery and representation selection remain Rust-only.
+
 ## Errors and panic containment
 
 C operations return stable typed status codes and explicit diagnostic access.
@@ -308,13 +360,13 @@ parent destruction, and the absence of copies on documented zero-copy paths.
 Exercise relocation and `find_package` through `TessSTEP::TessSTEP` on all supported
 platforms, with sanitizer and ABI/layout checks where applicable.
 
-The document, mesh, scene and appearance subsets are exercised by `cargo test -p tessstep-capi` and
+The document, mesh, scene, appearance, solid-import, tessellation and presentation subsets are exercised by `cargo test -p tessstep-capi` and
 `python3 scripts/check_capi.py`. The latter installs and relocates the package,
 compiles/runs independent C11 and C++17 consumers in Debug/Release (plus a C-only
 CMake project) with Rust tool
 invocations blocked, and verifies the exact exported symbol set. Release packaging
 runs those same consumers. Native consumer ASan/UBSan is available with
-`--sanitizers`; this does not instrument the Rust library. Mesh lifetime, pointer stability, ownership, failure and zero-copy
+`--sanitizers`; this does not instrument the Rust library. Mesh and presentation lifetime, pointer stability, ownership, failure and zero-copy
 acceptance checks run in those consumers. See [ARCHITECTURE.md](ARCHITECTURE.md) and
 [CONFORMANCE.md](CONFORMANCE.md).
 

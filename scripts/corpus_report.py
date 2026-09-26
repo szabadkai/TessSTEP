@@ -5,7 +5,7 @@ import json
 
 STAGES = ("physical_parse", "references", "schema", "product", "geometry", "tessellation")
 FAULTS = {"crash", "timeout", "runner_error", "nondeterministic"}
-UNTESTED = {"not_run", "not_configured", "not_integrated", "not_implemented"}
+UNTESTED = {"not_run", "not_configured", "not_integrated", "not_implemented", "not_applicable"}
 
 
 def source_of(path):
@@ -38,15 +38,23 @@ def verdict(case, baseline_present=False):
 
 
 def geometry_totals(cases):
-    """Root-level solid import outcomes; categories count roots, not files."""
+    """Root-level shape import and annotation outcomes; categories count roots, not files."""
     results = [c["geometry_result"] for c in cases if c.get("geometry_result")]
-    total = lambda key: sum(r[key] for r in results)
-    merged = lambda key: dict(sum((Counter(r[key]) for r in results), Counter()).most_common(15))
+    total = lambda key: sum(r.get(key, 0) for r in results)
+    merged = lambda key: dict(sum((Counter(r.get(key, {})) for r in results), Counter()).most_common(15))
+    presentations = [r["presentation"] for r in results if r.get("presentation")]
+    shown = lambda key: sum(p[key] for p in presentations)
     return {"files_surveyed": len(results), "files_with_roots": sum(r["root_count"] > 0 for r in results),
             "root_count": total("root_count"), "surveyed_roots": total("surveyed_roots"),
             "geometry_roots": total("geometry_roots"), "accepted_roots": total("accepted_roots"),
+            "tessellated_roots": total("tessellated_roots"), "tessellated_accepted": total("tessellated_accepted"),
+            "alternative_roots": total("alternative_roots"),
             "outcomes": merged("outcomes"), "categories": merged("categories"),
-            "unsupported_entity_types": merged("unsupported_entity_types")}
+            "unsupported_entity_types": merged("unsupported_entity_types"),
+            "presentation": {"files_with_occurrences": sum(p["occurrence_count"] > 0 for p in presentations),
+                             **{key: shown(key) for key in ("occurrence_count", "surveyed", "with_context_units", "accepted",
+                                                            "polylines", "triangles", "points", "zero_area_triangles")},
+                             "outcomes": dict(sum((Counter(p["outcomes"]) for p in presentations), Counter()).most_common(15))}}
 
 
 def aggregate(cases, baseline_present=False):
@@ -97,9 +105,15 @@ def render(report):
     g = stats["geometry"]
     survey = report.get("geometry_survey") or {}
     table = lambda title, counts: f'<div class="panel"><table><tr><th>{esc(title)}</th><th>Roots</th></tr>' + ''.join(f'<tr><td>{esc(k)}</td><td>{v}</td></tr>' for k, v in counts.items()) + '</table></div>'
-    geometry_panel = (f'<h2>Solid import outcomes</h2><p class="muted">Every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root, imported with the selected-root planar/faceted profiles at an assumed {esc(survey.get("metres_per_unit", "—"))} metres per source unit. '
-                      f'{g["root_count"]:,} roots in {g["files_with_roots"]:,} files; {g["geometry_roots"]:,} passed geometry/topology and {g["accepted_roots"]:,} produced solid meshes.</p>'
-                      + table("First failing stage : kind", g["outcomes"]) + table("Failure category (IDs as N)", g["categories"]) + table("Entity type outside the import profile", g["unsupported_entity_types"])) if g["files_surveyed"] else ""
+    shown = g["presentation"]
+    geometry_panel = (f'<h2>Shape import outcomes</h2><p class="muted">Every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the selected-root B-rep/faceted profiles, and every TESSELLATED_SOLID, TESSELLATED_SHELL and directly represented triangulated surface set with the existing-tessellation profile, in discovered context units or an assumed {esc(survey.get("metres_per_unit", "—"))} metres per source unit. '
+                      f'{g["root_count"]:,} roots in {g["files_with_roots"]:,} files; {g["geometry_roots"]:,} passed geometry/topology and {g["accepted_roots"]:,} produced meshes. '
+                      f'{g["tessellated_accepted"]:,} of {g["tessellated_roots"]:,} existing tessellations imported; {g["alternative_roots"]:,} roots are alternative representations of another root.</p>'
+                      + table("First failing stage : kind", g["outcomes"]) + table("Failure category (IDs as N)", g["categories"]) + table("Entity type outside the import profile", g["unsupported_entity_types"])
+                      + f'<h2>Presentation tessellation outcomes</h2><p class="muted">Every TESSELLATED_ANNOTATION_OCCURRENCE as placed polylines, points and fill triangles; not meshes. '
+                      f'{shown["occurrence_count"]:,} occurrences in {shown["files_with_occurrences"]:,} files ({shown["with_context_units"]:,} with context units); {shown["accepted"]:,} imported: '
+                      f'{shown["polylines"]:,} polylines, {shown["triangles"]:,} triangles ({shown["zero_area_triangles"]:,} zero-area), {shown["points"]:,} points.</p>'
+                      + table("First failing stage : kind", shown["outcomes"])) if g["files_surveyed"] else ""
     changes = report.get("baseline_changes", [])
     change_rows = ''.join(f'<tr><td>{esc(c["kind"])}</td><td>{esc(c["path"])}</td><td>{esc(json.dumps(c.get("details", {"before":c.get("before"),"after":c.get("after")})))}</td></tr>' for c in changes)
     history = ''.join(f'<tr><td>{esc(h["run_id"])}</td><td>{h["unique_inputs"]}</td><td>{h["unique_statuses"].get("clean",0)}</td><td>{h["unique_statuses"].get("rejected",0)}</td><td>{h["unique_statuses"].get("reference_errors",0)}</td><td>{h.get("seconds",0):.1f}</td></tr>' for h in report.get("history", [])[-30:])
@@ -108,7 +122,7 @@ def render(report):
 :root{color-scheme:light}*{box-sizing:border-box}body{font:14px system-ui;margin:0;background:#f3f6fa;color:#152435}header{padding:28px 32px;background:#122b42;color:white}h1{margin:4px 0 12px;font-size:30px}main{padding:24px 32px}h2{font-size:20px;margin:28px 0 12px}.muted{color:#607087}.cards{display:flex;gap:12px;flex-wrap:wrap}.card{background:white;border:1px solid #dbe3ed;border-radius:10px;padding:18px;min-width:150px;flex:1}.card strong{display:block;font-size:28px;margin-bottom:5px}.panel{background:white;border:1px solid #dbe3ed;border-radius:10px;overflow:auto;margin:12px 0}table{border-collapse:collapse;width:100%}td,th{text-align:left;border-bottom:1px solid #e3e9f0;padding:10px;vertical-align:top}th{background:#eaf0f6;white-space:nowrap}.stage{font-size:12px}summary{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:720px;font-size:12px}td:first-child{min-width:260px;max-width:560px;overflow-wrap:anywhere}meter{width:100px;vertical-align:middle}.pill{display:inline-block;padding:3px 7px;border-radius:12px;background:#eaf0f6}.passed,.compatible{background:#dff2e9;color:#155b3e}.failed{background:#ffe0e0;color:#9a1f1f}.unreviewed{background:#fff0cd;color:#694a00}input,select{font:inherit;padding:9px;border:1px solid #bccada;border-radius:6px;margin:4px}input{min-width:270px}.filters{display:flex;flex-wrap:wrap;align-items:center}a{color:#2564b2}.note{border-left:4px solid #378ab0;padding:10px 16px;background:#eaf3f9;line-height:1.6}button{padding:8px;border:1px solid #bccada;border-radius:6px;background:white;cursor:pointer}@media(max-width:700px){main,header{padding:18px}.card{min-width:130px}h1{font-size:25px}}
 </style></head><body>''' + f'''<header><div>TEST EVIDENCE · REPORT V2</div><h1>{esc(report.get("title", "TessSTEP external STEP compatibility"))}</h1><div>{esc(report["run_id"])} · source {esc(report["source_fingerprint"][:12])} · {report["summary"]["seconds"]:.1f}s</div></header><main>
 <div class="cards">{''.join(f'<div class="card"><strong>{n:,}</strong>{esc(label)}</div>' for label,n in cards)}</div>
-<p class="note">Physical acceptance is not CAD conformance. Rejected adversarial files may be correct. <b>Passed</b> means reviewed expectations matched; <b>compatible</b> means no regression against an observation baseline; <b>unreviewed</b> has no oracle.<br>Schema/product checks require configured validators. Geometry and tessellation import each solid root with bounded selected-root profiles; <b>partial</b> means only some roots in the file imported. Profile rejection is not an AP validity verdict. <b>Not configured, not integrated and not run are not passes.</b></p>
+<p class="note">Physical acceptance is not CAD conformance. Rejected adversarial files may be correct. <b>Passed</b> means reviewed expectations matched; <b>compatible</b> means no regression against an observation baseline; <b>unreviewed</b> has no oracle.<br>Schema/product checks require configured validators. Geometry and tessellation import each solid root with bounded selected-root profiles, and geometry also covers existing shape tessellations, whose tessellation stage is <b>not applicable</b>; <b>partial</b> means only some roots in the file imported. Profile rejection is not an AP validity verdict. <b>Not configured, not integrated, not applicable and not run are not passes.</b></p>
 <p><a href="latest.json">JSON</a> · <a href="summary.md">Markdown summary</a> · <a href="junit.xml">JUnit</a> · <a href="cases.csv">CSV</a></p>
 <h2>Coverage by stage</h2><div class="panel"><table><tr><th>Stage</th><th>Executed / unique inputs</th><th>Outcomes</th></tr>{stage_rows}</table></div>{geometry_panel}
 <h2>Coverage by source</h2><p class="muted">One primary source per unique content; duplicate aliases remain listed per file.</p><div class="panel"><table><tr><th>Source</th><th>Unique</th><th>Paths</th><th>Clean</th><th>Missing references</th><th>Rejected</th><th>Failed checks</th></tr>{source_rows}</table></div>

@@ -627,7 +627,11 @@ fn discovery_reports_missing_and_conflicting_units_without_defaults() {
     let roots = discover(SEAM_CYLINDER);
     assert_eq!(roots.len(), 1);
     let error = roots[0].units.clone().unwrap_err();
-    assert!(error.message.contains("no supported shape representation"));
+    assert!(
+        error
+            .message
+            .contains("no supported representation contains the root")
+    );
     // A second representation in metres conflicts with the millimetre context.
     let conflicting = CYLINDER.replace(
             "#2009=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#1000),#2008);",

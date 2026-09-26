@@ -505,6 +505,28 @@ than repairs: opposing normals, inverted solids and open solids fail with typed,
 located errors. Strip-stitching triangles are the only omitted input, and their count
 is reported. No new crate edge, unsafe code or production dependency is introduced.
 
+The completion keeps those boundaries. The adapter now plans every face (checked
+counts and face-local triangles) before creating vertices. Connecting edges can then
+join coordinate identities in a deterministic union-find, towards the smallest
+identity, and the owned-mesh validator stays the single closure gate. Presentation
+graphics live in a child module that reuses the same checked reader, budgets and
+face planner but writes its own scalar arrays: graphics must not pass through
+`tessstep-mesh`, whose manifold and orientation invariants real annotations violate.
+Placements are composed as plain affine maps inside the adapter; no product placement
+or scene semantics are involved. Discovery shares one representation/unit resolver
+across solids, tessellations and annotations, with containers (callouts, annotation
+planes) resolved transitively from physical references before any decoding.
+Representation selection reads physical link and relationship records and imports
+nothing.
+
+The decoder gains one opt-in slot mode, `OmittedSlot::allow_value`, for attributes the
+standard derives but exporters write explicitly. The value is still domain-checked,
+and ordinary decoding is unchanged. The C bridge adds one private module: tessellated
+import returns the existing mesh handle, and presentations get their own
+reference-counted handle with scalar storage copied once at creation, so views never
+expose Rust layouts. The one tolerated exporter deviation (an understated `pnmax`) is
+governed by the existing strict policy and counted in every result.
+
 ## Curved B-rep import architecture review
 
 Curved import stays inside the `tessstep-import` composition boundary. A fourth

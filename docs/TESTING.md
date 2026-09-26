@@ -14,9 +14,6 @@ python3 scripts/check_corpus.py
 python3 scripts/check_cli.py
 python3 scripts/check_express.py
 python3 scripts/conformance.py --check
-cargo bench -p tessstep-part21 --bench parser
-cargo bench -p tessstep-express --bench compiler
-cargo bench -p tessstep-codegen --bench generator
 cargo test -p tessstep-model --test fuzz_smoke -- --nocapture
 cargo test -p tessstep-express --test fuzz_smoke -- --nocapture
 ```
@@ -44,7 +41,9 @@ see `fuzz/README.md`. Save a minimized failure as a reproducible regression.
 
 PR CI covers stable Linux/Windows/macOS, the MSRV, parser/property/corpus tests, architecture,
 format/lint, conformance generation, JSON determinism, dependency policy and advisory checks.
-Scheduled CI runs release tests, benchmarks, and short instrumented fuzz sessions. Longer
+Scheduled CI runs release tests, benchmarks, and short instrumented fuzz sessions.
+Benchmarks run automatically only there (artifact `benchmark-results`); the
+`cargo bench` targets named below are not part of local verification. Longer
 runs for memory profiling, huge datasets, CAD differential testing and cross-platform
 numerics belong to later milestones and are not claimed by the current suite.
 
@@ -175,7 +174,6 @@ rational surface jets. Setup is outside timing; checked evaluation is inside.
 ```sh
 cargo test -p tessstep-topology -p tessstep-trim -p tessstep-tessellate
 cargo test -p tessstep-topology -p tessstep-trim -p tessstep-tessellate --release
-cargo bench -p tessstep-tessellate --bench boundaries
 cargo fuzz run brep_pipeline -- -max_total_time=120 -max_len=96
 ```
 
@@ -228,3 +226,18 @@ Explicit assembly expansion tests cover reversed endpoints, noncommuting nested 
 alternative selection, missing placements, exact instance limits and a 2,000-level graph.
 The product corpus now contains eleven schema-accepted fixtures with six accepted, four
 rejected and one unsupported product outcomes. Its checker verifies numerical values.
+
+## Existing and presentation tessellations (Milestone 20)
+
+`cargo test -p tessstep-import --test tessellated --test presentation` covers every
+face encoding, edges, vertices and connecting-edge identity, presentation graphics with
+composed placements, discovery through callouts and annotation planes, representation
+selection, typed and located rejections, strict and tolerant policies, record-order
+invariance and 300 deterministic byte mutations per profile. `cargo test -p
+tessstep-capi --test tessellated` and the installed C/C++ consumers check the ABI 1
+layouts, ownership, output clearing and retained zero-copy presentation views.
+`python3 scripts/check_geometry.py --require-external` checks the authored fixtures,
+the selection survey and five hash-pinned exporter files. The corpus runner surveys
+every shape tessellation root and annotation occurrence. Fuzz targets are
+`tessellated_import` and `presentation_import`; the nightly
+`cargo bench -p tessstep-import --bench tessellated` run measures both imports.

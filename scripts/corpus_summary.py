@@ -29,8 +29,13 @@ def markdown(report):
     g = stats["geometry"]
     if g["files_surveyed"]:
         cell = lambda text: html.escape(str(text)).replace("|", "&#124;").replace("\n", " ")
-        lines += ["", f'**Solid import:** {g["root_count"]:,} roots in {g["files_with_roots"]:,} files; '
-                  f'{g["geometry_roots"]:,} passed geometry/topology; {g["accepted_roots"]:,} produced solid meshes.', "",
+        shown = g["presentation"]
+        lines += ["", f'**Shape import:** {g["root_count"]:,} roots in {g["files_with_roots"]:,} files; '
+                  f'{g["geometry_roots"]:,} passed geometry/topology; {g["accepted_roots"]:,} produced meshes; '
+                  f'{g["tessellated_accepted"]:,} of {g["tessellated_roots"]:,} existing tessellations imported; '
+                  f'{g["alternative_roots"]:,} alternative representations.', "",
+                  f'**Presentation tessellations:** {shown["accepted"]:,} of {shown["occurrence_count"]:,} annotation occurrences in '
+                  f'{shown["files_with_occurrences"]:,} files imported ({shown["polylines"]:,} polylines, {shown["triangles"]:,} triangles).', "",
                   "| First failing stage : kind | Roots |", "| --- | ---: |"]
         lines += [f"| {cell(k)} | {v:,} |" for k, v in g["outcomes"].items()]
         lines += ["", "| Top failure categories | Roots |", "| --- | ---: |"]
@@ -39,7 +44,7 @@ def markdown(report):
     lines += [f'| {html.escape(name).replace(chr(124), "&#124;").replace(chr(10), " ")} | {s["unique_inputs"]} | {s["statuses"].get("clean",0)} | {s["statuses"].get("reference_errors",0)} | {s["statuses"].get("rejected",0)} | {s["verdicts"].get("failed",0)} |' for name,s in stats['sources'].items()]
     lines += ["", f'Baseline changes: `{dict(Counter(c["kind"] for c in changes))}`.', "",
               "Physical acceptance is not CAD conformance; a reviewed adversarial rejection can pass.",
-              "Unconfigured/skipped stages are not passes. Geometry and tessellation import every solid root with bounded selected-root profiles at an assumed unit scale; profile rejection is not an AP validity verdict.",
+              "Unconfigured/skipped/not-applicable stages are not passes. Geometry and tessellation import every solid and shape tessellation root with bounded selected-root profiles in discovered or assumed units; profile rejection is not an AP validity verdict.",
               "See the separate kernel test report for constructed geometry, mesh and C ABI test evidence.", "",
               "Artifacts contain searchable HTML, JSON, Markdown, JUnit and CSV; no external CAD inputs.",
               f'Executable SHA-256: `{report["binary_sha256"]}`', ""]

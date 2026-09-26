@@ -679,7 +679,7 @@
       "path": "geometry/tessellated-edge.step",
       "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
       "license": "MIT",
-      "sha256": "ca11a94248c391198d9a3b9bb1a2b09d492fa370ad0aea3a61a4680403458796",
+      "sha256": "c3b07f549e18a0290141f6150f1280d3d7a4ba51c08e2aa770ac7611a981f63e",
       "syntax": "valid"
     },
     {
@@ -700,8 +700,36 @@
       "path": "geometry/tessellated.exp",
       "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
       "license": "MIT",
-      "sha256": "d52914cb7cebb81986fa67a14094c910e75da20c7d032c2c928a51be10b65622",
+      "sha256": "23918c95a5aa5e41f50e2f781084545cc302215b96dce41e82902cde0ee5ce8e",
       "syntax": "express-profile"
+    },
+    {
+      "path": "geometry/tessellated-bezier.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "2c299aa957d8085e179af6eb2335553d2959e71221c5b9ce21a30927c3ffe425",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/tessellated-connected.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "1c3fd58631ebb92fb1152356a2a152b5febd179b41c76cf9edc6ad9aa328d229",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/tessellated-selection.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "aeff449dff2a204f35cdda9d3473e8b2f51cb07a92e9df6300bdf00057bc3b6e",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/presentation.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "cdd232f3273182328f21ad0f60f3015229fe4b3eb462be34a8435308647b54f8",
+      "syntax": "valid"
     },
     {
       "path": "geometry/brep-ambiguous-outer.step",
@@ -791,7 +819,7 @@
       "path": "geometry/context.exp",
       "source": "Original TessSTEP representation-context discovery profile; authored here, no third-party CAD or ISO schema copied.",
       "license": "MIT",
-      "sha256": "c4463f7c5b1e7752eab099eb758c8e8a07d595c39198078f957a002db385892d",
+      "sha256": "76dca07b6bc769443be606bc90735bc938200b9b4bacffba66e6d635d250b31c",
       "syntax": "express-profile"
     },
     {

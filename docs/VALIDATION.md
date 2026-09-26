@@ -128,6 +128,53 @@ tolerance from their surface (90), annuli without aligned seam vertices (85),
 unresolved pcurve fits (31), swept surfaces (52), cavity shells (16) and degenerate
 UV loops (16). Every `OpenShell` topology failure is in the synthetic catalog.
 
+# Milestone 20 completion — 2026-09-26
+
+Completed the existing-tessellation milestone: tessellated edges, vertices and
+connecting-edge identity; presentation tessellations as placed graphics;
+tessellated-root and annotation discovery with representation selection; C/C++ entry
+points; and the corpus survey of both. See
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). The decoder gained the opt-in
+`OmittedSlot::allow_value` mode. Benchmarks were not run locally: they run
+automatically in the nightly CI workflow, which now also covers the presentation
+measurement.
+
+Observed locally on macOS arm64, rustc 1.98.1:
+
+| Check | Result |
+| --- | --- |
+| `python3 scripts/check_kernel.py` (`cargo test --workspace`) | 249 tests passed |
+| Workspace fmt, Clippy (all targets and features) and rustdoc with warnings denied | passed |
+| Architecture, authored fixture provenance and generated conformance | passed; 19 packages, 98 fixtures |
+| Python verification tests | 43 passed |
+| CLI, EXPRESS, schema, product and metamorphic checks | passed |
+| `check_geometry.py --require-external` | 66 reviewed outcomes passed, including 7 authored tessellated fixtures, 2 authored annotation roots, the selection survey and 5 hash-pinned exporter files |
+| `check_capi.py` (installed package, without sanitizers) | passed; exactly 50 C exports; relocation, Debug/Release, C-only and C++ consumers |
+| `cargo check --manifest-path fuzz/Cargo.toml --locked` (unnested copy) | passed with the new `presentation_import` target; no coverage-guided run |
+
+`python3 scripts/corpus.py --check` first failed on 16 synthetic `dodgy-step-files`
+inputs. Their tessellated roots failed at the profile stage, and the survey reported
+the tessellation stage as `not_run` where the new protocol requires `not_applicable`.
+The survey was corrected. The rerun then showed 52 baseline changes against unchanged
+physical outcomes (2,821 clean, 38 reference-error and 368 rejected unique inputs).
+Each change was reviewed; none is a lost outcome for a previously surveyed root:
+
+| Change | Inputs |
+| --- | --- |
+| Annotation occurrences newly measured | 32 |
+| Tessellated-only files from `no_shape_roots` to `accepted` (NIST FTC-08 copies, CATIA cuboid, HOOPS shell, one synthetic) | 5 |
+| Synthetic files from `no_shape_roots` to `rejected`: malformed tessellated roots rejected at profile | 14 |
+| `M025.stp` from `accepted` to `partial`: its B-rep root is unchanged; its newly surveyed tessellated alternative is malformed | 1 (flagged as a regression) |
+
+The baseline was then saved and `--check` passes against it: 3,227 compatible unique
+inputs in 224 s. Across unique inputs, 1,197 shape roots in 584 files; 718 pass
+geometry/topology and 564 produce meshes (557 before). 7 of 24 tessellated roots
+import (every real exported one; the rest are synthetic), and 2 roots are selected
+alternatives. 1,359 of 1,366 annotation occurrences in 35 files import (1,360 with
+context units): 29,724 polylines and 533,644 fill triangles, including 830 zero-area
+triangles. The 7 failures are synthetic files (5) and two over-riding-style complex
+instances outside the profile.
+
 # Existing tessellation import (Milestone 20) — 2026-09-26
 
 Added selected-root import of `TESSELLATED_SOLID`, `TESSELLATED_SHELL` and

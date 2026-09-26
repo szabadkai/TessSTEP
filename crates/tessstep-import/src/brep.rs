@@ -72,6 +72,7 @@ pub fn import_brep_solid(
         entity,
         attribute,
         allow_unset: !options.strict,
+        allow_value: false,
     });
     let links = [decode::LinkSlot {
         entity: s::Entity_SURFACE_CURVE::DECLARATION,

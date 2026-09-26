@@ -148,11 +148,15 @@ pub struct OmittedSlot {
     pub attribute: &'static str,
     /// Also accept `$`, a common nonconformant exporter encoding of the same slot.
     pub allow_unset: bool,
+    /// Also accept an explicit value of the declared domain, a nonconformant
+    /// encoding that writes the derived value instead of `*`. It is checked like
+    /// any other value; the adapter still derives the semantic value.
+    pub allow_value: bool,
 }
 
 /// Decode a selected reference closure under an explicit physical mapping profile.
-/// Only declared slots accept `*` (or `$` when the slot allows it), and those slots
-/// reject every other value.
+/// Only declared slots accept `*` (or `$`, or a checked explicit value, when the slot
+/// allows it), and those slots reject every other value.
 /// Ordinary `decode` and `decode_reachable` never permit this override. Metadata
 /// rules/unsupported diagnostics are still checked without suppression.
 pub fn decode_reachable_profile<'a>(
@@ -438,14 +442,17 @@ fn decode_scope<'a>(
                         for index in 0..cx.types[&entity.id].len() {
                             cx.tick()?;
                             if cx.types[&entity.id][index] == slot.entity {
-                                placeholder = Some(slot.allow_unset);
+                                placeholder = Some((slot.allow_unset, slot.allow_value));
                             }
                         }
                     }
                 }
-                if let Some(allow_unset) = placeholder {
+                if let Some((allow_unset, allow_value)) = placeholder {
                     let unset = allow_unset && matches!(value.kind, ValueKind::Null);
-                    if !matches!(value.kind, ValueKind::Omitted) && !unset {
+                    if matches!(value.kind, ValueKind::Omitted) || unset {
+                    } else if allow_value {
+                        cx.value(&attribute.domain, value, attribute.optional, 0)?;
+                    } else {
                         return Err(cx.error(
                             ErrorKind::TypeMismatch,
                             "physical-profile slot requires a derived marker",

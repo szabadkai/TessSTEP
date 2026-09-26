@@ -100,7 +100,36 @@ using ImportPolicy = ts_import_policy;
 inline ImportPolicy default_import_policy() noexcept {
     ImportPolicy policy{}; ts_import_policy_init(&policy); return policy;
 }
+// flags |= TS_IMPORT_STRICT rejects the tolerated PNMAX deviation (see tessstep.h).
+using TessellatedOptions = ts_tessellated_options;
+inline TessellatedOptions default_tessellated_options() noexcept {
+    TessellatedOptions options{}; ts_tessellated_options_init(&options); return options;
+}
+using TessellatedInfo = ts_tessellated_info;
+enum class TessellatedKind : uint32_t {
+    solid = TS_TESSELLATED_SOLID, shell = TS_TESSELLATED_SHELL, surface_set = TS_TESSELLATED_SURFACE_SET
+};
+using PresentationOptions = ts_presentation_options;
+inline PresentationOptions default_presentation_options() noexcept {
+    PresentationOptions options{}; ts_presentation_options_init(&options); return options;
+}
+using PresentationInfo = ts_presentation_info;
+using PresentationItem = ts_presentation_item;
+enum class PresentationKind : uint32_t {
+    curve_set = TS_PRESENTATION_CURVE_SET, point_set = TS_PRESENTATION_POINT_SET,
+    surface_set = TS_PRESENTATION_SURFACE_SET
+};
+namespace detail {
+inline Error import_error(ts_status status, const ts_import_error& failure) {
+    auto e = error(status);
+    e.import_failure = {static_cast<ImportStage>(failure.stage), failure.entity_id,
+        failure.start_offset, failure.end_offset};
+    return e;
+}
+}
 class Mesh;
+struct TessellatedImport;
+class Presentation;
 class Document {
     std::unique_ptr<ts_document, detail::DocumentDeleter> handle_;
     explicit Document(ts_document* handle) noexcept : handle_(handle) {}
@@ -134,6 +163,12 @@ public:
         const FacetedOptions* options = nullptr) const;
     Result<Mesh> tessellate_planar(uint64_t entity_id, double metres_per_unit,
         const PlanarOptions* options = nullptr, const ImportPolicy* policy = nullptr) const;
+    // Existing triangulations, without retessellation. The owned results survive
+    // this document; info carries the provenance counts.
+    Result<TessellatedImport> import_tessellated(uint64_t entity_id, double metres_per_unit,
+        const TessellatedOptions* options = nullptr) const;
+    Result<Presentation> import_presentation(uint64_t entity_id, double metres_per_unit,
+        const PresentationOptions* options = nullptr) const;
     // A moved-from Document is safe to destroy, reassign or query. Queries return
     // invalid_argument. Concurrent const queries require the wrapper to stay alive.
     Result<DocumentInfo> info() const {
@@ -252,6 +287,96 @@ inline Result<Mesh> Document::tessellate_planar(uint64_t entity_id, double metre
         return error;
     }
     return mesh;
+}
+
+struct TessellatedImport {
+    Mesh mesh;
+    TessellatedInfo info;
+    TessellatedKind kind() const noexcept { return static_cast<TessellatedKind>(info.kind); }
+};
+
+inline Result<TessellatedImport> Document::import_tessellated(uint64_t entity_id,
+    double metres_per_unit, const TessellatedOptions* options) const {
+    ts_mesh* raw = nullptr;
+    ts_tessellated_info info{};
+    ts_import_error failure{};
+    const auto status = ts_document_import_tessellated(handle_.get(), entity_id,
+        metres_per_unit, options, &raw, &info, &failure);
+    Mesh mesh(raw);
+    if (status != TS_OK) return detail::import_error(status, failure);
+    return TessellatedImport{std::move(mesh), info};
+}
+
+namespace detail {
+struct PresentationDeleter {
+    void operator()(ts_presentation* p) const noexcept { ts_presentation_release(p); }
+};
+}
+// Like MeshView: each view retains the presentation, so it survives destruction or
+// movement of the originating Presentation. Arrays are never copied.
+class PresentationView {
+    std::unique_ptr<ts_presentation, detail::PresentationDeleter> owner_;
+    ts_presentation_view data_{};
+    friend class Presentation;
+    PresentationView(ts_presentation* owner, ts_presentation_view data) noexcept
+        : owner_(owner), data_(data) {}
+public:
+    PresentationView(const PresentationView&) = delete;
+    PresentationView& operator=(const PresentationView&) = delete;
+    PresentationView(PresentationView&& other) noexcept
+        : owner_(std::move(other.owner_)), data_(std::exchange(other.data_, ts_presentation_view{})) {}
+    PresentationView& operator=(PresentationView&& other) noexcept {
+        if (this != &other) { owner_ = std::move(other.owner_); data_ = std::exchange(other.data_, ts_presentation_view{}); }
+        return *this;
+    }
+    ~PresentationView() noexcept = default;
+    const ts_presentation_view& data() const noexcept { return data_; }
+};
+// Placed annotation graphics (polylines, points, fill triangles); not a mesh.
+class Presentation {
+    friend class Document;
+    std::unique_ptr<ts_presentation, detail::PresentationDeleter> handle_;
+    explicit Presentation(ts_presentation* raw) noexcept : handle_(raw) {}
+public:
+    Presentation(const Presentation&) = delete;
+    Presentation& operator=(const Presentation&) = delete;
+    Presentation(Presentation&&) noexcept = default;
+    Presentation& operator=(Presentation&&) noexcept = default;
+    ~Presentation() noexcept = default;
+    Result<PresentationInfo> info() const {
+        PresentationInfo info{}; auto status = ts_presentation_get_info(handle_.get(), &info);
+        if (status != TS_OK) return detail::error(status);
+        return info;
+    }
+    Result<PresentationItem> item_at(size_t index) const {
+        PresentationItem item{}; auto status = ts_presentation_item_at(handle_.get(), index, &item);
+        if (status != TS_OK) return detail::error(status);
+        return item;
+    }
+    Result<uint64_t> style_at(size_t index) const {
+        uint64_t style = 0; auto status = ts_presentation_style_at(handle_.get(), index, &style);
+        if (status != TS_OK) return detail::error(status);
+        return style;
+    }
+    Result<PresentationView> view() const {
+        ts_presentation_view data{};
+        auto status = ts_presentation_get_view(handle_.get(), &data);
+        if (status != TS_OK) return detail::error(status);
+        status = ts_presentation_retain(handle_.get());
+        if (status != TS_OK) return detail::error(status);
+        return PresentationView(handle_.get(), data);
+    }
+};
+
+inline Result<Presentation> Document::import_presentation(uint64_t entity_id,
+    double metres_per_unit, const PresentationOptions* options) const {
+    ts_presentation* raw = nullptr;
+    ts_import_error failure{};
+    const auto status = ts_document_import_presentation(handle_.get(), entity_id,
+        metres_per_unit, options, &raw, &failure);
+    Presentation presentation(raw);
+    if (status != TS_OK) return detail::import_error(status, failure);
+    return presentation;
 }
 
 using SceneOptions = ts_scene_options;

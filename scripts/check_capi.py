@@ -16,6 +16,10 @@ SYMBOLS = {
     "ts_planar_options_init", "ts_document_tessellate_planar",
     "ts_import_policy_init", "ts_document_tessellate_planar_with_policy",
     "ts_faceted_options_init", "ts_document_tessellate_faceted",
+    "ts_tessellated_options_init", "ts_document_import_tessellated",
+    "ts_presentation_options_init", "ts_document_import_presentation", "ts_presentation_retain",
+    "ts_presentation_release", "ts_presentation_get_info", "ts_presentation_item_at",
+    "ts_presentation_style_at", "ts_presentation_get_view",
     "ts_appearance_options_init", "ts_appearance_create", "ts_appearance_retain", "ts_appearance_release",
     "ts_appearance_get_info", "ts_appearance_material_at", "ts_appearance_binding_at",
     "ts_appearance_resolve_triangle", "ts_appearance_get_scene",
@@ -79,6 +83,8 @@ def verify_installed(package, *, sanitizers=False):
         shutil.copy2(ROOT / "corpus/geometry/box.step", source / "faceted.step")
         shutil.copy2(ROOT / "corpus/geometry/planar-box.step", source / "planar.step")
         shutil.copy2(ROOT / "corpus/geometry/planar-placeholder.step", source / "placeholder.step")
+        shutil.copy2(ROOT / "corpus/geometry/tessellated-connected.step", source / "tessellated.step")
+        shutil.copy2(ROOT / "corpus/geometry/presentation.step", source / "presentation.step")
         external = Path(os.environ.get("TESSSTEP_CORPUS", str(Path.home() / "step-corpus"))) / "vendor/foxtrot/examples/cuboid.step"
         if external.is_file():
             expected = json.loads((ROOT / "corpus/geometry/external-planar.json").read_text())

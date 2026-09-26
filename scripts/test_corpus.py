@@ -141,9 +141,18 @@ class CorpusTests(unittest.TestCase):
         current["stages"]["product"] = "rejected"
         self.assertEqual(corpus.compare([current], {"cases": [old]})[0]["kind"], "regression")
 
+    @staticmethod
+    def presentation(occurrences=0, accepted=0):
+        outcomes = {"accepted": accepted} if accepted else {}
+        if occurrences > accepted:
+            outcomes["geometry:invalid_geometry"] = occurrences - accepted
+        return {"occurrence_count": occurrences, "surveyed": occurrences, "truncated": False, "with_context_units": occurrences,
+                "accepted": accepted, "polylines": 2 * accepted, "triangles": 3 * accepted, "points": 0,
+                "zero_area_triangles": 0, "outcomes": outcomes, "failures": []}
+
     def survey(self, roots, code=0, **overrides):
-        payload = {"format_version": 1, "scope": "solid-survey", "metres_per_unit": 0.001, "parse": "accepted",
-                   "root_count": len(roots), "truncated": False, "roots": roots, **overrides}
+        payload = {"format_version": 2, "scope": "shape-survey", "metres_per_unit": 0.001, "parse": "accepted",
+                   "root_count": len(roots), "truncated": False, "roots": roots, "presentation": self.presentation(), **overrides}
         result = case()
         result["seconds"] = 0
         result["stages"].update(geometry="not_integrated", tessellation="not_integrated")
@@ -155,16 +164,18 @@ class CorpusTests(unittest.TestCase):
         return result
 
     @staticmethod
-    def root(status="accepted", stage=None, kind=None, message="", entity_type=""):
-        stages = {"profile": "accepted", "geometry": "accepted", "tessellation": "accepted"}
+    def root(status="accepted", stage=None, kind=None, message="", entity_type="", profile="brep", selection="selected"):
+        tessellated = profile == "tessellated"
+        stages = {"profile": "accepted", "geometry": "accepted", "tessellation": "not_applicable" if tessellated else "accepted"}
+        common = {"id": 1, "profile": profile, "selection": selection, "paired_with": [], "seconds": 0.1}
         if status != "accepted":
-            order = ["profile", "geometry", "tessellation"]
+            order = ["profile", "geometry"] if tessellated else ["profile", "geometry", "tessellation"]
             failed = "geometry" if stage == "topology" else stage
             for s in order[order.index(failed):]:
                 stages[s] = status if s == failed else "not_run"
-            return {"id": 1, "status": status, "stages": stages, "failed_stage": stage, "kind": kind,
-                    "entity": 7, "entity_type": entity_type, "message": message, "seconds": 0.1}
-        return {"id": 1, "status": "accepted", "stages": stages, "vertices": 8, "triangles": 12, "seconds": 0.1}
+            return {**common, "status": status, "stages": stages, "failed_stage": stage, "kind": kind,
+                    "entity": 7, "entity_type": entity_type, "message": message}
+        return {**common, "status": "accepted", "stages": stages, "vertices": 8, "triangles": 12}
 
     def test_geometry_stage_aggregates_every_root(self):
         circle = self.root("unsupported", "profile", "unsupported", "CIRCLE is outside the tessstep_planar import profile", "CIRCLE")
@@ -182,10 +193,39 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(self.survey([circle])["stages"]["tessellation"], "not_run")
         self.assertEqual(self.survey([self.root()])["stages"]["geometry"], "accepted")
         empty = self.survey([])
-        self.assertEqual((empty["stages"]["geometry"], empty["stages"]["tessellation"]), ("no_solid_roots", "not_run"))
+        self.assertEqual((empty["stages"]["geometry"], empty["stages"]["tessellation"]), ("no_shape_roots", "not_run"))
+
+    def test_existing_tessellations_have_no_tessellation_stage(self):
+        mesh = self.root(profile="tessellated", selection="alternative")
+        bad = self.root("rejected", "geometry", "invalid_geometry", "supplied normal opposes triangle winding", profile="tessellated")
+        only = self.survey([mesh, mesh])
+        self.assertEqual((only["stages"]["geometry"], only["stages"]["tessellation"]), ("accepted", "not_applicable"))
+        summary = only["geometry_result"]
+        self.assertEqual((summary["accepted_roots"], summary["tessellated_roots"], summary["alternative_roots"]), (2, 2, 2))
+        mixed = self.survey([self.root(), mesh, bad])
+        self.assertEqual((mixed["stages"]["geometry"], mixed["stages"]["tessellation"]), ("partial", "accepted"))
+        self.assertEqual(mixed["geometry_result"]["tessellated_accepted"], 1)
+        # A B-rep root must report a tessellation stage and a tessellated root must not.
+        for root in [dict(mesh, stages=dict(mesh["stages"], tessellation="accepted")), dict(self.root(), profile="tessellated"),
+                     dict(self.root(), selection="chosen"), dict(self.root(), profile="guessed")]:
+            self.assertEqual(self.survey([root])["status"], "runner_error", root)
+
+    def test_presentation_summary_is_checked_and_tracked(self):
+        result = self.survey([], presentation=self.presentation(3, 2))
+        self.assertEqual(result["geometry_result"]["presentation"]["accepted"], 2)
+        for invalid in [None, {**self.presentation(3, 2), "accepted": 4}, {**self.presentation(3, 2), "truncated": True},
+                        {**self.presentation(1, 1), "extra": 0}, {**self.presentation(2, 1), "outcomes": {"accepted": 1}}]:
+            self.assertEqual(self.survey([], presentation=invalid)["status"], "runner_error", invalid)
+        saved = {"sha256": "abc", "paths": ["sample.step"], **corpus.signature(result)}
+        fewer = self.survey([], presentation=self.presentation(3, 1))
+        self.assertEqual(corpus.compare([fewer], {"cases": [saved]})[0]["kind"], "regression")
+        more = self.survey([], presentation=self.presentation(3, 3))
+        self.assertEqual(corpus.compare([more], {"cases": [saved]})[0]["kind"], "changed")
+        # Files without occurrences keep a comparable signature.
+        self.assertIsNone(corpus.signature(self.survey([]))["presentation_accepted"])
 
     def test_geometry_protocol_disagreements_are_runner_errors(self):
-        for overrides, code in [({"scope": "planar-solid"}, 0), ({"parse": "rejected"}, 0),
+        for overrides, code in [({"scope": "solid-survey"}, 0), ({"format_version": 1}, 0), ({"parse": "rejected"}, 0),
                                 ({"root_count": 5}, 0), ({"truncated": True}, 0), ({}, 2)]:
             self.assertEqual(self.survey([self.root()], code, **overrides)["status"], "runner_error", overrides)
         self.assertEqual(self.survey([self.root()], 101)["status"], "crash")
@@ -219,6 +259,10 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(corpus.compare([worse], {"cases": [saved]})[0]["kind"], "regression")
         better = self.survey([self.root(), self.root(), self.root()])
         self.assertEqual(corpus.compare([better], {"cases": [saved]})[0]["kind"], "changed")
+        # The renamed empty-file stage is vocabulary, not a change.
+        before = self.survey([])
+        before["stages"]["geometry"] = "no_solid_roots"
+        self.assertEqual(corpus.compare([self.survey([])], {"cases": [before]}), [])
 
 
 if __name__ == "__main__":

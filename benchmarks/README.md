@@ -1,5 +1,11 @@
 # Benchmarks
 
+Benchmarks run automatically only in CI: the nightly `Extended validation` workflow
+(`.github/workflows/nightly.yml`) runs `cargo bench --workspace --locked` and uploads
+the output as the `benchmark-results` artifact. Local check scripts and milestone
+sign-off do not run them. The commands below describe what each harness measures and
+remain available for deliberate manual profiling.
+
 `cargo bench -p tessstep-part21 --bench parser` runs an optimized, dependency-free
 harness over a generated 957,938-byte / 20,000-entity input. Generation is outside timing.
 One warmup precedes a two-second sample for each phase. Throughput includes allocation,
@@ -11,7 +17,8 @@ CPU/platform/toolchain, byte and entity counts, iterations, elapsed time and thr
 when comparing runs. Avoid comparing uncalibrated machines. Add schema, semantic,
 geometry, trim and tessellation benchmarks as those implementations become available.
 
-The initial local results are in `docs/VALIDATION.md`.
+Earlier local observations are recorded in `docs/VALIDATION.md`; current numbers come
+from the nightly CI artifact.
 
 `cargo bench -p tessstep-express --bench compiler` measures whole-source EXPRESS lexing,
 AST parsing and full basic compilation separately. It builds an original 233,946-byte
@@ -38,7 +45,10 @@ triangles over six faces. Parsing and generation are outside timing. One warmup
 checks closure, triangle count and volume, then imports repeat for two seconds.
 Timing includes selected-root decoding, index/normal validation, mesh construction
 and owned-mesh validation. This is a local throughput observation, not a memory
-benchmark or a comparison with B-rep tessellation.
+benchmark or a comparison with B-rep tessellation. The same bench then imports a
+generated repositioned annotation: 100 curve sets of ten 20-point strips and 100 fill
+fans of 200 triangles, each over its own coordinate list (40,200 vertices). Timing
+covers decoding, placement composition and graphics construction.
 
 `cargo bench -p tessstep-import --bench brep` times curved B-rep import and
 tessellation of the authored washer (two inferred outer bounds, two inserted seams)

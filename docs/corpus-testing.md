@@ -49,20 +49,38 @@ A stage blocked by an earlier failure is `not_run`. None of these are passes.
 ## Solid import stage
 
 After physical acceptance, the runner executes the `tessstep-import` `survey`
-example on each unique input. It imports every `MANIFOLD_SOLID_BREP`,
-`BREP_WITH_VOIDS` and `FACETED_BREP` root found by `discover_solids`: faceted roots
-use the faceted profile, all others the curved B-rep profile, both with the tolerant
-default policy (see [STEP_IMPORT.md](STEP_IMPORT.md) and
-[CURVED_IMPORT.md](CURVED_IMPORT.md)). Each root reports profile,
+example on each unique input (protocol `format_version` 2, scope `shape-survey`). It
+imports every `MANIFOLD_SOLID_BREP`, `BREP_WITH_VOIDS` and `FACETED_BREP` root found by
+`discover_solids`: faceted roots use the faceted profile, all others the curved B-rep
+profile. It also imports every shape tessellation root found by
+`discover_tessellations` with the existing-tessellation profile. All use the
+tolerant default policy (see [STEP_IMPORT.md](STEP_IMPORT.md),
+[CURVED_IMPORT.md](CURVED_IMPORT.md) and
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md)). Each root reports profile,
 geometry/topology and tessellation outcomes independently, with the failing
-stage, error kind, entity, entity type and message.
+stage, error kind, entity, entity type and message. Existing tessellations report
+`"profile":"tessellated"` and a `not_applicable` tessellation stage. Every root also
+reports whether `select_representations`, preferring exact B-reps, selected it or
+listed it as an alternative, and the IDs of the roots paired with it.
 
 The file-level `geometry` stage is `accepted` when every root passes
-profile/geometry/topology, `partial` when only some do, `no_solid_roots` when
-the file has none, and otherwise the dominant root failure (`unsupported`,
+profile/geometry/topology, `partial` when only some do, `no_shape_roots` when
+the file has none (older reports call this `no_solid_roots`; the comparison treats
+both names as one), and otherwise the dominant root failure (`unsupported`,
 `rejected` or `resource_limit`). `tessellation` is computed the same way over
-roots that reached it, and is `not_run` when none did. Profile rejection is not
-an AP validity verdict: the profiles are reduced, selected-root subsets.
+roots that reached it. It is `not_run` when none did, and `not_applicable` when
+every root is an existing tessellation. A root is accepted when every applicable
+stage is, which for an existing tessellation means it produced a mesh. Profile
+rejection is not an AP validity verdict: the profiles are reduced, selected-root
+subsets.
+
+The survey also imports every tessellated annotation occurrence found by
+`discover_presentations`, in its representation's units or the fallback unit. It
+reports a bounded `presentation` summary per file: occurrence, context-unit and
+accepted counts, polyline, triangle, point and zero-area-triangle totals, outcomes
+by failing stage and kind, and the first five failures. Presentation graphics are
+not meshes and have no file-level stage. A decrease in a file's accepted occurrence
+count is a baseline regression.
 
 Each root uses the length and plane-angle units of its representation context and,
 as its model tolerance, the context's length uncertainty floored at 1e-7 m
@@ -76,7 +94,8 @@ units, declared uncertainty, tolerance and chord. These are measurement policies
 library defaults. Each report records the fallback assumption and the survey
 executable hash.
 
-`geometry_result` keeps root counts, outcome counts per failing stage and kind,
+`geometry_result` keeps root counts (including existing-tessellation and
+alternative-representation counts), outcome counts per failing stage and kind,
 the ten most frequent failure categories (with entity IDs replaced by `N`), the
 most frequent entity types outside the profile, and details for the first 20
 roots. The HTML report and `summary.md` aggregate these per root across the

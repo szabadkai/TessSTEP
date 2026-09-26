@@ -4,7 +4,8 @@
 `MANIFOLD_SOLID_BREP` → validated geometry → owned
 solid mesh is now available in Rust/C/C++. See [STEP_IMPORT.md](STEP_IMPORT.md) for
 explicit units, reduced-profile scope and evidence. Existing triangulated STEP
-tessellations import directly as owned meshes (Milestone 20, Rust only so far); see
+tessellations import directly as owned meshes and tessellated annotations as placed
+graphics, with discovery and representation selection (Milestone 20, Rust/C/C++); see
 [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). Curved `MANIFOLD_SOLID_BREP`
 import with elementary and B-spline geometry, computed pcurves and discovered context
 units is available in Rust; see [CURVED_IMPORT.md](CURVED_IMPORT.md). The milestone
@@ -19,10 +20,12 @@ Milestones 7–10 add independent analytic curves/surfaces and NURBS curves/surf
 Milestones 11–17 add structural topology, supplied-pcurve UV trimming, shared-edge sampling, planar/regular curved-face refinement and owned manifold shell/solid meshes.
 Milestone 18 adds shared assembly mesh assets and explicit nested placements.
 Milestone 19 adds explicit color/opacity and inherited appearance overrides.
-Milestone 20 imports existing triangulated tessellations without retessellation.
+Milestone 20 imports existing shape and presentation tessellations without retessellation.
 STEP geometry adaptation and industrial hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
-tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
-and architecture review before declaring work done.
+tests, fmt/clippy, applicable corpus/fuzz runs, documentation, conformance updates
+and architecture review before declaring work done. Benchmarks
+run automatically in the nightly CI workflow only; do not run them locally for milestone
+sign-off.
 
 **Milestone 2 delivered:** `tessstep-express` and `expressc` provide a bounded lexer,
 source-located AST, resolved schema IR, USE/REFERENCE dependency handling and basic
@@ -193,7 +196,7 @@ explicitly independent of ISO style semantics. See [APPEARANCE.md](APPEARANCE.md
 STEP presentation adapters, textures, lighting models, surface-side styling and rendering
 remain pending. Milestone 20 now imports existing tessellations.
 
-**Milestone 20 delivered — existing triangulated tessellations.**
+**Milestone 20 delivered — existing shape and presentation tessellations.**
 
 `tessstep_import::import_tessellated` converts a selected `TESSELLATED_SOLID`,
 `TESSELLATED_SHELL` or triangulated surface set into an owned mesh without
@@ -202,12 +205,42 @@ triangles, strips and fans over shared `COORDINATES_LIST`s. Vertex identity is t
 coordinate-list index, never proximity. Supplied normals must agree with winding;
 solids must be closed with positive volume. Opt-in decoder link slots retain B-rep
 provenance links without decoding them, so linked exports import even when the
-linked geometry is unsupported. Authored fixtures, typed rejection tests, mutation
-smoke, a benchmark and three hash-pinned unmodified exporter files (NIST, CATIA,
-HOOPS) cover this slice. See [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).
-C/C++ entry points, tessellated edges/vertices, presentation tessellations, corpus
-survey integration and representation selection remain pending. The next numbered
-milestone is 21: systematic AP242 coverage.
+linked geometry is unsupported. The milestone was completed on 2026-09-26:
+
+- **Tessellated edges and vertices.** `TESSELLATED_EDGE`, `TESSELLATED_VERTEX` and
+  `TESSELLATED_CONNECTING_EDGE` items are polylines and points with mesh-vertex
+  correspondence. Connecting edges join exactly the coordinate identities they
+  declare, after checking equal coordinates and that every segment is a triangle edge
+  of both faces, so faces with separate coordinate lists close without proximity
+  welding.
+- **Presentation tessellations.** `import_presentation` turns a
+  `TESSELLATED_ANNOTATION_OCCURRENCE` or `TESSELLATED_GEOMETRIC_SET` into placed
+  polylines, points and fill triangles. It composes `REPOSITIONED_TESSELLATED_ITEM`
+  placements and retains styles as IDs. Graphics are not meshes: annotation normals
+  (17% of corpus fills disagree with winding) are unused, and zero-area fills are
+  kept and counted.
+- **Representation selection.** `discover_tessellations` and `discover_presentations`
+  find roots and their context units, through callouts, annotation planes and
+  characterized draughting models. `select_representations` pairs a B-rep with its
+  tessellations by explicit links, or by an unambiguous transformation-free
+  representation relationship, under an explicit exact or tessellated preference.
+- **C/C++ entry points.** `ts_document_import_tessellated` (owned mesh plus
+  provenance info) and `ts_document_import_presentation` (a retained handle with
+  zero-copy views), with C++ `Document::import_tessellated`, `Presentation` and
+  `PresentationView`, bring ABI 1 to 50 exports under installed-consumer tests.
+- **Corpus survey.** The runner surveys every shape tessellation root, reports
+  whether representation selection chose it, and summarizes every annotation
+  occurrence. All 8 real exported shape tessellations and 1,429 of 1,431 real
+  annotation occurrences import.
+
+One exporter deviation is tolerated by default and rejected by `strict`: without a
+`pnindex`, a `pnmax` below `npoints` (975 HOOPS Exchange fills). Authored fixtures,
+typed rejection tests, mutation smoke, fuzz targets, benchmarks and five hash-pinned
+unmodified exporter files (NIST, CATIA, HOOPS) cover this milestone. See
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). Cubic Bézier faces,
+`TESSELLATED_WIRE`, style and PMI semantics, and product-definition linking of
+discovered roots are outside it. The next numbered milestone is 21: systematic AP242
+coverage.
 
 **Curved STEP adaptation — first slice delivered 2026-09-26.**
 
@@ -290,14 +323,18 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   solid root, the shape representations containing it and their context's SI or
   conversion-based length and plane-angle units and length uncertainty, through a
   bounded context profile. Missing or conflicting units are per-root errors, never
-  defaults. Linking roots to product definitions and placements (Milestone 5 graphs)
-  remains. Evidence: `discovery_reads_context_units_and_uncertainty`.
+  defaults. Milestone 20 applies the same rules to shape tessellations and annotation
+  occurrences. Linking roots to product definitions and placements (Milestone 5
+  graphs) remains. Evidence: `discovery_reads_context_units_and_uncertainty`,
+  `presentation_discovery_follows_callouts_into_draughting_models`.
 - **Corpus geometry stage — delivered 2026-09-26.** The corpus runner imports every
   solid root and reports per-root outcomes grouped by stage and error category; see
   [corpus testing](corpus-testing.md#solid-import-stage). Roots now use discovered
   context units and uncertainty (floored at 1e-7 m) and the curved profile; the
   baseline was refreshed again on 2026-09-26 after reviewing 234 changed inputs and no
-  regressions.
+  regressions. Milestone 20 added shape tessellation roots, selection status and an
+  annotation summary; the baseline was refreshed after reviewing 52 changed inputs,
+  none a lost root outcome (see [VALIDATION.md](VALIDATION.md)).
 - **Unset derived slots — delivered 2026-09-26.** `$` instead of `*` in derived
   `ORIENTED_EDGE` endpoint slots is accepted by default and rejected by an explicit
   strict switch (`ImportOptions::strict`, C `TS_IMPORT_STRICT`, C++ `ImportPolicy`).
@@ -429,5 +466,7 @@ contract in mind. C/C++ installed-package consumer tests and ABI containment are
 release gates, not optional bindings work. See [C_API.md](C_API.md). This contract
 also applies as product and geometry operations become public. The first physical-document
 slice now implements both interfaces, typed results and the shared CMake package;
-mesh import and retained read-only views are now implemented. Public schema decoding,
-B-rep construction and tessellation entry points remain pending.
+mesh import and retained read-only views, selected faceted/planar solid import and
+existing-tessellation and presentation import are now implemented. Public schema
+decoding, B-rep construction, curved tessellation and discovery entry points remain
+pending.
