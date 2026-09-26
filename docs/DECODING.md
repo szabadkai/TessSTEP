@@ -52,8 +52,14 @@ SET and aggregate UNIQUE constraints use value comparisons that ignore source po
 References compare occurrence identity. Numeric comparisons avoid rounding distinct large
 integers into equal floating-point values. LIST/ARRAY equality is ordered; BAG/SET equality
 is unordered and accounts for multiplicity. Unset optional ARRAY positions do not count
-as known duplicate values. Cross-defined-type SELECT aggregate equality is conservatively
-unsupported; full EXPRESS value comparison is not claimed.
+as known duplicate values. Tagged SELECT values whose defined types differ (after
+following aliases) are distinct members: `(U_DIRECTION_COUNT(2), V_DIRECTION_COUNT(2))`
+is a valid `SET [1:2] OF direction_count_select`, as the NIST AP242 test cases and the
+schema's own `TYPEOF` rule expect. EXPRESS numeric compatibility across type tags is
+therefore not applied to uniqueness; full EXPRESS value comparison is not claimed.
+
+Entity names are resolved by binary search when the selected schema's symbol table is
+byte-ordered (generated metadata always is); other tables fall back to a linear scan.
 
 Width and bound expressions support integer literals, parentheses, unary signs, addition,
 subtraction, multiplication, comments, and DIV/MOD with nonnegative operands. Arithmetic
@@ -62,6 +68,27 @@ fail explicitly. Variables, functions, real arithmetic and negative DIV/MOD oper
 unsupported. The frontend still preserves expressions as opaque; the decoder recognizes
 only diagnostics attached to supported bound/width expression spans. All other opaque
 schema diagnostics remain failures, even for unused declarations.
+
+## Retaining policy
+
+`decode_policy(document, schemas, schema_name, roots, policy, limits)` takes an
+explicit `Policy`. With `retain_unevaluated: false` (the default, and the behaviour of
+every other entry point) any unsupported schema diagnostic, entity WHERE/UNIQUE rule,
+supertype constraint, DERIVE or INVERSE attribute fails decoding, as above. With
+`retain_unevaluated: true` the decoder checks physical structure against a schema set
+that carries retained semantics: rules, functions, DERIVE expressions and constraints
+are never evaluated, and `DecodedDocument::retained()` reports how many schema
+diagnostics were accepted and how many entity/type rule applications and DERIVE
+attributes applied to the decoded instances without evaluation. This is the mode used
+for AP242/AP214/AP203 metadata; its acceptance is structural validity only and is not
+an application-protocol conformance verdict.
+
+Under either policy a redeclared explicit attribute (`SELF\supertype.name`) occupies
+no physical parameter of its own, and a DERIVE redeclaration of an explicit attribute
+requires `*` in the ancestor's slot ([Part 21 clause 12.2.2](https://www.steptools.com/stds/step/IS_final_p21e3.html));
+`$` or a value there is a type mismatch. Redeclared domains are not narrowed: the
+ancestor's declared domain is checked. DERIVE and INVERSE attributes occupy no
+parameter.
 
 ## Views and failure contracts
 
@@ -99,7 +126,12 @@ output/work limits, strict policy and mutually exclusive output modes as `--rust
 The executable emits bounded JSON (`format_version: 1`, `scope: schema-structure`).
 `status` is accepted, rejected, unsupported, not_configured, resource_limit or not_run
 (the physical parse failed). Exit codes are 0 for accepted, 1 for a checked failure,
-and 2 for usage/I/O failure. It uses default finite parser/decoder limits.
+and 2 for usage/I/O failure. It uses default finite parser/decoder limits;
+`--max-work N` raises the decoder work budget for large documents.
+`--retain-unevaluated` selects the retaining policy above: the JSON then carries
+`policy: "retain-unevaluated"` and, when accepted, an `unevaluated` object with the
+retained `diagnostics`, `rules` and `derived` counts. Failures name the error `code`,
+`message`, `entity`, `attribute` and byte `offset`.
 
 `python3 scripts/check_schema.py` builds an authored validator and verifies reviewed
 per-fixture outcomes through the corpus runner; results are in `reports/schema/`.
@@ -114,16 +146,19 @@ python3 scripts/corpus.py --corpus /path/to/inputs --output reports/schema-custo
 The runner snapshots both executables, records the validator hash/schema, enforces its
 JSON/exit protocol and shows schema results separately. Physical outcomes keep their
 meaning. Previously accepted schema inputs becoming non-accepted are regressions.
-The default external corpus still lacks AP metadata and keeps its schema stage marked
-`not_implemented`; physical success is never promoted to schema acceptance.
+The external corpus runs a schema stage against the pinned AP242/AP214/AP203 long
+forms selected by declared `FILE_SCHEMA` name; see the
+[AP schema stage](corpus-testing.md#ap-schema-stage-milestone-21). Physical success
+is never promoted to schema acceptance.
 
 ## Remaining conformance limits
 
-DERIVE/INVERSE evaluation, attribute redeclaration, WHERE/entity UNIQUE rules, supertype
-expressions, algorithms, constants, value references, precision semantics and general
-EXPRESS evaluation remain unsupported. This milestone does not bundle AP schemas, fetch
-external references, select populations automatically, construct owned generated records,
-or expose schema decoding through C/C++. STEP geometry adaptation remains a future stage; independent constructed geometry
+DERIVE/INVERSE evaluation, redeclared-domain narrowing, WHERE/entity UNIQUE rules,
+supertype expressions, algorithms, constants, value references, precision semantics and
+general EXPRESS evaluation remain unsupported: the retaining policy counts them, it
+does not evaluate them. No AP schema is bundled; the decoder does not fetch external
+references, select populations automatically, construct owned generated records, or
+expose schema decoding through C/C++. STEP geometry adaptation remains a future stage; independent constructed geometry
 and tessellation do not imply schema-to-mesh support.
 See [VALIDATION.md](VALIDATION.md) for actual checks and corpus observations.
 

@@ -2,30 +2,55 @@
 // Generated application boundary. Requires tessstep-model and tessstep-schema.
 fn main() -> ::std::process::ExitCode {
     use ::std::{fs::File, io::BufReader, process::ExitCode};
-    use ::tessstep_model::decode::{decode, ErrorKind, Limits};
-    let args: Vec<_> = ::std::env::args_os().skip(1).collect();
-    if args.len() != 2 {
-        eprintln!("Usage: schema-validator SCHEMA FILE.step");
+    use ::tessstep_model::decode::{decode_policy, ErrorKind, Limits, Policy};
+    const USAGE: &str = "Usage: schema-validator [--retain-unevaluated] [--accept-unset-derived] [--accept-unordered-complex] [--max-work N] SCHEMA FILE.step";
+    let mut policy = Policy::default();
+    let mut limits = Limits::default();
+    let mut positional = Vec::new();
+    let mut args = ::std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.to_str() {
+            Some("--retain-unevaluated") => policy.retain_unevaluated = true,
+            Some("--accept-unset-derived") => policy.accept_unset_derived = true,
+            Some("--accept-unordered-complex") => policy.accept_unordered_complex = true,
+            Some("--max-work") => {
+                let Some(value) = args.next().and_then(|v| v.to_str().and_then(|v| v.parse().ok())) else {
+                    eprintln!("{USAGE}");
+                    return ExitCode::from(2);
+                };
+                limits.max_work = value;
+            }
+            Some(option) if option.starts_with("--") => {
+                eprintln!("{USAGE}");
+                return ExitCode::from(2);
+            }
+            _ => positional.push(arg),
+        }
+    }
+    if positional.len() != 2 {
+        eprintln!("{USAGE}");
         return ExitCode::from(2);
     }
-    let Some(schema) = args[0].to_str() else {
+    let Some(schema) = positional[0].to_str() else {
         eprintln!("Schema name must be UTF-8");
         return ExitCode::from(2);
     };
-    let file = match File::open(&args[1]) {
+    let file = match File::open(&positional[1]) {
         Ok(file) => file,
         Err(error) => { eprintln!("{error}"); return ExitCode::from(2); }
     };
+    let policy_name = if policy.retain_unevaluated { "retain-unevaluated" } else { "strict" };
     let document = match ::tessstep_model::parse(BufReader::new(file), Default::default()) {
         Ok(document) => document,
         Err(error) => {
-            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"status\":\"not_run\",\"code\":\"{:?}\"}}",error.code);
+            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"policy\":\"{policy_name}\",\"status\":\"not_run\",\"code\":\"{:?}\"}}",error.code);
             return ExitCode::from(1);
         }
     };
-    match decode(&document, &SCHEMA_SET, schema, Limits::default()) {
+    match decode_policy(&document, &SCHEMA_SET, schema, None, policy, limits) {
         Ok(view) => {
-            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"status\":\"accepted\",\"entity_count\":{}}}",view.entities().len());
+            let retained = view.retained();
+            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"policy\":\"{policy_name}\",\"status\":\"accepted\",\"entity_count\":{},\"unevaluated\":{{\"diagnostics\":{},\"rules\":{},\"derived\":{}}},\"tolerated\":{{\"unset_derived\":{},\"unordered_complex\":{}}}}}",view.entities().len(),retained.diagnostics,retained.rules,retained.derived,retained.unset_derived,retained.unordered_complex);
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -37,7 +62,8 @@ fn main() -> ::std::process::ExitCode {
             };
             let entity = error.entity.map_or_else(|| "null".into(), |id| id.get().to_string());
             let offset = error.source.map_or_else(|| "null".into(), |span| span.start.offset.to_string());
-            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"status\":\"{status}\",\"code\":\"{:?}\",\"entity\":{entity},\"offset\":{offset}}}",error.kind);
+            let attribute = error.attribute.map_or_else(|| "null".into(), |name| format!("\"{name}\""));
+            println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"policy\":\"{policy_name}\",\"status\":\"{status}\",\"code\":\"{:?}\",\"message\":\"{}\",\"entity\":{entity},\"attribute\":{attribute},\"offset\":{offset}}}",error.kind,error.message);
             ExitCode::from(1)
         }
     }

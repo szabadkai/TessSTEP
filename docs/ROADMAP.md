@@ -434,12 +434,17 @@ ships long forms for all four: `data/ap242/242_mim_lf.exp` (WG12 N11521; 2,407
 entities, 528 types, 348 functions, 58 rules), `data/ap214e3/AP214E3_2010.exp` (915
 entities), `data/ap203e2/ap203e2_mim_lf.exp` (1,006) and `data/ap203/ap203.exp` (254).
 
-- **21.1 Schema sourcing.** Fetch the four long forms by pinned revision and SHA-256,
-  the same way as the corpus. Do not commit them until the ISO and stepcode
-  redistribution terms have been reviewed and recorded in `schemas/README.md`. CI
-  fetches them with the corpus.
-- **21.2 EXPRESS frontend gaps.** On 2026-09-26 `expressc` failed on all four
-  schemas. The blockers found, in order:
+- **21.1 Schema sourcing — delivered 2026-09-27.** `corpus/ap-schemas.json` pins the
+  stepcode revision, paths and SHA-256 of the four long forms; `scripts/fetch_schemas.py`
+  fetches and verifies them, CI fetches them with the corpus, and nothing is committed
+  (`schemas/README.md` records the ISO/stepcode terms).
+- **21.2 EXPRESS frontend gaps — delivered 2026-09-27.** All four schemas compile
+  structurally (AP242: 3,363 declarations, 6,916 unsupported diagnostics from
+  retained rules, functions and expressions); `scripts/build_ap_validator.py`
+  generates one validator holding all four (19.7 MB of Rust, ~20 s, 8.9 MB
+  executable). Evidence: `express_redeclarations_qualified_names_and_end_identifiers`,
+  the codegen consumer test, [VALIDATION.md](VALIDATION.md). On 2026-09-26
+  `expressc` had failed on all four schemas. The blockers found, in order:
   - attribute redeclaration `SELF\entity.attribute : type` in explicit and DERIVE
     sections, including multi-line forms. There are 1,011 such lines in AP242, and
     redeclaration is the first failure in every schema;
@@ -461,26 +466,31 @@ entities), `data/ap203e2/ap203e2_mim_lf.exp` (1,006) and `data/ap203/ap203.exp` 
   budgets. Acceptance: all four compile without errors; unsupported diagnostics come
   only from retained rules, functions and WHERE/UNIQUE bodies and are counted in the
   report; the generated bindings and validators build in CI.
-- **21.3 Corpus schema stage.** Select the schema from `FILE_SCHEMA` through an
-  explicit name table, with no fuzzy matching. Record the declared name and object
-  identifier, and report edition mismatches (for example, AP242 identifiers of other
-  editions validated against N11521) instead of hiding them. Decide whether the AP214
-  `_CC*` headers are validated against AP214e3 as a labelled approximation or stay
-  `not_configured`. Run structural validation on every mapped input, with its own
-  reviewed baseline. Each rejection must be a real structural violation or a named
-  frontend or decoder gap. `--check` gates schema regressions.
+- **21.3 Corpus schema stage — delivered 2026-09-27.** `scripts/corpus.py
+  --schema-map corpus/ap-schema-map.json` selects each input's schema from its
+  declared `FILE_SCHEMA` name through an explicit table (no fuzzy matching; the
+  `AUTOMOTIVE_DESIGN_CC*` headers stay `not_configured`) and validates structurally
+  under the decoder's retaining policy, which counts unevaluated rules and the
+  tolerated `$` derived slots and unordered complex components. Outcomes are in the
+  baseline and summary; a previously accepted input becoming non-accepted fails
+  `--check`. Every rejection category was reviewed by entity
+  ([VALIDATION.md](VALIDATION.md)); the object identifier is not yet compared
+  against the compiled edition.
 - **21.4 Import through AP metadata.** Decode each selected root closure against the
   input's AP schema and adapt those records. The reduced profiles remain only as
   authored test schemas. A profile rejection then names an entity that is valid in
   the AP but not adapted. Meshes of roots that were already accepted must not change
   (compare hashes); VALIDATION.md explains any outcome change.
-- **21.5 Generated coverage matrix.** From each compiled schema, enumerate every
-  instantiable subtype of `geometric_representation_item`,
-  `topological_representation_item` and `shape_representation`. Check in a generated
-  table giving each one's status and its evidence test. A test fails when a schema
-  entity has no classification or a classification cites a missing test. Add the
-  reproducible coverage survey above to `scripts/corpus.py`, counting every type in
-  each decoded closure rather than only the first rejection.
+- **21.5 Generated coverage matrix — matrix delivered 2026-09-27.**
+  `scripts/check_coverage.py` enumerates every instantiable subtype of
+  `geometric_representation_item`, `topological_representation_item` and
+  `shape_representation` from the compiled AP242 long form and checks
+  `docs/coverage.json`: 501 entities, each adapted (and declared by an import
+  profile), a profile supertype, a product-adapter placement, a named unsupported
+  rejection or a recorded out-of-scope decision; [COVERAGE.md](COVERAGE.md) is
+  generated from it and CI runs the check. Still open: the reproducible coverage
+  survey in `scripts/corpus.py`, counting every type in each decoded closure rather
+  than only the first rejection.
 - **21.6 Geometry adapters and named rejections**, from the coverage gaps above, by
   corpus frequency:
   - read supplied pcurves on `SURFACE_CURVE` / `SEAM_CURVE`, honouring

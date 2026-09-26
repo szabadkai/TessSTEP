@@ -37,9 +37,12 @@ impl Context<'_> {
                     where_rules,
                 } => {
                     if !where_rules.is_empty() {
-                        return Err(
-                            self.error(ErrorKind::Unsupported, "SELECT type WHERE constraint")
-                        );
+                        if !self.policy.retain_unevaluated {
+                            return Err(
+                                self.error(ErrorKind::Unsupported, "SELECT type WHERE constraint")
+                            );
+                        }
+                        self.retained.rules += where_rules.len();
                     }
                     if let Domain::Select(nested) = domain {
                         for nested in nested.iter().rev() {

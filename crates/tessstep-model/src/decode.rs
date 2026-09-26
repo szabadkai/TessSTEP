@@ -32,6 +32,39 @@ impl Default for Limits {
         }
     }
 }
+/// Explicit acceptance of retained, unevaluated EXPRESS semantics.
+///
+/// By default any unsupported schema diagnostic, entity rule, supertype constraint
+/// or DERIVE/INVERSE attribute fails decoding. With `retain_unevaluated`, decoding
+/// checks physical structure only: WHERE/UNIQUE rules, DERIVE expressions, functions
+/// and global rules are counted, never evaluated. A DERIVE redeclaration of an
+/// explicit attribute still requires `*` in the ancestor's slot unless
+/// `accept_unset_derived` also admits `$`, a common nonconformant exporter
+/// encoding. `accept_unordered_complex` admits external complex mappings whose
+/// components are not in alphabetical order. Every tolerance is counted in
+/// [`Retained`]; none changes what a conformant file decodes to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Policy {
+    pub retain_unevaluated: bool,
+    pub accept_unset_derived: bool,
+    pub accept_unordered_complex: bool,
+}
+/// What a policy-driven decode left unevaluated or tolerated. All zero without
+/// the policy.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Retained {
+    /// Unsupported schema diagnostics accepted from the schema set.
+    pub diagnostics: usize,
+    /// Entity WHERE/UNIQUE rules and defined-type WHERE rules that applied to
+    /// decoded instances and values but were not evaluated.
+    pub rules: usize,
+    /// DERIVE attributes of decoded instances that were not evaluated.
+    pub derived: usize,
+    /// DERIVE-redeclared slots that held `$` instead of `*`.
+    pub unset_derived: usize,
+    /// External complex instances whose components were not in canonical order.
+    pub unordered_complex: usize,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     UnknownSchema,
@@ -89,10 +122,15 @@ pub struct DecodedDocument<'a> {
     schemas: &'a SchemaSet,
     entities: Vec<EntityView<'a>>,
     by_id: BTreeMap<EntityId, usize>,
+    retained: Retained,
 }
 impl<'a> DecodedDocument<'a> {
     pub fn document(&self) -> &'a Document {
         self.document
+    }
+    /// Semantics left unevaluated by [`Policy::retain_unevaluated`].
+    pub fn retained(&self) -> Retained {
+        self.retained
     }
     pub fn schemas(&self) -> &'a SchemaSet {
         self.schemas
@@ -114,7 +152,38 @@ pub fn decode<'a>(
     schema_name: &str,
     limits: Limits,
 ) -> Result<DecodedDocument<'a>, Error> {
-    decode_scope(document, schemas, schema_name, limits, None, &[], &[])
+    decode_scope(
+        document,
+        schemas,
+        schema_name,
+        limits,
+        None,
+        &[],
+        &[],
+        Policy::default(),
+    )
+}
+
+/// `decode` (or `decode_reachable` with `roots`) under an explicit [`Policy`].
+/// Without `retain_unevaluated` this is identical to those functions.
+pub fn decode_policy<'a>(
+    document: &'a Document,
+    schemas: &'a SchemaSet,
+    schema_name: &str,
+    roots: Option<&[EntityId]>,
+    policy: Policy,
+    limits: Limits,
+) -> Result<DecodedDocument<'a>, Error> {
+    decode_scope(
+        document,
+        schemas,
+        schema_name,
+        limits,
+        roots,
+        &[],
+        &[],
+        policy,
+    )
 }
 
 /// Structurally decode only the local entity-reference closure of explicit roots.
@@ -136,6 +205,7 @@ pub fn decode_reachable<'a>(
         Some(roots),
         &[],
         &[],
+        Policy::default(),
     )
 }
 
@@ -171,6 +241,7 @@ pub fn decode_reachable_profile<'a>(
         Some(roots),
         omitted,
         &[],
+        Policy::default(),
     )
 }
 
@@ -203,9 +274,11 @@ pub fn decode_reachable_profile_with_links<'a>(
         Some(roots),
         omitted,
         links,
+        Policy::default(),
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decode_scope<'a>(
     document: &'a Document,
     schemas: &'a SchemaSet,
@@ -214,12 +287,16 @@ fn decode_scope<'a>(
     roots: Option<&[EntityId]>,
     omitted: &[OmittedSlot],
     links: &[LinkSlot],
+    policy: Policy,
 ) -> Result<DecodedDocument<'a>, Error> {
     let mut cx = Context {
         schemas,
         schema: None,
         document,
         limits,
+        policy,
+        retained: Retained::default(),
+        sorted_symbols: false,
         work: 0,
         entity: None,
         attribute: None,
@@ -233,8 +310,17 @@ fn decode_scope<'a>(
             break;
         }
     }
-    if cx.schema.is_none() {
+    let Some(schema) = cx.schema else {
         return Err(cx.error(ErrorKind::UnknownSchema, "selected schema is not supplied"));
+    };
+    // Generated symbol tables are name-ordered, which allows binary-search lookup.
+    cx.sorted_symbols = true;
+    for pair in schema.symbols.windows(2) {
+        cx.tick()?;
+        if pair[0].name.as_bytes() >= pair[1].name.as_bytes() {
+            cx.sorted_symbols = false;
+            break;
+        }
     }
     cx.check_diagnostics()?;
     let mut slots = BTreeSet::new();
@@ -416,6 +502,35 @@ fn decode_scope<'a>(
         } else {
             cx.types[&entity.id].clone()
         };
+        // A DERIVE redeclaration of an explicit attribute leaves the ancestor's slot
+        // as `*` (Part 21 clause 12.2.2); collect those slots from the membership.
+        let mut derived_slots = Vec::new();
+        for index in 0..cx.types[&entity.id].len() {
+            let member = cx.types[&entity.id][index];
+            let DeclarationKind::Entity {
+                attributes,
+                unique,
+                where_rules,
+                ..
+            } = cx.declaration(member)?
+            else {
+                unreachable!("memberships are entities");
+            };
+            if cx.policy.retain_unevaluated {
+                cx.retained.rules += unique.len() + where_rules.len();
+            }
+            for attribute in attributes {
+                cx.tick()?;
+                if let AttributeKind::Derived(_) = attribute.kind {
+                    if cx.policy.retain_unevaluated {
+                        cx.retained.derived += 1;
+                    }
+                    if let Some(owner) = attribute.redeclares {
+                        derived_slots.push((owner, attribute.name));
+                    }
+                }
+            }
+        }
         for record in entity.kind.records() {
             let (id, attributes) = cx.record_attributes(&entity.kind, record)?;
             if matches!(entity.kind, EntityKind::Simple(_)) {
@@ -431,25 +546,35 @@ fn decode_scope<'a>(
                 cx.attribute = Some(attribute.name);
                 cx.source = Some(value.source);
                 let link = cx.is_link(&resolved, &types, owner, attribute)?;
+                // A placeholder slot: (accepts `$`, is a DERIVE redeclaration).
                 let mut placeholder = None;
+                for &(slot_owner, name) in &derived_slots {
+                    cx.tick()?;
+                    if slot_owner == owner && name == attribute.name {
+                        placeholder = Some((cx.policy.accept_unset_derived, true));
+                    }
+                }
                 for slot in omitted {
                     cx.tick()?;
                     if slot.attribute == attribute.name {
                         for index in 0..cx.types[&entity.id].len() {
                             cx.tick()?;
                             if cx.types[&entity.id][index] == slot.entity {
-                                placeholder = Some(slot.allow_unset);
+                                placeholder = Some((slot.allow_unset, false));
                             }
                         }
                     }
                 }
-                if let Some(allow_unset) = placeholder {
+                if let Some((allow_unset, derived)) = placeholder {
                     let unset = allow_unset && matches!(value.kind, ValueKind::Null);
                     if !matches!(value.kind, ValueKind::Omitted) && !unset {
                         return Err(cx.error(
                             ErrorKind::TypeMismatch,
                             "physical-profile slot requires a derived marker",
                         ));
+                    }
+                    if unset && derived {
+                        cx.retained.unset_derived += 1;
                     }
                 } else if link {
                     cx.link(&attribute.domain, value, attribute.optional)?;
@@ -481,6 +606,7 @@ fn decode_scope<'a>(
         schemas,
         entities,
         by_id,
+        retained: cx.retained,
     })
 }
 struct Context<'a> {
@@ -488,6 +614,9 @@ struct Context<'a> {
     schema: Option<&'a Schema>,
     document: &'a Document,
     limits: Limits,
+    policy: Policy,
+    retained: Retained,
+    sorted_symbols: bool,
     work: usize,
     entity: Option<EntityId>,
     attribute: Option<&'static str>,
@@ -512,10 +641,29 @@ impl<'a> Context<'a> {
         Ok(())
     }
     fn lookup(&mut self, name: &str) -> Result<Option<DeclarationId>, Error> {
-        for symbol in self.schema.expect("schema selected before lookup").symbols {
+        let symbols = self.schema.expect("schema selected before lookup").symbols;
+        if !self.sorted_symbols {
+            for symbol in symbols {
+                self.tick()?;
+                if symbol.name.eq_ignore_ascii_case(name) {
+                    return Ok(Some(symbol.declaration));
+                }
+            }
+            return Ok(None);
+        }
+        // Symbols are uppercase and byte-ordered; compare the query case-insensitively.
+        let (mut low, mut high) = (0, symbols.len());
+        while low < high {
             self.tick()?;
-            if symbol.name.eq_ignore_ascii_case(name) {
-                return Ok(Some(symbol.declaration));
+            let middle = low + (high - low) / 2;
+            let ordering = symbols[middle]
+                .name
+                .bytes()
+                .cmp(name.bytes().map(|c| c.to_ascii_uppercase()));
+            match ordering {
+                std::cmp::Ordering::Less => low = middle + 1,
+                std::cmp::Ordering::Greater => high = middle,
+                std::cmp::Ordering::Equal => return Ok(Some(symbols[middle].declaration)),
             }
         }
         Ok(None)
@@ -567,7 +715,10 @@ impl<'a> Context<'a> {
                     where_rules,
                 } => {
                     if !where_rules.is_empty() {
-                        return Err(self.error(ErrorKind::Unsupported, "type WHERE constraint"));
+                        if !self.policy.retain_unevaluated {
+                            return Err(self.error(ErrorKind::Unsupported, "type WHERE constraint"));
+                        }
+                        self.retained.rules += where_rules.len();
                     }
                     self.value(&domain, value, false, depth + 1)
                 }

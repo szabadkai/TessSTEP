@@ -49,6 +49,37 @@ def geometry_totals(cases):
             "unsupported_entity_types": merged("unsupported_entity_types")}
 
 
+def schema_totals(cases):
+    """Schema-stage outcomes by declared FILE_SCHEMA and the retained/tolerated counts."""
+    declared = {}
+    categories = Counter()
+    unevaluated = Counter()
+    tolerated = Counter()
+    for case in cases:
+        result = case.get("schema_result")
+        if not result:
+            continue
+        name = result.get("declared") or declared_of(case) or "(none declared)"
+        row = declared.setdefault(name, Counter())
+        row[case["stages"]["schema"]] += 1
+        if case["stages"]["schema"] == "rejected":
+            categories[f'{result.get("code")}: {result.get("message") or ""}'.strip(": ")] += 1
+        unevaluated.update(result.get("unevaluated", {}))
+        tolerated.update(result.get("tolerated", {}))
+    return {"files_declared": sum(sum(v.values()) for v in declared.values()),
+            "declared": {name: dict(sorted(row.items())) for name, row in sorted(declared.items(), key=lambda kv: -sum(kv[1].values()))},
+            "categories": dict(categories.most_common(15)), "unevaluated": dict(unevaluated), "tolerated": dict(tolerated)}
+
+
+def declared_of(case):
+    schemas = case.get("schemas") or []
+    while isinstance(schemas, list):
+        if not schemas:
+            return None
+        schemas = schemas[0]
+    return str(schemas).strip().split("{")[0].split()[0].upper() if str(schemas).strip() else None
+
+
 def aggregate(cases, baseline_present=False):
     sources = {}
     for case in cases:
@@ -66,7 +97,7 @@ def aggregate(cases, baseline_present=False):
         tested = sum(n for status, n in counts.items() if status not in UNTESTED)
         stages[stage] = {"tested": tested, "total": len(cases), "statuses": dict(sorted(counts.items()))}
     times = sorted(c.get("seconds", 0) for c in cases)
-    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases),
+    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases), "schema": schema_totals(cases),
             "verdicts": dict(Counter(verdict(c, baseline_present) for c in cases)),
             "diagnostics": dict(Counter(code for c in cases for code in c.get("diagnostic_counts", {}))),
             "performance": {"total_input_bytes": sum(c.get("bytes", 0) for c in cases),

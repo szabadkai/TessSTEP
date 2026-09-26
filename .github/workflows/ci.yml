@@ -120,8 +120,13 @@ jobs:
           python-version: '3.12'
       - name: Download and verify pinned corpus
         run: python scripts/fetch_corpus.py --output target/step-corpus
+      - name: Download pinned AP schemas, build the schema validator, check the coverage matrix
+        run: |
+          python scripts/fetch_schemas.py --output target/step-schemas
+          python scripts/build_ap_validator.py --schemas target/step-schemas
+          python scripts/check_coverage.py --schemas target/step-schemas
       - name: Test every unique corpus input against the committed baseline
-        run: python scripts/corpus.py --corpus target/step-corpus --check --repeat 2
+        run: python scripts/corpus.py --corpus target/step-corpus --check --repeat 2 --schema-validator target/release/ap-validator --schema-map corpus/ap-schema-map.json
       - name: Verify unmodified planar exporter import in Rust and installed C++
         env:
           TESSSTEP_CORPUS: target/step-corpus

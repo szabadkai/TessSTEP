@@ -1,0 +1,702 @@
+{
+  "format_version": 1,
+  "description": "Status of every instantiable AP242 geometric, topological and shape-representation entity for STEP import. `adapted` and `supertype` entries must be declared by an import profile in corpus/geometry; rules classify families by name pattern; explicit entries override rules. Verified and rendered by scripts/check_coverage.py.",
+  "rules": [
+    {
+      "pattern": ".*KINEMATIC.*|.*_PAIR(_VALUE|_WITH_RANGE)?|ACTUATED_.*|.*_JOINT|.*_LINK|.*_LOOP_.*|PAIR_.*|ROTATION_ABOUT_DIRECTION|SU_PARAMETERS|RIGID_.*|.*_PATH_.*|MECHANISM.*|INTERPOLATED_CONFIGURATION_.*|LINEAR_.*(PAIR|FLEXIBLE).*|POINT_ON_PLANAR_CURVE_.*|POINT_ON_SURFACE_.*|.*_PAIR_.*",
+      "status": "out_of_scope",
+      "reason": "kinematics: no mechanism import is planned for v1.0"
+    },
+    {
+      "pattern": "ANNOTATION_.*|.*_CALLOUT.*|CAMERA_.*|DRAUGHTING_.*|.*TEXT.*|.*_SYMBOL.*|.*HATCH.*|.*TILE.*|.*LEADER_LINE.*|.*_GLYPH.*|LIGHT_SOURCE.*|.*PLACEHOLDER.*|APLL_.*|PRESENTATION_.*|.*_IMAGE_.*|EXTERNAL_IMAGE.*|.*DIMENSION.*|.*DATUM.*|.*TOLERANCE.*|.*ANNOTATION.*|FILL_AREA_.*|.*_FILL_AREA.*|TERMINATOR_SYMBOL|PRE_DEFINED_.*|VIEW_VOLUME|PLANAR_EXTENT|PLANAR_BOX|.*_MARKER.*|POINT_STYLE|.*SURFACE_STYLE.*|GEOMETRIC_TOLERANCE.*|LEADER_.*|PROJECTION_.*|.*_ITEM_.*ASSOCIATIVITY",
+      "status": "out_of_scope",
+      "reason": "presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items)"
+    },
+    {
+      "pattern": ".*_2D|.*_2D_.*|CARTESIAN_11|CURVE_11|CYLINDRICAL_11|POLAR_11|SPHERICAL_11|AXIS2_PLACEMENT_2D|CARTESIAN_TRANSFORMATION_OPERATOR_2D|.*AREA.*|.*_WIREFRAME.*|POLYLINE_2D.*|CIRCULAR_INVOLUTE|CLOTHOID|SPIRAL",
+      "status": "out_of_scope",
+      "reason": "2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry"
+    },
+    {
+      "pattern": ".*_VOLUME.*|CSG_.*|BOOLEAN_RESULT.*|BLOCK|RIGHT_ANGULAR_WEDGE|RIGHT_CIRCULAR_CONE|RIGHT_CIRCULAR_CYLINDER|SPHERE|TORUS|ELLIPSOID|CONVEX_HEXAHEDRON|CYCLIDE_SEGMENT_SOLID|ECCENTRIC_CONE|HALF_SPACE_SOLID|BOXED_HALF_SPACE|.*_SWEPT_(AREA|FACE)_SOLID|EXTRUDED_.*_SOLID|REVOLVED_.*_SOLID|SWEPT_(AREA|FACE)_SOLID|SOLID_REPLICA|.*SHELLED_SOLID|.*_SHELLED_SOLID|TRIMMED_VOLUME|VOLUME_WITH_.*|SOLID_WITH_.*|.*_FEATURE.*|MODIFIED_SOLID.*|.*_HOLE.*|.*_TRANSITION|.*_PATTERN.*|SOLID_CURVE_FONT|TETRAHEDRON|.*_PRIMITIVE.*|SHELLED_SOLID|.*_SOLID_2D",
+      "status": "out_of_scope",
+      "reason": "CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported"
+    },
+    {
+      "pattern": ".*_CONSTRAINT.*|.*GC_WITH_DIMENSION|.*ASSEMBLY_CONSTRAINT.*|.*_GEOMETRIC_CONSTRAINT.*|.*DIRECTION_REFERENCE|.*_SMOOTHNESS_.*|GEOMETRIC_ALIGNMENT|.*_DISTANCE.*|.*ANGLE_.*|EQUAL_PARAMETER_CONSTRAINT|FIXED_.*|FREE_FORM_.*|IMPLICIT_MODEL_INTERSECTION_CONSTRAINT|.*_ITEM_WITH_DIMENSION|SKETCH_.*|.*SKETCH.*|EXPLICIT_.*|INCIDENCE_.*|PGC_WITH_DIMENSION|.*PARALLEL.*|.*PERPENDICULAR.*|.*TANGENT.*|.*SYMMETRIC.*|.*COAXIAL.*|CURVE_LENGTH_.*|SURFACE_DISTANCE_.*|.*_REFERENCE_.*",
+      "status": "out_of_scope",
+      "reason": "explicit geometric and assembly constraints: design-intent data with no mesh"
+    },
+    {
+      "pattern": "POINT_CLOUD.*|SCAN_.*|.*_SCAN.*|POINT_REPLICA|CURVE_REPLICA|SURFACE_REPLICA|.*_REPLICA|.*_REPLICATE.*|MULTIPLE_ARITY_.*|UNARY_.*|BINARY_.*|VALUE_.*|.*_FUNCTION.*|GENERIC_.*|.*_SEGMENT_SET|CURVE_SEGMENT_SET|.*_ITEM_SET|PROCEDURAL_.*|.*_TESSELLATED_(CONNECTING_EDGE|EDGE|TRIANGULATED_FACE)|CUBIC_.*|.*_BEZIER_TESSELLATED_.*|TESSELLATED_(CURVE_SET|POINT_SET|WIRE|CONNECTING_EDGE|VERTEX|EDGE|GEOMETRIC_SET|STRUCTURED_ITEM|ANNOTATION_OCCURRENCE|SOLID_SET|SURFACE_SET|VERTEX_POINT|EDGE_CURVE|FACE_SURFACE|OPEN_SHELL|CLOSED_SHELL)|.*TESSELLATED_(CURVE|POINT|WIRE|CONNECTING|EDGE|VERTEX|GEOMETRIC|STRUCTURED|SOLID|SURFACE|ANNOTATION).*|ADJACENT_.*|.*_ITEM_LIST|ITEM_DEFINED_TRANSFORMATION|MAPPED_ITEM|REPRESENTATION_ITEM|GEOMETRIC_REPRESENTATION_ITEM|TOPOLOGICAL_REPRESENTATION_ITEM|VERTEX|SUBEDGE|SUBFACE|SUBPATH|PATH|OPEN_PATH|ORIENTED_PATH|.*_SUB_SET|CONNECTED_EDGE_SET|CONNECTED_FACE_SET|EDGE_BOUNDED_CURVE_WITH_LENGTH|BOUNDED_CURVE_WITH_LENGTH|.*_SHELL_BASED.*|VERTEX_SHELL|WIRE_SHELL|ORIENTED_FACE|ORIENTED_OPEN_SHELL|SURFACED_OPEN_SHELL|OPEN_SHELL|EDGE_BASED_WIREFRAME_MODEL|.*_PLACEMENT_SHAPE_REPRESENTATION|LOCATION_SHAPE_REPRESENTATION|DIRECTION_SHAPE_REPRESENTATION|SHAPE_REPRESENTATION_WITH_PARAMETERS|SHAPE_DIMENSION_REPRESENTATION|REPRESENTATIVE_SHAPE_REPRESENTATION|.*_SHEET_REPRESENTATION|COMPOUND_SHAPE_REPRESENTATION|NEUTRAL_SKETCH_REPRESENTATION|HYBRID_BREP_SHAPE_REPRESENTATION|CURVE_SWEPT_SOLID_SHAPE_REPRESENTATION|.*CSG.*",
+      "status": "unsupported",
+      "reason": "outside every import profile; a root or item of this type is rejected naming the entity"
+    }
+  ],
+  "entities": {
+    "ADVANCED_BREP_SHAPE_REPRESENTATION": {
+      "status": "adapted",
+      "note": "curved B-rep root container"
+    },
+    "ADVANCED_FACE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "AUXILIARY_GEOMETRIC_REPRESENTATION_ITEM": {
+      "status": "unsupported",
+      "note": "loose geometry sets are not solid roots; a set as edge/face geometry is rejected naming the entity"
+    },
+    "AXIS1_PLACEMENT": {
+      "status": "adapted",
+      "note": ""
+    },
+    "AXIS2_PLACEMENT_3D": {
+      "status": "adapted",
+      "note": ""
+    },
+    "BEZIER_CURVE": {
+      "status": "unsupported",
+      "note": "implicit knots: roadmap item"
+    },
+    "BEZIER_SURFACE": {
+      "status": "unsupported",
+      "note": "implicit knots: roadmap item"
+    },
+    "BOUNDARY_CURVE": {
+      "status": "unsupported",
+      "note": "CURVE_BOUNDED_SURFACE boundary; scope decision"
+    },
+    "BOUNDED_CURVE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "BOUNDED_PCURVE": {
+      "status": "unsupported",
+      "note": "parameter-space curve as edge geometry"
+    },
+    "BOUNDED_SURFACE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "BOUNDED_SURFACE_CURVE": {
+      "status": "unsupported",
+      "note": "surface curve subtype without an adapter"
+    },
+    "BREP_WITH_VOIDS": {
+      "status": "adapted",
+      "note": ""
+    },
+    "B_SPLINE_CURVE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "B_SPLINE_CURVE_WITH_KNOTS": {
+      "status": "adapted",
+      "note": "with RATIONAL_B_SPLINE_CURVE complex instances"
+    },
+    "B_SPLINE_SURFACE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "B_SPLINE_SURFACE_WITH_KNOTS": {
+      "status": "adapted",
+      "note": "with RATIONAL_B_SPLINE_SURFACE complex instances"
+    },
+    "CARTESIAN_POINT": {
+      "status": "adapted",
+      "note": ""
+    },
+    "CARTESIAN_TRANSFORMATION_OPERATOR": {
+      "status": "product",
+      "note": "evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry"
+    },
+    "CARTESIAN_TRANSFORMATION_OPERATOR_3D": {
+      "status": "product",
+      "note": "evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry"
+    },
+    "CIRCLE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "CLOSED_SHELL": {
+      "status": "adapted",
+      "note": ""
+    },
+    "COMPLEX_TRIANGULATED_FACE": {
+      "status": "adapted",
+      "note": "existing tessellations"
+    },
+    "COMPLEX_TRIANGULATED_SURFACE_SET": {
+      "status": "adapted",
+      "note": "existing tessellations"
+    },
+    "COMPOSITE_CURVE": {
+      "status": "unsupported",
+      "note": "rare edge geometry; named rejection"
+    },
+    "COMPOSITE_CURVE_ON_SURFACE": {
+      "status": "unsupported",
+      "note": "rare edge geometry; named rejection"
+    },
+    "CONIC": {
+      "status": "supertype",
+      "note": ""
+    },
+    "CONICAL_SURFACE": {
+      "status": "adapted",
+      "note": "apex charts"
+    },
+    "COORDINATES_LIST": {
+      "status": "adapted",
+      "note": "existing tessellations"
+    },
+    "CURVE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "CURVE_BOUNDED_SURFACE": {
+      "status": "unsupported",
+      "note": "topology-free trimmed surface: named unsupported for v1.0 (roadmap scope decision)"
+    },
+    "CYLINDRICAL_POINT": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "CYLINDRICAL_SURFACE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "DEGENERATE_PCURVE": {
+      "status": "unsupported",
+      "note": "rare; named rejection"
+    },
+    "DEGENERATE_TOROIDAL_SURFACE": {
+      "status": "unsupported",
+      "note": "spindle tori: roadmap curved-import item"
+    },
+    "DIRECTION": {
+      "status": "adapted",
+      "note": ""
+    },
+    "DUPIN_CYCLIDE_SURFACE": {
+      "status": "unsupported",
+      "note": "rare surface or curve kind without an adapter; named rejection"
+    },
+    "EDGE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "wireframe model"
+    },
+    "EDGE_CURVE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "EDGE_LOOP": {
+      "status": "adapted",
+      "note": ""
+    },
+    "ELEMENTARY_BREP_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "container not searched for roots; planned with the surface-model decision"
+    },
+    "ELEMENTARY_SURFACE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "ELLIPSE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "EVALUATED_DEGENERATE_PCURVE": {
+      "status": "unsupported",
+      "note": "rare; named rejection"
+    },
+    "EXTRUDED_FACE_SOLID_WITH_DRAFT_ANGLE": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "EXTRUDED_FACE_SOLID_WITH_MULTIPLE_DRAFT_ANGLES": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "EXTRUDED_FACE_SOLID_WITH_TRIM_CONDITIONS": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "FACE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "FACETED_BREP": {
+      "status": "adapted",
+      "note": ""
+    },
+    "FACETED_BREP_SHAPE_REPRESENTATION": {
+      "status": "adapted",
+      "note": "faceted B-rep root container"
+    },
+    "FACE_BASED_SURFACE_MODEL": {
+      "status": "unsupported",
+      "note": "surface models: roadmap scope decision (proposed: import as shell meshes, never as solids)"
+    },
+    "FACE_BOUND": {
+      "status": "adapted",
+      "note": ""
+    },
+    "FACE_OUTER_BOUND": {
+      "status": "adapted",
+      "note": ""
+    },
+    "FACE_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "single-face representation; not searched for roots"
+    },
+    "FACE_SURFACE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "GEOMETRICALLY_BOUNDED_2D_WIREFRAME_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "wireframe model"
+    },
+    "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "CURVE_BOUNDED_SURFACE models: named unsupported for v1.0 (roadmap scope decision)"
+    },
+    "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "wireframe model"
+    },
+    "GEOMETRIC_CURVE_SET": {
+      "status": "unsupported",
+      "note": "loose geometry sets are not solid roots; a set as edge/face geometry is rejected naming the entity"
+    },
+    "GEOMETRIC_MODEL_ELEMENT_RELATIONSHIP": {
+      "status": "unsupported",
+      "note": "hybrid B-rep/tessellation assignments are not read"
+    },
+    "GEOMETRIC_REPRESENTATION_ITEM": {
+      "status": "supertype",
+      "note": ""
+    },
+    "GEOMETRIC_SET": {
+      "status": "unsupported",
+      "note": "loose geometry sets are not solid roots; a set as edge/face geometry is rejected naming the entity"
+    },
+    "HYBRID_BREP_EDGE_ASSIGNMENT": {
+      "status": "unsupported",
+      "note": "hybrid B-rep/tessellation assignments are not read"
+    },
+    "HYBRID_BREP_FACE_ASSIGNMENT": {
+      "status": "unsupported",
+      "note": "hybrid B-rep/tessellation assignments are not read"
+    },
+    "HYBRID_BREP_VERTEX_ASSIGNMENT": {
+      "status": "unsupported",
+      "note": "hybrid B-rep/tessellation assignments are not read"
+    },
+    "HYPERBOLA": {
+      "status": "unsupported",
+      "note": "evaluator exists; no adapter (roadmap item)"
+    },
+    "IMPLICIT_INTERSECTION_CURVE": {
+      "status": "out_of_scope",
+      "note": "implicit geometry defined by other items: design-intent data"
+    },
+    "IMPLICIT_MODEL_INTERSECTION_CURVE": {
+      "status": "out_of_scope",
+      "note": "implicit geometry defined by other items: design-intent data"
+    },
+    "IMPLICIT_PLANAR_INTERSECTION_POINT": {
+      "status": "out_of_scope",
+      "note": "implicit geometry defined by other items: design-intent data"
+    },
+    "IMPLICIT_PLANAR_PROJECTION_POINT": {
+      "status": "out_of_scope",
+      "note": "implicit geometry defined by other items: design-intent data"
+    },
+    "IMPLICIT_PROJECTED_CURVE": {
+      "status": "out_of_scope",
+      "note": "implicit geometry defined by other items: design-intent data"
+    },
+    "IMPLICIT_SILHOUETTE_CURVE": {
+      "status": "out_of_scope",
+      "note": "implicit geometry defined by other items: design-intent data"
+    },
+    "INTERSECTION_CURVE": {
+      "status": "adapted",
+      "note": "imported through its 3D curve"
+    },
+    "LINE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "LINE_AND_POINT_ON_PLANE": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "LINE_ON_PLANE_PCURVE": {
+      "status": "unsupported",
+      "note": "rare surface or curve kind without an adapter; named rejection"
+    },
+    "LOCALLY_REFINED_SPLINE_CURVE": {
+      "status": "unsupported",
+      "note": "locally refined (LR) splines are not evaluated"
+    },
+    "LOCALLY_REFINED_SPLINE_SURFACE": {
+      "status": "unsupported",
+      "note": "locally refined (LR) splines are not evaluated"
+    },
+    "LOOP": {
+      "status": "supertype",
+      "note": ""
+    },
+    "MANIFOLD_SOLID_BREP": {
+      "status": "adapted",
+      "note": ""
+    },
+    "MANIFOLD_SUBSURFACE_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "subface models are not imported"
+    },
+    "MANIFOLD_SURFACE_SHAPE_REPRESENTATION": {
+      "status": "adapted",
+      "note": "shell container; open shells import as shells, never as solids"
+    },
+    "MIN_AND_MAJOR_PLY_ORIENTATION_BASIS": {
+      "status": "out_of_scope",
+      "note": "composite-ply and presentation data"
+    },
+    "NON_MANIFOLD_SURFACE_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "non-manifold shells are rejected by the manifold shell checks"
+    },
+    "OFFSET_CURVE_2D": {
+      "status": "out_of_scope",
+      "note": "2D"
+    },
+    "OFFSET_CURVE_3D": {
+      "status": "unsupported",
+      "note": "rare; named rejection"
+    },
+    "OFFSET_SURFACE": {
+      "status": "unsupported",
+      "note": "rare; named rejection"
+    },
+    "ONE_DIRECTION_REPEAT_FACTOR": {
+      "status": "out_of_scope",
+      "note": "composite-ply and presentation data"
+    },
+    "ORIENTED_CLOSED_SHELL": {
+      "status": "adapted",
+      "note": "cavity shells"
+    },
+    "ORIENTED_EDGE": {
+      "status": "adapted",
+      "note": "$ endpoints tolerated unless strict"
+    },
+    "ORIENTED_SURFACE": {
+      "status": "unsupported",
+      "note": "rare surface or curve kind without an adapter; named rejection"
+    },
+    "OUTER_BOUNDARY_CURVE": {
+      "status": "unsupported",
+      "note": "CURVE_BOUNDED_SURFACE boundary; scope decision"
+    },
+    "PARABOLA": {
+      "status": "unsupported",
+      "note": "evaluator exists; no adapter (roadmap item)"
+    },
+    "PATH_SHAPE_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "wire path"
+    },
+    "PCURVE": {
+      "status": "unsupported",
+      "note": "retained as a link on surface curves; direct edge geometry is rejected"
+    },
+    "PLACEMENT": {
+      "status": "unsupported",
+      "note": "a bare PLACEMENT is not an axis placement"
+    },
+    "PLANAR_SHAPE_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "2D shape"
+    },
+    "PLANE": {
+      "status": "adapted",
+      "note": ""
+    },
+    "POINT": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_AND_VECTOR": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_ARRAY": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_ON_CURVE": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_ON_EDGE_CURVE": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_ON_FACE_SURFACE": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_ON_LINE": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_ON_PLANE": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_ON_SURFACE": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POINT_PATH": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POLAR_POINT": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "POLYLINE": {
+      "status": "unsupported",
+      "note": "polyline edge geometry is not adapted"
+    },
+    "POLY_LOOP": {
+      "status": "adapted",
+      "note": "faceted B-rep"
+    },
+    "PROCEDURAL_SHAPE_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "procedural history"
+    },
+    "QUASI_UNIFORM_CURVE": {
+      "status": "adapted",
+      "note": "knots derived per ISO 10303-42"
+    },
+    "QUASI_UNIFORM_SURFACE": {
+      "status": "adapted",
+      "note": "knots derived per ISO 10303-42"
+    },
+    "RATIONAL_B_SPLINE_CURVE": {
+      "status": "adapted",
+      "note": "complex-instance component"
+    },
+    "RATIONAL_B_SPLINE_SURFACE": {
+      "status": "adapted",
+      "note": "complex-instance component"
+    },
+    "RATIONAL_LOCALLY_REFINED_SPLINE_CURVE": {
+      "status": "unsupported",
+      "note": "locally refined (LR) splines are not evaluated"
+    },
+    "RATIONAL_LOCALLY_REFINED_SPLINE_SURFACE": {
+      "status": "unsupported",
+      "note": "locally refined (LR) splines are not evaluated"
+    },
+    "RECTANGULAR_COMPOSITE_SURFACE": {
+      "status": "unsupported",
+      "note": "rare; named rejection"
+    },
+    "RECTANGULAR_PYRAMID": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "RECTANGULAR_TRIMMED_SURFACE": {
+      "status": "unsupported",
+      "note": "rare; named rejection"
+    },
+    "REPOSITIONED_TESSELLATED_ITEM": {
+      "status": "unsupported",
+      "note": "tessellated item with its own placement: Milestone 20 follow-up"
+    },
+    "REPRESENTATIVE_TRIANGLE": {
+      "status": "out_of_scope",
+      "note": "scan data and point clouds"
+    },
+    "REVOLVED_FACE_SOLID_WITH_TRIM_CONDITIONS": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "SCANNED_DATA_ITEM": {
+      "status": "out_of_scope",
+      "note": "scan data and point clouds"
+    },
+    "SCAN_DATA_SHAPE_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "point clouds"
+    },
+    "SCULPTURED_SOLID": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "SEAM_CURVE": {
+      "status": "adapted",
+      "note": "imported through its 3D curve"
+    },
+    "SHAPE_REPRESENTATION": {
+      "status": "adapted",
+      "note": "generic container searched for solid roots"
+    },
+    "SHELL_BASED_SURFACE_MODEL": {
+      "status": "unsupported",
+      "note": "surface models: roadmap scope decision (proposed: import as shell meshes, never as solids)"
+    },
+    "SHELL_BASED_WIREFRAME_SHAPE_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "wireframe model"
+    },
+    "SOLID_MODEL": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "SPHERICAL_POINT": {
+      "status": "unsupported",
+      "note": "point kinds other than CARTESIAN_POINT are rejected as vertex geometry"
+    },
+    "SPHERICAL_SURFACE": {
+      "status": "adapted",
+      "note": "pole charts"
+    },
+    "SURFACE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "SURFACE_CURVE": {
+      "status": "adapted",
+      "note": "imported through its 3D curve; pcurves retained as links"
+    },
+    "SURFACE_CURVE_SWEPT_SURFACE": {
+      "status": "unsupported",
+      "note": "rare surface or curve kind without an adapter; named rejection"
+    },
+    "SURFACE_OF_LINEAR_EXTRUSION": {
+      "status": "adapted",
+      "note": "exact elementary or NURBS chart"
+    },
+    "SURFACE_OF_REVOLUTION": {
+      "status": "adapted",
+      "note": "exact elementary or NURBS chart"
+    },
+    "SURFACE_PATCH_SET": {
+      "status": "unsupported",
+      "note": "rare surface or curve kind without an adapter; named rejection"
+    },
+    "SWEPT_DISK_SOLID": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "SWEPT_SURFACE": {
+      "status": "supertype",
+      "note": ""
+    },
+    "SYMBOL_TARGET": {
+      "status": "out_of_scope",
+      "note": "composite-ply and presentation data"
+    },
+    "TESSELLATED_BREP_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "tessellated B-rep hybrid container; existing tessellations import through TESSELLATED_SHAPE_REPRESENTATION"
+    },
+    "TESSELLATED_CONSTRUCTIVE_GEOMETRY_REPRESENTATION": {
+      "status": "out_of_scope",
+      "note": "tessellated CSG"
+    },
+    "TESSELLATED_MANIFOLD_SUBSURFACE_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "subsurface tessellations"
+    },
+    "TESSELLATED_MANIFOLD_SURFACE_SHAPE_REPRESENTATION": {
+      "status": "unsupported",
+      "note": "container not searched for roots; tessellated shells import through TESSELLATED_SHAPE_REPRESENTATION"
+    },
+    "TESSELLATED_SHAPE_REPRESENTATION": {
+      "status": "adapted",
+      "note": "existing tessellation container"
+    },
+    "TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS": {
+      "status": "unsupported",
+      "note": "accuracy parameters are not read"
+    },
+    "TESSELLATED_SHELL": {
+      "status": "adapted",
+      "note": "existing tessellations"
+    },
+    "TESSELLATED_SOLID": {
+      "status": "adapted",
+      "note": "existing tessellations"
+    },
+    "THICKENED_FACE_SOLID": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "TOROIDAL_SURFACE": {
+      "status": "adapted",
+      "note": "ring tori"
+    },
+    "TRACK_BLENDED_SOLID_WITH_END_CONDITIONS": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    },
+    "TRIANGULATED_FACE": {
+      "status": "adapted",
+      "note": "existing tessellations"
+    },
+    "TRIANGULATED_POINT_CLOUD_DATASET": {
+      "status": "out_of_scope",
+      "note": "scan data and point clouds"
+    },
+    "TRIANGULATED_SURFACE_SET": {
+      "status": "adapted",
+      "note": "existing tessellations"
+    },
+    "TRIMMED_CURVE": {
+      "status": "adapted",
+      "note": "basis curve with sense"
+    },
+    "TWO_DIRECTION_REPEAT_FACTOR": {
+      "status": "out_of_scope",
+      "note": "composite-ply and presentation data"
+    },
+    "UNIFORM_CURVE": {
+      "status": "unsupported",
+      "note": "implicit knots: roadmap item"
+    },
+    "UNIFORM_SURFACE": {
+      "status": "unsupported",
+      "note": "implicit knots: roadmap item"
+    },
+    "VECTOR": {
+      "status": "adapted",
+      "note": ""
+    },
+    "VERTEX_LOOP": {
+      "status": "adapted",
+      "note": "pole and apex bounds"
+    },
+    "VERTEX_POINT": {
+      "status": "adapted",
+      "note": ""
+    },
+    "VOLUME": {
+      "status": "out_of_scope",
+      "note": "solids by construction: only B-rep and tessellated solids are imported"
+    }
+  }
+}

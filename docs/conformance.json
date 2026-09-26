@@ -180,7 +180,13 @@
       "feature": "Schema-aware physical instance decoding/validation",
       "status": "structural subset implemented",
       "test": "schema_decode_complex_and_diamond_memberships",
-      "limitations": "internal/external mappings, SELECT, bounds/widths/uniqueness and local references; rules, algorithms, general expressions and AP semantics unsupported"
+      "limitations": "internal/external mappings, SELECT, bounds/widths/uniqueness and local references; redeclared attributes reuse their ancestor's slot; distinct SELECT type tags are distinct values; rules, algorithms, general expressions and AP semantics unsupported"
+    },
+    {
+      "feature": "Structural decoding under a retaining policy",
+      "status": "implemented",
+      "test": "schema_decode_retains_unevaluated_semantics_only_by_policy",
+      "limitations": "explicit opt-in; rules, DERIVE, INVERSE and constraints are counted, never evaluated; DERIVE redeclarations require * in the ancestor slot; not an AP conformance verdict"
     },
     {
       "feature": "AP242 / AP203 / AP214 schema conformance",

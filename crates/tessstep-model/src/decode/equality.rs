@@ -27,9 +27,10 @@ impl Context<'_> {
             Domain::Select(_) => {
                 let (a, av, at) = self.selected_domain(left, depth + 1)?;
                 let (b, bv, bt) = self.selected_domain(right, depth + 1)?;
-                // Different enumeration declarations are distinct domains even if
-                // their enumerator spellings happen to coincide.
-                if matches!(a, Domain::Enumeration(_)) && at != bt {
+                // Tagged values of different defined types are distinct SELECT
+                // members, as in `(U_DIRECTION_COUNT(2), V_DIRECTION_COUNT(2))`;
+                // EXPRESS numeric compatibility is not applied across type tags.
+                if at != bt {
                     return Ok(false);
                 }
                 match (a, b) {
@@ -51,13 +52,9 @@ impl Context<'_> {
                     (Domain::Enumeration(_), Domain::Enumeration(_)) => {
                         self.equal(&a, av, bv, depth + 1)
                     }
-                    (Domain::Aggregate { .. }, Domain::Aggregate { .. }) if at == bt => {
+                    (Domain::Aggregate { .. }, Domain::Aggregate { .. }) => {
                         self.equal(&a, av, bv, depth + 1)
                     }
-                    (Domain::Aggregate { .. }, Domain::Aggregate { .. }) => Err(self.error(
-                        ErrorKind::Unsupported,
-                        "SELECT aggregate equality across distinct defined types",
-                    )),
                     _ => Ok(false),
                 }
             }
@@ -147,9 +144,12 @@ impl Context<'_> {
         let ValueKind::Typed { type_name, value } = &value.kind else {
             return Err(self.error(ErrorKind::TypeMismatch, "expected SELECT tag"));
         };
-        let mut id = self
+        let tag = self
             .lookup(type_name)?
             .ok_or_else(|| self.error(ErrorKind::TypeMismatch, "unknown SELECT tag"))?;
+        // The written tag identifies the member even when several tags alias one
+        // underlying type (BOX_SLANT_ANGLE and BOX_ROTATE_ANGLE are both angles).
+        let mut id = tag;
         for _ in depth..self.limits.max_depth.min(128) {
             match self.declaration(id)? {
                 DeclarationKind::Type {
@@ -160,7 +160,7 @@ impl Context<'_> {
                     domain: Domain::Select(_),
                     ..
                 } => return self.selected_domain(value, depth + 1),
-                DeclarationKind::Type { domain, .. } => return Ok((domain, value, Some(id))),
+                DeclarationKind::Type { domain, .. } => return Ok((domain, value, Some(tag))),
                 _ => {
                     return Err(
                         self.error(ErrorKind::InvalidMetadata, "invalid SELECT equality type")

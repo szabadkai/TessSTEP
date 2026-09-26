@@ -207,6 +207,42 @@ reviewed positive/negative/unsupported fixtures through the real runner. Expecte
 and provenance are in `corpus/manifest.json`; the per-file report is `reports/schema/`.
 This establishes a structural schema stage, not AP conformance or geometry support.
 
+## AP schema stage (Milestone 21)
+
+`--schema-validator EXE --schema-map corpus/ap-schema-map.json` selects each input's
+validator schema from its declared `FILE_SCHEMA` name through an explicit table (upper
+case, object identifier removed; no fuzzy matching) and passes the map's validator
+arguments. The validator is one generated `expressc --validator` application holding
+the pinned AP242, AP214 and AP203 (both editions) long forms:
+
+```sh
+python3 scripts/fetch_schemas.py --output ~/step-schemas
+python3 scripts/build_ap_validator.py --schemas ~/step-schemas
+python3 scripts/corpus.py --check --schema-validator target/release/ap-validator \
+  --schema-map corpus/ap-schema-map.json
+```
+
+`corpus/ap-schemas.json` pins the stepcode revision, paths and SHA-256 of each schema
+file; nothing is bundled (see `schemas/README.md`). Inputs whose declared name is not
+in the table stay `not_configured` and record the declared name in `schema_result`.
+Mapped inputs run the validator under the map's policy — `--retain-unevaluated`
+(rules, functions, DERIVE and INVERSE are counted, never evaluated),
+`--accept-unset-derived` and `--accept-unordered-complex` (common nonconformant
+exporter encodings, counted per input) — so `accepted` means structural validity
+against the declared schema, not application-protocol conformance. The summary reports
+outcomes by declared schema, the top rejection categories and the unevaluated and
+tolerated totals. CI builds the validator and runs this stage on every push; the
+baseline records each input's schema outcome, and a previously accepted input
+becoming non-accepted fails `--check`.
+
+`python3 scripts/check_coverage.py --schemas ~/step-schemas` derives every
+instantiable AP242 geometric, topological and shape-representation entity from the
+compiled long form and checks `docs/coverage.json`: each must be `adapted` (declared
+by an import profile in `corpus/geometry`), `supertype`, `product`, a named
+`unsupported` rejection or a recorded `out_of_scope` decision, with no unclassified
+entity and no profile entity recorded otherwise. `--write` regenerates
+[COVERAGE.md](COVERAGE.md).
+
 ## Configured product stage (Milestone 5)
 
 `--product-validator EXE` adds a `product` stage after the configured schema stage
