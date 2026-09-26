@@ -19,3 +19,7 @@ tessstep-mesh.workspace = true
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "tessellated"
+harness = false

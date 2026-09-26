@@ -26,6 +26,7 @@ jobs:
       - run: cargo fuzz run brep_pipeline -- -max_total_time=120 -max_len=96
       - run: cargo fuzz run nurbs_curves -- -max_total_time=120 -max_len=128
       - run: cargo fuzz run surface_evaluators -- -max_total_time=120 -max_len=128
+      - run: cargo fuzz run tessellated_import corpus/geometry -- -max_total_time=120 -max_len=65536
       - run: cargo fuzz run analytic_curves -- -max_total_time=120 -max_len=128
       - run: cargo fuzz run math_primitives -- -max_total_time=120 -max_len=144
       - run: cargo fuzz run product_adapter corpus/product -- -max_total_time=120 -max_len=65536

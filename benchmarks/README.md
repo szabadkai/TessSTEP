@@ -31,3 +31,11 @@ normalization, UV seam reconstruction, and shared-edge sampling with face UV map
 It uses a constructed cylinder strip, one warmup and one-second samples. Raw cloning
 is included in validation timing; geometry construction is outside timing. This is a
 local throughput observation, not a face triangulation or whole-model benchmark.
+
+`cargo bench -p tessstep-import --bench tessellated` imports a generated closed
+tessellated box: a 1.5 MB document with 60,002 shared points and 120,000 strip
+triangles over six faces. Parsing and generation are outside timing. One warmup
+checks closure, triangle count and volume, then imports repeat for two seconds.
+Timing includes selected-root decoding, index/normal validation, mesh construction
+and owned-mesh validation. This is a local throughput observation, not a memory
+benchmark or a comparison with B-rep tessellation.

@@ -95,5 +95,5 @@ The `appearance` benchmark separates inheritance construction from triangle quer
 STEP presentation/style adaptation, surface-side styles, texture images, vertex colors,
 line/point styles, physically based material properties, shader evaluation, color-space
 conversion, rendering and exporters remain future work. This module does not enable an
-external STEP appearance, geometry or tessellation corpus stage. The next numbered
-milestone is 20: existing tessellations.
+external STEP appearance, geometry or tessellation corpus stage. Milestone 20 now
+imports existing tessellations; see [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).

@@ -1,3 +1,45 @@
+# Existing tessellation import (Milestone 20) — 2026-09-26
+
+Added selected-root import of `TESSELLATED_SOLID`, `TESSELLATED_SHELL` and
+triangulated surface sets built from `TRIANGULATED_FACE` / `COMPLEX_TRIANGULATED_FACE`
+over shared `COORDINATES_LIST`s, directly into owned meshes without retessellation.
+Opt-in decoder link slots retain B-rep provenance links without decoding them. See
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). Rust only; no C/C++ entry point
+is claimed yet.
+
+Observed locally on macOS arm64, rustc 1.98.1:
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | 214 tests/doctests passed |
+| Workspace fmt, Clippy and rustdoc with warnings denied | passed |
+| Architecture, authored fixture provenance and generated conformance | passed; 19 packages, 66 fixtures |
+| Python verification tests | 37 passed |
+| CLI, EXPRESS, schema, product and metamorphic checks | passed |
+| `check_geometry.py --require-external` | 26 reviewed outcomes passed, including 4 authored tessellated fixtures and 3 hash-pinned exporter files |
+| `cargo check --manifest-path fuzz/Cargo.toml --locked` (unnested copy) | passed with the new `tessellated_import` target; no coverage-guided run |
+| `cargo bench -p tessstep-import --bench tessellated` | 120,000 triangles, 28 imports in 2.03 s (about 72 ms each) |
+
+`python3 scripts/corpus.py --check` passed: 3,230 paths / 3,227 unique inputs in
+52.5 s, with 2,821 clean, 38 reference-error and 368 rejected physical outcomes, all
+compatible with the reviewed baseline and no changes. In this runner, geometry and
+tessellation remain `not_integrated`; the baseline was not refreshed.
+
+A separate sweep ran the `tessellated` example over every tessellated root in the
+external corpus, at an assumed 0.001 metres per unit, with surface sets capped at
+three per file:
+
+| Root type | Accepted | Rejected / unsupported |
+| --- | --- | --- |
+| `TESSELLATED_SOLID` | 4 (three NIST FTC-08 copies, CATIA cuboid) | 10 synthetic adversarial files: 9 at profile (arity, empty sets), 1 open solid |
+| `TESSELLATED_SHELL` | 5 (three NIST copies, HOOPS shell, one synthetic shell whose link disagrees with its tessellation) | 7 synthetic adversarial files, all at profile |
+| `COMPLEX_TRIANGULATED_SURFACE_SET` | 19 | 31 supplied normal opposes winding, 2 degenerate triangles, 2 `pnmax`/`npoints` mismatches, 3 arity; 6 more fail physical parsing |
+| `TRIANGULATED_SURFACE_SET` | 0 | 1 references an entity outside the profile |
+
+Every real exported shape tessellation imports. The rejected surface sets are
+mostly PMI glyph fills, whose winding disagrees with their single annotation-plane
+normal. Presentation tessellations are outside this milestone.
+
 # Edge-based planar STEP import — 2026-09-26
 
 Added selected-root `MANIFOLD_SOLID_BREP` import with `ADVANCED_FACE`, `PLANE`,

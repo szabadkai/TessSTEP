@@ -144,3 +144,15 @@ are invalid metadata. Work is charged for policy checks and inherited membership
 This opt-in mapping is used for planar `ORIENTED_EDGE` endpoint slots, whose semantics
 are implemented by the geometry adapter. It does not weaken either ordinary decoder,
 evaluate general DERIVE expressions, or bypass unsupported schema diagnostics.
+
+`decode_reachable_profile_with_links` additionally takes explicit `LinkSlot`
+declarations. Each resolves to exactly one declaring owner of the named attribute;
+duplicates, absent attributes and overlap with an omitted slot are invalid metadata.
+Traversal does not follow a link slot, so its target and the target's closure are
+neither decoded nor type-checked and are absent from the result unless another
+decoded reference reaches them. The slot itself accepts only `$` (when optional) or a
+reference to a local entity; anything else is a type mismatch, and a missing target
+is a missing reference. When link slots are declared, traversal resolves each
+record's type identities first, so parameter-count and name errors can be reported
+before closure expansion. Existing-tessellation import uses this for B-rep
+provenance links; see [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).

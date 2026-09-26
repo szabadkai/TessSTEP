@@ -1,7 +1,8 @@
 //! Explicit, bounded STEP import profiles. No full AP schema conformance is implied.
 //! Faceted and edge-based planar profiles follow one selected solid's reference closure,
 //! validates named attributes, constructs planar geometry, and uses the independent
-//! topology/UV/tessellation pipeline. Units and tolerances are caller supplied.
+//! topology/UV/tessellation pipeline. The tessellated profile imports existing
+//! triangulations directly as owned meshes. Units and tolerances are caller supplied.
 #![forbid(unsafe_code)]
 #[allow(dead_code)]
 #[rustfmt::skip]
@@ -9,8 +10,13 @@ mod profile;
 #[allow(dead_code)]
 #[rustfmt::skip]
 mod planar_profile;
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod tessellated_profile;
 mod planar;
+mod tessellated;
 pub use planar::import_planar_solid;
+pub use tessellated::{ImportedTessellation, TessellatedFace, TessellatedKind, import_tessellated};
 
 use std::collections::BTreeMap;
 use tessstep_curves::{Curve, PlaneFrame};

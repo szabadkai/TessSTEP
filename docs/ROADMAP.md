@@ -3,7 +3,9 @@
 **Integration update:** selected planar `FACETED_BREP` and straight-edge
 `MANIFOLD_SOLID_BREP` → validated geometry → owned
 solid mesh is now available in Rust/C/C++. See [STEP_IMPORT.md](STEP_IMPORT.md) for
-explicit units, reduced-profile scope and evidence. The milestone records below
+explicit units, reduced-profile scope and evidence. Existing triangulated STEP
+tessellations import directly as owned meshes (Milestone 20, Rust only so far); see
+[EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). The milestone records below
 describe their delivery-time scope; general curved STEP adaptation remains pending.
 
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
@@ -15,6 +17,7 @@ Milestones 7–10 add independent analytic curves/surfaces and NURBS curves/surf
 Milestones 11–17 add structural topology, supplied-pcurve UV trimming, shared-edge sampling, planar/regular curved-face refinement and owned manifold shell/solid meshes.
 Milestone 18 adds shared assembly mesh assets and explicit nested placements.
 Milestone 19 adds explicit color/opacity and inherited appearance overrides.
+Milestone 20 imports existing triangulated tessellations without retessellation.
 STEP geometry adaptation and industrial hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz/bench runs, documentation, conformance updates
 and architecture review before declaring work done.
@@ -186,14 +189,30 @@ baking. Bounded iterative validation, an independent mutation oracle, benchmarks
 installed C/C++ ownership/layout consumers cover this slice. The precedence policy is
 explicitly independent of ISO style semantics. See [APPEARANCE.md](APPEARANCE.md).
 STEP presentation adapters, textures, lighting models, surface-side styling and rendering
-remain pending. The next numbered milestone is 20: existing tessellations.
+remain pending. Milestone 20 now imports existing tessellations.
+
+**Milestone 20 delivered — existing triangulated tessellations.**
+
+`tessstep_import::import_tessellated` converts a selected `TESSELLATED_SOLID`,
+`TESSELLATED_SHELL` or triangulated surface set into an owned mesh without
+retessellation. `TRIANGULATED_FACE` and `COMPLEX_TRIANGULATED_FACE` supply explicit
+triangles, strips and fans over shared `COORDINATES_LIST`s. Vertex identity is the
+coordinate-list index, never proximity. Supplied normals must agree with winding;
+solids must be closed with positive volume. Opt-in decoder link slots retain B-rep
+provenance links without decoding them, so linked exports import even when the
+linked geometry is unsupported. Authored fixtures, typed rejection tests, mutation
+smoke, a benchmark and three hash-pinned unmodified exporter files (NIST, CATIA,
+HOOPS) cover this slice. See [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).
+C/C++ entry points, tessellated edges/vertices, presentation tessellations, corpus
+survey integration and representation selection remain pending. The next numbered
+milestone is 21: systematic AP242 coverage.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
 analytic curves/surfaces and NURBS. Milestones 11–12 establish topology validity states
 and UV trimming. Milestones 13–17 implement shared-edge sampling, planar and curved
-face tessellation and the watertight solid pipeline. Milestones 18–19 supply independent assembly assets and appearance; Milestones 20–22 extend
-existing tessellations, systematic AP242 coverage and industrial hardening. Conformance is evaluated by stage, not by whether a model opens.
+face tessellation and the watertight solid pipeline. Milestones 18–19 supply independent assembly assets and appearance; Milestone 20 imports
+existing tessellations; Milestones 21–22 extend systematic AP242 coverage and industrial hardening. Conformance is evaluated by stage, not by whether a model opens.
 
 The public-interface workstream must deliver both the stable C ABI and C++ RAII
 wrapper, including typed errors and the installed `TessSTEP::TessSTEP` CMake

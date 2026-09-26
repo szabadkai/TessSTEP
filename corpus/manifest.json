@@ -667,6 +667,41 @@
       "license": "MIT",
       "sha256": "faa3259672b2dd2da8a589549b019bc249fbb66cc3585402c68e650ae8b86b24",
       "syntax": "express-profile"
+    },
+    {
+      "path": "geometry/tessellated-cube.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "36136a7872348947a8ff64a7d8127be73a758a69185c277136cf011b3bff006e",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/tessellated-edge.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "ca11a94248c391198d9a3b9bb1a2b09d492fa370ad0aea3a61a4680403458796",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/tessellated-open-solid.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "130c53e650abc56c4e1c6d474cecc20a786bff691616bc485029f505f3ca5842",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/tessellated-shell.step",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "052f8528fa3ebab24e1c3a710599e659861695c3966df638ee4fb1689693b8e9",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/tessellated.exp",
+      "source": "Original TessSTEP tessellated import profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "d52914cb7cebb81986fa67a14094c910e75da20c7d032c2c928a51be10b65622",
+      "syntax": "express-profile"
     }
   ]
 }

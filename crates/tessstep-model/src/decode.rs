@@ -13,7 +13,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
 };
-use tessstep_part21::{EntityId, EntityKind, SourceSpan, StepValue, ValueKind};
+use tessstep_part21::{EntityId, EntityKind, Record, SourceSpan, StepValue, ValueKind};
 use tessstep_schema::{
     AggregateKind, Attribute, AttributeKind, Builtin, DeclarationId, DeclarationKind, Domain,
     Expression, Schema, SchemaSet,
@@ -114,7 +114,7 @@ pub fn decode<'a>(
     schema_name: &str,
     limits: Limits,
 ) -> Result<DecodedDocument<'a>, Error> {
-    decode_scope(document, schemas, schema_name, limits, None, &[])
+    decode_scope(document, schemas, schema_name, limits, None, &[], &[])
 }
 
 /// Structurally decode only the local entity-reference closure of explicit roots.
@@ -128,7 +128,15 @@ pub fn decode_reachable<'a>(
     roots: &[EntityId],
     limits: Limits,
 ) -> Result<DecodedDocument<'a>, Error> {
-    decode_scope(document, schemas, schema_name, limits, Some(roots), &[])
+    decode_scope(
+        document,
+        schemas,
+        schema_name,
+        limits,
+        Some(roots),
+        &[],
+        &[],
+    )
 }
 
 /// An explicitly declared physical-profile slot that must contain `*`.
@@ -152,7 +160,47 @@ pub fn decode_reachable_profile<'a>(
     omitted: &[OmittedSlot],
     limits: Limits,
 ) -> Result<DecodedDocument<'a>, Error> {
-    decode_scope(document, schemas, schema_name, limits, Some(roots), omitted)
+    decode_scope(
+        document,
+        schemas,
+        schema_name,
+        limits,
+        Some(roots),
+        omitted,
+        &[],
+    )
+}
+
+/// An explicitly declared physical-profile reference that is retained but not followed.
+/// Its value must be `$` (when optional) or a reference to a local entity. Neither the
+/// target nor its closure is decoded or type-checked, so the declared domain is not
+/// applied. Adapters use it for provenance links to geometry outside a reduced profile.
+#[derive(Clone, Copy, Debug)]
+pub struct LinkSlot {
+    pub entity: DeclarationId,
+    pub attribute: &'static str,
+}
+
+/// `decode_reachable_profile` that additionally leaves declared link slots unexpanded.
+/// Link targets are absent from the result unless another decoded reference reaches them.
+pub fn decode_reachable_profile_with_links<'a>(
+    document: &'a Document,
+    schemas: &'a SchemaSet,
+    schema_name: &str,
+    roots: &[EntityId],
+    omitted: &[OmittedSlot],
+    links: &[LinkSlot],
+    limits: Limits,
+) -> Result<DecodedDocument<'a>, Error> {
+    decode_scope(
+        document,
+        schemas,
+        schema_name,
+        limits,
+        Some(roots),
+        omitted,
+        links,
+    )
 }
 
 fn decode_scope<'a>(
@@ -162,6 +210,7 @@ fn decode_scope<'a>(
     limits: Limits,
     roots: Option<&[EntityId]>,
     omitted: &[OmittedSlot],
+    links: &[LinkSlot],
 ) -> Result<DecodedDocument<'a>, Error> {
     let mut cx = Context {
         schemas,
@@ -204,6 +253,28 @@ fn decode_scope<'a>(
             ));
         }
     }
+    // Each link resolves to its single declaring owner, so equally named attributes
+    // inherited from another branch are never mistaken for the link.
+    let mut resolved = Vec::new();
+    for slot in links {
+        cx.tick()?;
+        let mut owners = Vec::new();
+        for owner in cx.hierarchy(slot.entity)? {
+            for attribute in cx.local_attributes(owner)? {
+                cx.tick()?;
+                if attribute.name == slot.attribute {
+                    owners.push(owner);
+                }
+            }
+        }
+        if owners.len() != 1 || !slots.insert((slot.entity, slot.attribute)) {
+            return Err(cx.error(
+                ErrorKind::InvalidMetadata,
+                "ambiguous, missing or duplicate physical-profile slot",
+            ));
+        }
+        resolved.push((slot.entity, owners[0], slot.attribute));
+    }
     for section in document.data_sections() {
         cx.tick()?;
         if !section.parameters.is_empty() {
@@ -233,12 +304,36 @@ fn decode_scope<'a>(
                     "closure references a nonlocal entity",
                 )
             })?;
+            let types = if resolved.is_empty() {
+                Vec::new()
+            } else {
+                cx.instance_types(&entity.kind)?
+            };
             for record in entity.kind.records() {
                 cx.tick()?;
+                let skip = if resolved.is_empty() {
+                    Vec::new()
+                } else {
+                    let (_, attributes) = cx.record_attributes(&entity.kind, record)?;
+                    let mut skip = Vec::new();
+                    for (owner, attribute) in attributes {
+                        skip.push(cx.is_link(&resolved, &types, owner, attribute)?);
+                    }
+                    // Without positional agreement no slot can be identified safely.
+                    if skip.len() != record.parameters.len() {
+                        return Err(cx.error(
+                            ErrorKind::AttributeCount,
+                            "physical parameter count differs from explicit attribute count",
+                        ));
+                    }
+                    skip
+                };
                 let mut values = Vec::new();
-                for value in &record.parameters {
+                for (index, value) in record.parameters.iter().enumerate() {
                     cx.tick()?;
-                    values.push(value);
+                    if !skip.get(index).copied().unwrap_or(false) {
+                        values.push(value);
+                    }
                 }
                 while let Some(value) = values.pop() {
                     cx.tick()?;
@@ -291,23 +386,15 @@ fn decode_scope<'a>(
         cx.source = Some(entity.source);
         let mut views = Vec::new();
         let mut primary = None;
+        let types = if resolved.is_empty() {
+            Vec::new()
+        } else {
+            cx.types[&entity.id].clone()
+        };
         for record in entity.kind.records() {
-            cx.source = Some(record.source);
-            let id = cx
-                .lookup(&record.name)?
-                .ok_or_else(|| cx.error(ErrorKind::UnknownEntity, "unknown entity name"))?;
-            let owners = if matches!(entity.kind, EntityKind::Simple(_)) {
+            let (id, attributes) = cx.record_attributes(&entity.kind, record)?;
+            if matches!(entity.kind, EntityKind::Simple(_)) {
                 primary = Some(id);
-                cx.hierarchy(id)?
-            } else {
-                vec![id]
-            };
-            let mut attributes = Vec::new();
-            for owner in owners {
-                for attribute in cx.local_attributes(owner)? {
-                    cx.tick()?;
-                    attributes.push((owner, attribute));
-                }
             }
             if record.parameters.len() != attributes.len() {
                 return Err(cx.error(
@@ -318,6 +405,7 @@ fn decode_scope<'a>(
             for ((owner, attribute), value) in attributes.into_iter().zip(&record.parameters) {
                 cx.attribute = Some(attribute.name);
                 cx.source = Some(value.source);
+                let link = cx.is_link(&resolved, &types, owner, attribute)?;
                 let mut placeholder = false;
                 for slot in omitted {
                     cx.tick()?;
@@ -337,6 +425,8 @@ fn decode_scope<'a>(
                             "physical-profile slot requires a derived marker",
                         ));
                     }
+                } else if link {
+                    cx.link(value, attribute.optional)?;
                 } else {
                     cx.value(&attribute.domain, value, attribute.optional, 0)?;
                 }
@@ -617,5 +707,23 @@ impl<'a> Context<'a> {
             ErrorKind::ReferenceType,
             "target is not assignable to entity domain",
         ))
+    }
+    fn link(&mut self, value: &StepValue, optional: bool) -> Result<(), Error> {
+        self.tick()?;
+        match value.kind {
+            ValueKind::Null if optional => Ok(()),
+            ValueKind::Null => Err(self.error(ErrorKind::RequiredValue, "required value is unset")),
+            ValueKind::Reference(target) if self.document.entities().get(target).is_some() => {
+                Ok(())
+            }
+            ValueKind::Reference(_) => Err(self.error(
+                ErrorKind::MissingReference,
+                "profile link target is missing",
+            )),
+            _ => Err(self.error(
+                ErrorKind::TypeMismatch,
+                "profile link requires an entity reference",
+            )),
+        }
     }
 }

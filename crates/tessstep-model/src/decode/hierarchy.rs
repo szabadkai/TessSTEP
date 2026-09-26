@@ -1,5 +1,7 @@
 use super::*;
 use std::collections::BTreeSet;
+/// A record's declaration and its `(owner, attribute)` list in parameter order.
+type RecordAttributes<'a> = (DeclarationId, Vec<(DeclarationId, &'a Attribute)>);
 impl<'a> Context<'a> {
     /// Postorder in SUBTYPE OF order; diamonds emit each ancestor once.
     pub(super) fn hierarchy(&mut self, root: DeclarationId) -> Result<Vec<DeclarationId>, Error> {
@@ -61,6 +63,47 @@ impl<'a> Context<'a> {
             }
         }
         Ok(attributes)
+    }
+    /// A record's declaration and explicit attributes in physical parameter order:
+    /// the full inherited list for internal mapping, local attributes for external.
+    pub(super) fn record_attributes(
+        &mut self,
+        kind: &EntityKind,
+        record: &Record,
+    ) -> Result<RecordAttributes<'a>, Error> {
+        self.source = Some(record.source);
+        let id = self
+            .lookup(&record.name)?
+            .ok_or_else(|| self.error(ErrorKind::UnknownEntity, "unknown entity name"))?;
+        let owners = if matches!(kind, EntityKind::Simple(_)) {
+            self.hierarchy(id)?
+        } else {
+            vec![id]
+        };
+        let mut attributes = Vec::new();
+        for owner in owners {
+            for attribute in self.local_attributes(owner)? {
+                self.tick()?;
+                attributes.push((owner, attribute));
+            }
+        }
+        Ok((id, attributes))
+    }
+    /// Whether an instance attribute is a resolved link slot `(entity, owner, name)`.
+    pub(super) fn is_link(
+        &mut self,
+        links: &[(DeclarationId, DeclarationId, &'static str)],
+        types: &[DeclarationId],
+        owner: DeclarationId,
+        attribute: &Attribute,
+    ) -> Result<bool, Error> {
+        for &(entity, declared, name) in links {
+            self.tick()?;
+            if declared == owner && name == attribute.name && types.contains(&entity) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     pub(super) fn instance_types(
         &mut self,

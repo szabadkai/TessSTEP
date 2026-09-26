@@ -119,10 +119,28 @@ dependencies = [
  "tessstep-codegen",
  "tessstep-curves",
  "tessstep-express",
+ "tessstep-import",
  "tessstep-math",
+ "tessstep-mesh",
  "tessstep-model",
  "tessstep-part21",
  "tessstep-product",
+ "tessstep-schema",
+ "tessstep-surfaces",
+ "tessstep-tessellate",
+ "tessstep-topology",
+ "tessstep-trim",
+]
+
+[[package]]
+name = "tessstep-import"
+version = "0.1.0"
+dependencies = [
+ "tessstep-curves",
+ "tessstep-math",
+ "tessstep-mesh",
+ "tessstep-model",
+ "tessstep-part21",
  "tessstep-schema",
  "tessstep-surfaces",
  "tessstep-tessellate",

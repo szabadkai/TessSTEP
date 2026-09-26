@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import",
+  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20)",
   "features": [
     {
       "feature": "streaming lexer",
@@ -517,6 +517,24 @@
       "status": "implemented",
       "test": "c_abi_planar_import_owns_mesh_and_preserves_error_contract",
       "limitations": "Additive ABI 1 functions; same options layout and retained mesh ownership; external exporter test requires pinned corpus"
+    },
+    {
+      "feature": "Existing triangulated tessellation import",
+      "status": "implemented",
+      "test": "tessellated_solid_uses_every_encoding_without_retessellation",
+      "limitations": "TESSELLATED_SOLID/SHELL and triangulated surface sets; explicit triangles, strips and fans; coordinate-index identity, no proximity welding, repair or retessellation; Rust only"
+    },
+    {
+      "feature": "Tessellated import rejections and budgets",
+      "status": "implemented",
+      "test": "tessellated_solid_rejections_are_typed_and_located",
+      "limitations": "Count, index, normal-winding, degeneracy, orientation and closure errors are rejected, never repaired"
+    },
+    {
+      "feature": "Explicit physical-profile link slots",
+      "status": "implemented",
+      "test": "physical_profile_links_are_retained_without_expanding_their_targets",
+      "limitations": "Named opt-in reference slots; targets must be local but are neither decoded, type-checked nor compared with the tessellation"
     }
   ]
 }

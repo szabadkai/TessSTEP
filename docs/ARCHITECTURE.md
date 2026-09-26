@@ -484,3 +484,21 @@ those endpoints through the referenced edge and orientation, validates LINE supp
 and trimming, and preserves physical VERTEX_POINT/EDGE_CURVE identity. It never
 welds separate topology entities or replaces invalid curves with endpoint chords.
 The C bridge adds two functions and an options type alias with no layout changes.
+
+## Milestone 20 existing tessellation architecture review
+
+Existing tessellations reuse the import composition boundary without touching the
+B-rep, trim or tessellation crates: a third generated reduced profile feeds an
+adapter that writes `tessstep_mesh::MeshData` directly, and the owned mesh validator
+remains the single gate for incidence, orientation, closure and volume. The model
+decoder gains opt-in link slots next to omitted slots. They stop traversal at named
+provenance references while still requiring a local target, so reduced profiles can
+coexist with linked B-rep geometry without suppressing any decoding rule for the
+records they do decode. Ordinary and omitted-slot decoding are unchanged when no link
+slots are declared.
+
+The adapter identifies vertices by coordinate-list entity and index, mirroring the
+planar profiles' reliance on STEP identity instead of proximity. It rejects rather
+than repairs: opposing normals, inverted solids and open solids fail with typed,
+located errors. Strip-stitching triangles are the only omitted input, and their count
+is reported. No new crate edge, unsafe code or production dependency is introduced.

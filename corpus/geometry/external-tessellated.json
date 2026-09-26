@@ -1,0 +1,47 @@
+[
+  {
+    "path": "vendor/nist-pmi/unpacked/NIST-PMI-STEP-Files/nist_ftc_08_asme1_ap242-e1-tg.stp",
+    "sha256": "841a9ac51a32fe25b872f283b0b8770c77fee4e34adc8499f88a6e1bafd8e578",
+    "source": "nist-pmi in corpus/sources.json; unmodified tessellated AP242 export, every face linked to B-rep surfaces",
+    "root": 11436,
+    "metres_per_unit": 0.001,
+    "kind": "solid",
+    "faces": 272,
+    "linked_faces": 272,
+    "skipped_degenerate": 20,
+    "vertices": 1636,
+    "triangles": 3368,
+    "boundary_edges": 0,
+    "volume_m3": 0.0005032808198701517
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/bug33638.stp",
+    "sha256": "84745730394f2ea961a7a34f41299a727c674c965c45ca3ad1b0e6c1b701d8d9",
+    "source": "opencascade-dataset in corpus/sources.json; unmodified CATIA V5 tessellated cuboid (triangle strips)",
+    "root": 32,
+    "metres_per_unit": 0.001,
+    "kind": "solid",
+    "faces": 6,
+    "linked_faces": 0,
+    "skipped_degenerate": 0,
+    "vertices": 8,
+    "triangles": 12,
+    "boundary_edges": 0,
+    "volume_m3": 0.00077240327720786
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/bug33410.step",
+    "sha256": "ce9601376b1d973fbfc4d8275900a1c4417ed45d9fbe6a26202359d297f10dfe",
+    "source": "opencascade-dataset in corpus/sources.json; unmodified HOOPS Exchange open tessellated shell",
+    "root": 92,
+    "metres_per_unit": 0.001,
+    "kind": "shell",
+    "faces": 1,
+    "linked_faces": 0,
+    "skipped_degenerate": 0,
+    "vertices": 81,
+    "triangles": 128,
+    "boundary_edges": 32,
+    "volume_m3": 0.0
+  }
+]

@@ -22,6 +22,8 @@ tessstep-express = { path = "../crates/tessstep-express" }
 libfuzzer-sys = "0.4"
 tessstep-part21 = { path = "../crates/tessstep-part21" }
 tessstep-model = { path = "../crates/tessstep-model" }
+tessstep-import = { path = "../crates/tessstep-import" }
+tessstep-mesh = { path = "../crates/tessstep-mesh" }
 
 [[bin]]
 name = "part21_parser"
@@ -103,6 +105,13 @@ bench = false
 [[bin]]
 name = "brep_pipeline"
 path = "fuzz_targets/brep_pipeline.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tessellated_import"
+path = "fuzz_targets/tessellated_import.rs"
 test = false
 doc = false
 bench = false

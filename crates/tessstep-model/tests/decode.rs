@@ -936,3 +936,91 @@ fn physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode() {
         );
     }
 }
+#[test]
+fn physical_profile_links_are_retained_without_expanding_their_targets() {
+    let root = EntityId::new(1).unwrap();
+    let link = decode::LinkSlot {
+        entity: DeclarationId(0),
+        attribute: "next",
+    };
+    let decode_links = |doc: &Document, roots: &[EntityId], links: &[decode::LinkSlot]| {
+        decode::decode_reachable_profile_with_links(
+            doc,
+            &SCHEMAS,
+            "TEST",
+            roots,
+            &[],
+            links,
+            Limits::default(),
+        )
+        .map(|d| d.entities().len())
+    };
+    // The target and its closure are outside the schema; only the link is decoded.
+    let doc = parse("#1=CHILD(1,#2,(1,2,3));#2=FOREIGN(#3,'x');#3=ALSO_FOREIGN();");
+    assert_eq!(
+        decode::decode_reachable(&doc, &SCHEMAS, "TEST", &[root], Limits::default())
+            .unwrap_err()
+            .kind,
+        ErrorKind::UnknownEntity
+    );
+    assert_eq!(decode_links(&doc, &[root], &[link]), Ok(1));
+    // A target reached through an ordinary root is still fully decoded.
+    let doc = parse("#1=BASE(1,#2);#2=BASE(2,$);");
+    assert_eq!(decode_links(&doc, &[root], &[link]), Ok(1));
+    let both = [root, EntityId::new(2).unwrap()];
+    assert_eq!(decode_links(&doc, &both, &[link]), Ok(2));
+    assert!(decode_links(&parse("#1=BASE(1,$);"), &[root], &[link]).is_ok());
+    for (source, kind) in [
+        ("#1=BASE(1,#9);", ErrorKind::MissingReference),
+        ("#1=BASE(1,2);", ErrorKind::TypeMismatch),
+        ("#1=BASE(1,*);", ErrorKind::TypeMismatch),
+        ("#1=BASE(1,(#1));", ErrorKind::TypeMismatch),
+        ("#1=BASE(1,#2,3);#2=FOREIGN();", ErrorKind::AttributeCount),
+    ] {
+        assert_eq!(
+            decode_links(&parse(source), &[root], &[link])
+                .unwrap_err()
+                .kind,
+            kind,
+            "{source}"
+        );
+    }
+    // Links never weaken other attributes of the same record.
+    assert_eq!(
+        decode_links(&parse("#1=BASE('one',#2);#2=FOREIGN();"), &[root], &[link])
+            .unwrap_err()
+            .kind,
+        ErrorKind::TypeMismatch
+    );
+    let doc = parse("#1=BASE(1,$);");
+    let omitted = decode::OmittedSlot {
+        entity: DeclarationId(0),
+        attribute: "next",
+    };
+    for (omitted, links) in [
+        (vec![], vec![link, link]),
+        (
+            vec![],
+            vec![decode::LinkSlot {
+                attribute: "missing",
+                ..link
+            }],
+        ),
+        (vec![omitted], vec![link]),
+    ] {
+        assert_eq!(
+            decode::decode_reachable_profile_with_links(
+                &doc,
+                &SCHEMAS,
+                "TEST",
+                &[root],
+                &omitted,
+                &links,
+                Limits::default()
+            )
+            .unwrap_err()
+            .kind,
+            ErrorKind::InvalidMetadata
+        );
+    }
+}

@@ -27,10 +27,12 @@ not establish schema or CAD validity.
 | Topology and trimming | Structural B-rep validation, supplied-pcurve UV reconstruction, and canonical shared-edge sampling | No automatic healing, missing-pcurve projection, or general volume-validity proof |
 | Tessellation | Planar and regular curved-face refinement, owned shell/solid meshes, and manifold closure checks | Constructed B-reps; sampled error checks, no certified continuous bounds, singularity repair, or self-intersection proof |
 | Planar STEP import | Faceted and edge-based solids converted to owned meshes with original STEP face IDs | One closed shell; planar polygon or LINE/EDGE_LOOP boundaries; explicit root, units and tolerances |
+| Existing STEP tessellations | Tessellated solids, shells and triangulated surface sets imported as owned meshes without retessellation | Triangulated faces, strips and fans; coordinate-index identity; explicit root and units; Rust only |
 | Mesh scenes and appearance | Shared assets, nested affine instances, explicit baking, linear RGBA palettes, and inherited style overrides | No automatic STEP mesh binding or style adaptation, world-space tolerance guarantee, textures, or rendering |
 | C and C++ | Document inspection, planar/planar/faceted STEP tessellation, triangle-buffer import, retained mesh views, scenes, and appearance | Shared ABI 1 library and C++17 RAII; general schema decoding and constructed B-rep tessellation remain Rust APIs |
 
-The [STEP import guide](docs/STEP_IMPORT.md) documents the first end-to-end slice.
+The [STEP import guide](docs/STEP_IMPORT.md) documents the first end-to-end slice;
+[existing tessellations](docs/EXISTING_TESSELLATIONS.md) documents direct mesh import.
 
 The [conformance table](docs/CONFORMANCE.md) records supported behavior and test
 evidence. See the [roadmap](docs/ROADMAP.md) for remaining work.
@@ -220,6 +222,7 @@ See [testing](docs/TESTING.md) for the full workflow, fuzzing, and benchmarks;
 - [Analytic curves](docs/CURVES.md), [surfaces](docs/SURFACES.md), and [NURBS](docs/NURBS.md)
 - [Topology](docs/TOPOLOGY.md), [UV trimming](docs/TRIMMING.md), and [tessellation](docs/TESSELLATION.md)
 - [Mesh storage](docs/MESH.md), [assembly assets](docs/ASSEMBLY_ASSETS.md), and [appearance](docs/APPEARANCE.md)
+- [Planar STEP import](docs/STEP_IMPORT.md) and [existing tessellations](docs/EXISTING_TESSELLATIONS.md)
 - [C/C++ API and ownership contracts](docs/C_API.md)
 - [CI, corpus reports, and release packaging](docs/RELEASING.md)
 

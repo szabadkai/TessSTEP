@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the reduced faceted profile and real-file import stages, without AP claims."""
+"""Verify the reduced import profiles and real-file import stages, without AP claims."""
 import argparse
 import hashlib
 import html
@@ -31,6 +31,14 @@ PLANAR_EXPECTED = {
     "planar-curved.step": ("unsupported", "not_run", "not_run"),
 }
 
+TESSELLATED_EXPECTED = {
+    "tessellated-cube.step": ("accepted", "accepted", "not_applicable"),
+    "tessellated-shell.step": ("accepted", "accepted", "not_applicable"),
+    "tessellated-open-solid.step": ("accepted", "rejected", "not_applicable"),
+    "tessellated-edge.step": ("unsupported", "not_run", "not_applicable"),
+}
+MESH_KEYS = ("kind", "faces", "linked_faces", "skipped_degenerate", "vertices", "triangles", "boundary_edges")
+
 
 def inspect(binary, path, root_id=1000, unit=0.001, scope="faceted-solid"):
     started = time.monotonic()
@@ -57,8 +65,11 @@ def main():
     assert generated == (ROOT / "crates/tessstep-import/src/profile.rs").read_bytes(), "Regenerate the faceted profile"
     planar_generated = subprocess.check_output([str(target / ("expressc"+suffix)), "--rust", "corpus/geometry/planar.exp"], cwd=ROOT)
     assert planar_generated == (ROOT / "crates/tessstep-import/src/planar_profile.rs").read_bytes(), "Regenerate the planar profile"
+    tessellated_generated = subprocess.check_output([str(target / ("expressc"+suffix)), "--rust", "corpus/geometry/tessellated.exp"], cwd=ROOT)
+    assert tessellated_generated == (ROOT / "crates/tessstep-import/src/tessellated_profile.rs").read_bytes(), "Regenerate the tessellated profile"
     binary = target / "examples" / ("faceted"+suffix)
     planar_binary = target / "examples" / ("planar"+suffix)
+    tessellated_binary = target / "examples" / ("tessellated"+suffix)
     cases = []
     for name, expected in {**EXPECTED, **PLANAR_EXPECTED}.items():
         planar = name in PLANAR_EXPECTED
@@ -74,6 +85,17 @@ def main():
         if name in {"tube.step", "planar-tube.step"}:
             case["passed"] &= (r.get("vertices"),r.get("triangles"),r.get("boundary_edges"),r.get("components")) == (16,32,0,1)
             case["passed"] &= math.isclose(r.get("volume_m3",0),3.84e-6,rel_tol=1e-12)
+        cases.append(case)
+    for name, expected in TESSELLATED_EXPECTED.items():
+        case = inspect(tessellated_binary, ROOT / "corpus/geometry" / name, scope="tessellated")
+        r = case["result"]
+        case["expected"] = expected
+        case["passed"] = tuple(r[k] for k in ("profile", "geometry", "tessellation")) == expected
+        if name == "tessellated-cube.step":
+            case["passed"] &= tuple(r.get(k) for k in MESH_KEYS) == ("solid", 6, 1, 1, 8, 12, 0)
+            case["passed"] &= math.isclose(r.get("volume_m3", 0), 6e-6, rel_tol=1e-12)
+        if name == "tessellated-shell.step":
+            case["passed"] &= tuple(r.get(k) for k in MESH_KEYS) == ("shell", 2, 1, 0, 6, 4, 6)
         cases.append(case)
     # Selected upstream adversarial faceted inputs: no copying, healing or expected
     # success is inferred from their parser baseline. These known malformed inputs
@@ -101,11 +123,26 @@ def main():
             and r.get("triangles") == specification["triangles"] and r.get("boundary_edges") == 0
             and r.get("components") == 1 and math.isclose(r.get("volume_m3",0),specification["volume_m3"],rel_tol=1e-12))
         cases.append(case)
+    # Unmodified exporter tessellations; hashes pin the reviewed inputs.
+    for specification in json.loads((ROOT / "corpus/geometry/external-tessellated.json").read_text()):
+        path = external / specification["path"]
+        if args.require_external and not path.is_file():
+            raise RuntimeError(f"Required exporter fixture unavailable: {path}")
+        if not path.is_file():
+            continue
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == specification["sha256"], "Review changed exporter fixture before updating its hash"
+        case = inspect(tessellated_binary, path, specification["root"], specification["metres_per_unit"], "tessellated")
+        r = case["result"]
+        case["expected"] = specification
+        case["passed"] = (r["status"] == "accepted" and tuple(r.get(k) for k in MESH_KEYS) == tuple(specification[k] for k in MESH_KEYS)
+            and math.isclose(r.get("volume_m3", 0), specification["volume_m3"], rel_tol=1e-12, abs_tol=1e-18))
+        cases.append(case)
     output = ROOT / "reports/geometry"
     output.mkdir(parents=True,exist_ok=True)
-    report = {"scope":"selected-root faceted and edge-based planar import; no full-document/AP validation",
+    report = {"scope":"selected-root faceted, edge-based planar and existing-tessellation import; no full-document/AP validation",
               "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
               "planar_binary_sha256":hashlib.sha256(planar_binary.read_bytes()).hexdigest(),
+              "tessellated_binary_sha256":hashlib.sha256(tessellated_binary.read_bytes()).hexdigest(),
               "external_available":external.is_dir(),"cases":cases}
     (output/"latest.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     rows=[]
@@ -113,13 +150,13 @@ def main():
         r=c["result"]
         rows.append("<tr>"+"".join("<td>"+html.escape(str(v))+"</td>" for v in
                     [Path(c["path"]).name,c["passed"],r["profile"],r["geometry"],r["tessellation"],c["diagnostic"]])+"</tr>")
-    (output/"index.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>Planar STEP import verification</title>'
+    (output/"index.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>STEP import verification</title>'
         '<style>body{font:16px system-ui;margin:32px}td,th{padding:12px;border:1px solid #ccc;text-align:left}table{border-collapse:collapse}</style>'
-        '<h1>Planar STEP import verification</h1><p>Selected-root reduced profile. Explicit source units. Full AP schema and product validation are unmeasured.</p>'
+        '<h1>STEP import verification</h1><p>Selected-root reduced profiles. Explicit source units. Full AP schema and product validation are unmeasured.</p>'
         '<table><thead><tr><th>File</th><th>Expectation passed</th><th>Profile</th><th>Geometry/topology</th><th>Tessellation</th><th>Diagnostic</th></tr></thead><tbody>'
         +''.join(rows)+'</tbody></table></html>',encoding="utf-8")
     assert all(c["passed"] for c in cases), json.dumps(report,indent=2)
-    print(f"planar/faceted import: {len(cases)} reviewed outcomes passed; {output/'index.html'}")
+    print(f"planar/faceted/tessellated import: {len(cases)} reviewed outcomes passed; {output/'index.html'}")
 
 
 if __name__ == "__main__":

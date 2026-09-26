@@ -1,0 +1,16 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('Original tessellated box without its top face; not a closed solid'),'2;1');
+FILE_NAME('tessellated-open-solid.step','2026-09-26',('TessSTEP'),('TessSTEP'),'authored fixture','','');
+FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));
+ENDSEC;
+DATA;
+#1=COORDINATES_LIST('',8,((0.,0.,0.),(10.,0.,0.),(10.,20.,0.),(0.,20.,0.),(0.,0.,30.),(10.,0.,30.),(10.,20.,30.),(0.,20.,30.)));
+#100=TRIANGULATED_FACE('bottom',#1,8,(),$,(),((1,4,3),(1,3,2)));
+#102=COMPLEX_TRIANGULATED_FACE('front',#1,4,((0.,-1.,0.)),$,(1,2,5,6),((1,2,3,4)),());
+#103=COMPLEX_TRIANGULATED_FACE('back',#1,4,((0.,1.,0.)),$,(4,8,7,3),(),((1,2,3,4)));
+#104=COMPLEX_TRIANGULATED_FACE('left',#1,4,((-1.,0.,0.)),$,(1,5,4,8),((1,2,3,4)),());
+#105=COMPLEX_TRIANGULATED_FACE('right',#1,8,(),$,(),(),((2,3,7,6)));
+#1000=TESSELLATED_SOLID('open box',(#100,#102,#103,#104,#105),$);
+ENDSEC;
+END-ISO-10303-21;
