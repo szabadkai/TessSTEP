@@ -303,6 +303,98 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   topology checks (open or inconsistently oriented shells, broken wires), so they
   feed the disconnected-shell item above.
 
+**Curved import requirements — observed on an Onshape export, 2026-09-26.**
+
+An unmodified Onshape AP242 export (ST-DEVELOPER v20; one `MANIFOLD_SOLID_BREP` with
+149 faces: 25 planes, 24 cylinders, 22 cones, 21 ring tori, 2 degenerate tori and 55
+B-spline surfaces, 17 of them rational) parses cleanly but is rejected at the profile
+stage. The curved adapters above are necessary but not sufficient for it; it also
+relies on implicit outer bounds (94 multi-bound faces, no `FACE_OUTER_BOUND`). Each
+item needs authored fixtures, typed outcomes and corpus-stage evidence. Add a
+redistributable Onshape export with these features as a hash-pinned exporter file.
+
+- **Toroidal surfaces, ring and degenerate.** The adapter priorities above omit tori.
+  Ring `TOROIDAL_SURFACE`s need an adapter to the existing evaluator.
+  `DEGENERATE_TOROIDAL_SURFACE` has a minor radius larger than its major radius (here
+  1 mm over 0.25 mm), and `select_outer` picks the outer (apple) or inner (lemon) part
+  of the self-intersecting torus. The surface crate evaluates only ring tori. Add
+  spindle tori with the selected part as the parameter domain and the two axis points
+  as explicit singularities.
+- **Computed pcurves.** The export has no `PCURVE`, `SURFACE_CURVE` or `SEAM_CURVE`
+  records, so each coedge's UV trim must come from its 3D curve. Trimming accepts only
+  supplied pcurves with an affine parameter correspondence. Compute pcurves exactly
+  where the UV image is linear or conic (for example rulings and coaxial circles).
+  Otherwise use point inversion with a verified fit and a nonlinear parameter
+  correspondence; 181 B-spline edge uses lie on curved faces here.
+- **Periodic faces without seam edges.** 35 faces on cylinders, cones, tori and
+  B-spline surfaces are bounded only by closed edges. Further faces combine a closed
+  circle with an open loop, and none has a seam edge. Their loops wrap the period and
+  do not close in the unwrapped chart, which trimming rejects. Insert an isoparametric
+  seam as a reported adaptation without changing geometry. Holes, such as the 36
+  further closed-edge loops on one cylinder, must be placed in that seam's chart.
+- **Poles and point bounds.** 36 cubic B-spline faces each have one closed edge loop
+  and two `VERTEX_LOOP` bounds. At least one of them lies on a control row that
+  collapses to a point. Milestone 15 leaves poles and collapsed edges unsupported.
+  Represent point bounds and collapsed control rows as collapsed chart edges, give
+  pole fans a well-defined normal, and apply the same rule to cone apices, sphere
+  poles and degenerate-torus axis points.
+
+**Geometry coverage gaps — observed in a corpus survey, 2026-09-26.**
+
+A text scan of all 3,230 external corpus files resolved every `ADVANCED_FACE` /
+`FACE_SURFACE` surface and `EDGE_CURVE` curve by reference. It found B-rep geometry
+that neither the adapter priorities nor the Onshape items above cover. Counts are
+face or edge uses, with files in parentheses; the scan did not use the parser, so
+they are approximate. OpenCASCADE test data supplies most curved uses and several
+entities occur only in `dodgy-step-files`, so frequencies do not describe exporters
+in general. Each item needs authored fixtures, typed outcomes and corpus-stage
+evidence. A rare entity may be delivered as a named, typed rejection instead of an
+adapter. These items feed Milestone 21.
+
+- **Supplied pcurves.** 14,062 edges (671 files) wrap their 3D curve in
+  `SURFACE_CURVE` and 345 (28 files) in `SEAM_CURVE`, with `PCURVE`s over
+  `DEFINITIONAL_REPRESENTATION`s. `SURFACE_CURVE` is already the third most frequent
+  profile rejection in [VALIDATION.md](VALIDATION.md). Adapt them to the existing
+  supplied-pcurve trimming and seam uses: honour `master_representation`, match each
+  pcurve to its face's surface and check it against the 3D curve within model
+  tolerance. Compute pcurves only for faces without an associated one.
+- **Swept surfaces.** `SURFACE_OF_LINEAR_EXTRUSION` (1,340 faces, 53 files) and
+  `SURFACE_OF_REVOLUTION` (627, 42) need evaluators and adapters. Their profiles are
+  mostly (rational) B-splines, with some lines, circles, ellipses and
+  `TRIMMED_CURVE`s. A revolved profile that meets its axis creates poles, covered by
+  the pole item above.
+- **Implicit-knot B-spline forms.** `QUASI_UNIFORM_SURFACE` (163 faces, 18 files) and
+  `QUASI_UNIFORM_CURVE` (761 edges, 24 files), including rational complex instances,
+  carry no knot list. Derive knots as ISO 10303-42 defines them and reuse the NURBS
+  evaluators. `UNIFORM_*` and `BEZIER_*` forms follow the same rule (3 uses in total).
+- **Hyperbolic and parabolic edges.** `HYPERBOLA` / `PARABOLA` edge geometry (22 edges,
+  4 files) has evaluators but no adapter or trim-parameter mapping.
+- **Cavity shells.** The 29 `BREP_WITH_VOIDS` roots hold their voids as
+  `ORIENTED_CLOSED_SHELL`s (83 uses). Compose the shell orientation and extend the
+  solid checks to nested cavities.
+- **Point bounds are not exporter specific.** 276 of the 287 `VERTEX_LOOP` face
+  bounds occur in OpenCASCADE and NIST files, so the pole item above is general.
+- **Surface models — scope decision.** 4,127 `SHELL_BASED_SURFACE_MODEL` roots
+  outnumber the 1,460 `MANIFOLD_SOLID_BREP` roots; 2,539 of them are in 108
+  OpenCASCADE files. The corpus runner does not survey them, although
+  `tessellate_shell` already meshes open shells. Decide whether STEP import accepts
+  `OPEN_SHELL` / `CLOSED_SHELL` surface models, reporting open results as shells,
+  never as solids.
+- **Topology-free trimmed surfaces — scope decision.** `CURVE_BOUNDED_SURFACE`
+  (3,216 records, 18 files) occurs almost only in `GEOMETRIC_SET`s, not as face
+  geometry. Meshing it needs boundary-curve trimming without B-rep topology. Decide
+  whether it is in scope; otherwise name it as unsupported.
+- **Rare edge and face geometry.** These occur almost only in `dodgy-step-files`:
+  `RECTANGULAR_TRIMMED_SURFACE` (38 faces), `OFFSET_SURFACE` (13),
+  `RECTANGULAR_COMPOSITE_SURFACE` (4), `TRIMMED_CURVE` (42 edges), `PCURVE` used
+  directly as edge geometry (17), `COMPOSITE_CURVE` (14), `OFFSET_CURVE_3D` (5),
+  `DEGENERATE_PCURVE` (4) and `INTERSECTION_CURVE` (2). Give each a named, typed
+  unsupported outcome first; add an adapter when a reviewed exporter file needs one.
+- **Reproducible coverage survey.** Add this survey to `scripts/corpus.py`: count
+  face-surface, edge-curve and root types per source from decoded records and keep
+  them in the baseline. The existing `unsupported_entity_types` summary names only
+  the first rejection per root, so it hides entities behind an earlier failure.
+
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
 analytic curves/surfaces and NURBS. Milestones 11–12 establish topology validity states
