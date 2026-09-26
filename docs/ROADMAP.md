@@ -226,8 +226,9 @@ holes by whole periods.
 Eleven generated authored fixtures, three hash-pinned exporter files (ST-DEVELOPER,
 CATIA V5, I-DEAS) and the corpus survey cover this slice: 348 of 1,173 surveyed solid
 roots now pass every stage (22 before). See [CURVED_IMPORT.md](CURVED_IMPORT.md).
-C/C++ entry points, pole and apex charts, edge splitting for misaligned annuli, swept
-surfaces, cavity shells and anisotropic refinement remain pending.
+Edge splits for misaligned annuli and sphere re-charting followed the same day. C/C++
+entry points, cone apex and unavoidable pole charts, swept surfaces, cavity shells and
+anisotropic refinement remain pending.
 
 **Import hardening backlog — observed on third-party CAD exports.**
 
@@ -239,11 +240,14 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
 - **Curved geometry is the dominant blocker — elementary and B-spline adapters
   delivered 2026-09-26.** `CIRCLE`/`ELLIPSE` edges, cylindrical, conical, spherical
   and toroidal surfaces and (rational) B-spline curves and surfaces, including
-  complex-instance encodings, import through the curved profile. The remaining
-  corpus blockers, by frequency: open or inconsistently oriented shells (see below),
-  annular faces whose loop vertices are not aligned (needs reported edge splitting),
-  faces touching poles or apices (including `VERTEX_LOOP`), swept surfaces and
-  `BREP_WITH_VOIDS` cavity shells. Evidence: `brep_elementary_surfaces_close_with_expected_volumes`.
+  complex-instance encodings, import through the curved profile. Annular faces with
+  misaligned loop vertices are handled by reported edge splits, and spherical faces
+  touching their STEP pole by re-charting. The remaining corpus blockers, by
+  frequency: open or inconsistently oriented shells (see below), faces touching cone
+  apices or unavoidable sphere poles (including `VERTEX_LOOP` and hemispheres), swept
+  surfaces and `BREP_WITH_VOIDS` cavity shells. Evidence:
+  `brep_elementary_surfaces_close_with_expected_volumes`,
+  `brep_edge_splits_and_sphere_recharting_are_reported`.
 - **Implicit outer bounds — delivered 2026-09-26 in the curved profile.** A face with
   several bounds and no `FACE_OUTER_BOUND` uses its unique counterclockwise loop in
   the surface chart and otherwise fails with "ambiguous outer bound"; holes on

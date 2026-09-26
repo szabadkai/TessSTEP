@@ -2,8 +2,8 @@
 //! Imports every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the
 //! matching selected-root profile and reports per-root stage outcomes as JSON.
 //! Each root uses the units of its representation context when discovery finds them,
-//! and the declared length uncertainty as its model tolerance, floored at 1e-8 m;
-//! METRES_PER_UNIT, radians and 1e-8 m are the explicit fallback. Each root reports
+//! and the declared length uncertainty as its model tolerance, floored at 1e-7 m;
+//! METRES_PER_UNIT, radians and 1e-7 m are the explicit fallback. Each root reports
 //! which applied, the declared uncertainty and the tolerance and chord it used.
 #![forbid(unsafe_code)]
 use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
@@ -55,8 +55,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let faceted = root.kind == SolidKind::FacetedBrep;
         // Context units when the file declares them; otherwise the explicit command-line
         // length scale and radians. The model tolerance is the declared length
-        // uncertainty, but never below 1e-8 m: several exporters declare values their
-        // written coordinates cannot meet.
+        // uncertainty, but never below 1e-7 m: several exporters declare values their
+        // written geometry cannot meet (curves 10-30 nm off 5-10 nm uncertainties).
         let (length, angle, declared, units) = match &root.units {
             Ok(u) => (
                 u.length,
@@ -70,7 +70,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             ),
             Err(_) => (unit, AngleUnit::RADIAN, None, "assumed"),
         };
-        let distance = declared.unwrap_or(1e-8).max(1e-8);
+        let distance = declared.unwrap_or(1e-7).max(1e-7);
         let model = ModelTolerance::new(Length::metres(distance)?, Angle::radians(1e-8)?)?;
         let imported = if faceted {
             import_faceted_solid(&doc, id, length, model, ImportOptions::default())

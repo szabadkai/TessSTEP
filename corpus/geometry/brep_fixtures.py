@@ -260,8 +260,9 @@ def fixtures():
     s.lines = [line.replace(",10.0)", ",10.5)") if "CYLINDRICAL_SURFACE" in line else line for line in s.lines]
     s.write("brep-off-surface.step", faces)
 
-    # Negative: the annular side face has vertices at different angles.
-    s = Step("Original unsupported solid: annular face without aligned seam vertices")
+    # The annular side face has its loop vertices a quarter turn apart: the importer
+    # splits the top circle where the seam through the bottom vertex crosses it.
+    s = Step("Original solid cylinder r=10 h=20 mm; annular side face whose loop vertices are a quarter turn apart")
     v0 = s.vertex((10, 0, 0))
     v1 = s.vertex((0, 10, 20))
     bottom = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
@@ -273,6 +274,30 @@ def fixtures():
         s.face([s.bound([(top, True)])], s.plane((0, 0, 20), (0, 0, 1))),
     ]
     s.write("brep-misaligned.step", faces)
+
+    # Spherical cap R=10 above z=6 on a planar disk; the STEP frame's north pole lies
+    # inside the cap, so the importer plans the face in a rotated sphere frame.
+    s = Step("Original spherical cap R=10 mm above z=6 mm on a planar base")
+    v = s.vertex((8, 0, 6))
+    rim = s.edge(v, v, s.circle((0, 0, 6), (0, 0, 1), (1, 0, 0), 8))
+    sphere = s.add(f"SPHERICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    faces = [
+        s.face([s.bound([(rim, True)])], sphere),
+        s.face([s.bound([(rim, False)])], s.plane((0, 0, 6), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-sphere-cap.step", faces)
+
+    # Hemisphere R=10 on a planar disk: every sphere frame puts a pole on or inside
+    # the face, so it needs pole charts, which are unsupported.
+    s = Step("Original unsupported hemisphere R=10 mm on a planar base")
+    v = s.vertex((10, 0, 0))
+    rim = s.edge(v, v, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    sphere = s.add(f"SPHERICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    faces = [
+        s.face([s.bound([(rim, True)])], sphere),
+        s.face([s.bound([(rim, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-hemisphere.step", faces)
 
     # Negative: cone tip closed by a VERTEX_LOOP at the apex.
     s = Step("Original unsupported solid: cone tip bounded by a vertex loop")

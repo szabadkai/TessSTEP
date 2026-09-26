@@ -1,6 +1,6 @@
 ISO-10303-21;
 HEADER;
-FILE_DESCRIPTION(('Original unsupported solid: annular face without aligned seam vertices'),'2;1');
+FILE_DESCRIPTION(('Original solid cylinder r=10 h=20 mm; annular side face whose loop vertices are a quarter turn apart'),'2;1');
 FILE_NAME('brep-misaligned.step','2026-09-26',('TessSTEP'),('TessSTEP'),'authored fixture','','');
 FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));
 ENDSEC;

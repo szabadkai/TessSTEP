@@ -561,16 +561,16 @@
       "limitations": "Exact UV images where linear/conic; otherwise verified cubic Hermite fits to a quarter of the model tolerance; supplied PCURVEs retained as links, never read"
     },
     {
-      "feature": "Implicit outer bounds and inserted annulus seams",
+      "feature": "Implicit outer bounds, annulus seams, edge splits and sphere charts",
       "status": "implemented",
-      "test": "brep_annular_cylinder_inserts_one_seam_and_meshes_as_a_strip",
-      "limitations": "Unique counterclockwise loop or typed ambiguity error; seams only between aligned loop vertices; both adaptations counted, geometry unchanged"
+      "test": "brep_edge_splits_and_sphere_recharting_are_reported",
+      "limitations": "Unique counterclockwise loop or typed ambiguity error; seams between aligned or split loop vertices; rotated sphere frames avoiding poles; all adaptations counted, geometry unchanged"
     },
     {
       "feature": "Curved import rejections and budgets",
       "status": "implemented",
       "test": "brep_rejections_are_typed_and_located",
-      "limitations": "Off-surface curves, misaligned annuli, vertex loops, ambiguous outer bounds, horn tori, invalid cone angles, cavity shells and out-of-profile types are typed failures"
+      "limitations": "Off-surface curves, hemispheres and apices, vertex loops, ambiguous outer bounds, horn tori, invalid cone angles, cavity shells and out-of-profile types are typed failures"
     },
     {
       "feature": "Root and representation-context unit discovery",

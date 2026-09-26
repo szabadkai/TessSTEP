@@ -1,3 +1,26 @@
+# Curved import: edge splits, sphere re-charting and survey tolerance — 2026-09-26
+
+Annular faces whose loop vertices are not aligned now split the crossed loop edge
+(every face using it is updated) instead of failing, and spherical faces touching
+their STEP pole are planned in rotated sphere frames. Both are counted in
+`Adaptations`. The survey's tolerance floor rose from 1e-8 m to 1e-7 m after
+OCC-written files showed curves 12–25 nm off surfaces that declare 5–10 nm
+uncertainties.
+
+| Check | Result |
+| --- | --- |
+| `cargo test -p tessstep-import` | 31 tests passed, including `brep_edge_splits_and_sphere_recharting_are_reported` |
+| Workspace fmt and Clippy (`-D warnings`, all targets/features) | passed |
+| Fixture provenance and generated conformance | passed; 81 fixtures |
+| `check_geometry.py --require-external` | 46 reviewed outcomes passed (new: split cylinder, re-charted sphere cap, unsupported hemisphere) |
+
+`python3 scripts/corpus.py --check` passed with 57 changed inputs and no regressions:
+accepted solid roots rose from 348 to 419 of 1,173 (11 files `unsupported` →
+`accepted`, 11 `partial` → `accepted`, 8 geometry-accepted files now failing only at
+tessellation). The baseline was saved after this review. Remaining pole and apex
+failures are hemispheres, whose great-circle boundary puts a pole on or inside every
+sphere frame, and cone apices.
+
 # Curved B-rep import, unit discovery and tessellation hardening — 2026-09-26
 
 Added `import_brep_solid` for `MANIFOLD_SOLID_BREP`s on elementary and (rational,

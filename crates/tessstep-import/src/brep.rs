@@ -18,6 +18,13 @@ pub struct Adaptations {
     /// on a periodic surface into one chart boundary. The seam lies on the surface
     /// between existing vertices; it adds no mesh vertices except along itself.
     pub inserted_seams: usize,
+    /// Edges split at a curve parameter so that an annular face has a vertex pair
+    /// for its seam. Both halves keep the original curve; every face using the edge
+    /// is updated, so shared topology stays consistent.
+    pub split_edges: usize,
+    /// Spherical faces planned in a rotated frame because the STEP frame puts a pole
+    /// on or inside them; the sphere and its orientation are unchanged.
+    pub recharted_spheres: usize,
 }
 
 /// Import one selected MANIFOLD_SOLID_BREP whose faces lie on planes, cylinders,
@@ -148,6 +155,7 @@ fn profile_error(
     }
 }
 
+#[derive(Clone)]
 struct EdgeRecord {
     entity: Option<EntityId>,
     curve: CurveGeometry<ModelSpace, 3>,
@@ -162,11 +170,13 @@ struct Use {
     edge: usize,
     forward: bool,
 }
+#[derive(Clone)]
 struct LoopRecord {
     /// Uses oriented with the surface: the face lies to their left in the UV chart.
     uses: Vec<Use>,
     outer: bool,
 }
+#[derive(Clone)]
 struct FaceRecord {
     entity: EntityId,
     chart: Chart,
@@ -746,11 +756,42 @@ impl Builder {
         options: ImportOptions,
     ) -> Result<ImportedSolid, Error> {
         let tolerance = c.tolerance.distance().as_metres();
+        let mut faces = std::mem::take(&mut self.faces);
+        // Plan every face; annular faces without aligned seam vertices request edge
+        // splits, which are applied to all faces before planning again.
         let mut plans = Vec::new();
-        let faces = std::mem::take(&mut self.faces);
-        for face in &faces {
-            c.current = face.entity;
-            plans.push(self.plan(c, face, tolerance)?);
+        for pass in 0.. {
+            let base = self.edges.len();
+            let (seams, inferred) = (
+                self.adaptations.inserted_seams,
+                self.adaptations.inferred_outer_bounds,
+            );
+            plans.clear();
+            let mut splits = BTreeMap::new();
+            for face in &faces {
+                c.current = face.entity;
+                match self.plan(c, face, tolerance)? {
+                    Planned::Face(plan) => plans.push(plan),
+                    Planned::Split { edge, parameter } => {
+                        splits.entry(edge).or_insert(parameter);
+                    }
+                }
+            }
+            if splits.is_empty() {
+                break;
+            }
+            if pass >= 8 {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "annular faces still lack aligned seam vertices after edge splitting",
+                ));
+            }
+            self.edges.truncate(base);
+            self.adaptations.inserted_seams = seams;
+            self.adaptations.inferred_outer_bounds = inferred;
+            for (edge, parameter) in splits {
+                self.split(c, &mut faces, edge, parameter)?;
+            }
         }
         for e in &self.edges {
             c.raw.edges.push(Edge {
@@ -788,7 +829,7 @@ impl Builder {
             }
             c.record()?;
             c.raw.faces.push(Face {
-                surface: face.surface.clone(),
+                surface: plan.surface.clone().unwrap_or_else(|| face.surface.clone()),
                 outer,
                 holes,
                 orientation: if face.same {
@@ -837,7 +878,62 @@ impl Builder {
     }
 }
 
+enum Planned {
+    Face(Plan),
+    Split { edge: usize, parameter: f64 },
+}
+enum SeamChoice {
+    Seam(Box<EdgeRecord>, usize, usize, [f64; 2], bool),
+    Split { edge: usize, parameter: f64 },
+}
+/// First interior edge parameter at which a pcurve crosses `value` modulo `period`
+/// along axis `k`, with the UV point there. Sampled brackets are refined by bisection.
+fn crossing(pcurve: &Pcurve, k: usize, value: f64, period: f64) -> Option<(f64, [f64; 2])> {
+    let [t0, t1] = pcurve.range;
+    let at = |t: f64| -> Option<[f64; 2]> {
+        Some(pcurve.curve.evaluate(t).ok()?.position.coordinates())
+    };
+    let margin = 1e-9 * (t1 - t0).abs();
+    let n = 64;
+    let mut previous = (t0, at(t0)?);
+    for i in 1..=n {
+        let t = t0 + (t1 - t0) * i as f64 / n as f64;
+        let uv = at(t)?;
+        let (ta, ua) = previous;
+        let (lo, hi) = (ua[k].min(uv[k]), ua[k].max(uv[k]));
+        let first = ((lo - value) / period).ceil() as i64;
+        let last = ((hi - value) / period).floor() as i64;
+        for m in first..=last.min(first + 4) {
+            let target = value + m as f64 * period;
+            let (mut a, mut b) = (ta, t);
+            let (fa, fb) = (ua[k] - target, uv[k] - target);
+            if fb == 0. && (t - t0).abs() > margin && (t1 - t).abs() > margin {
+                return Some((t, uv));
+            }
+            if fa == 0. || fb == 0. || fa.signum() == fb.signum() {
+                continue;
+            }
+            for _ in 0..80 {
+                let mid = 0.5 * (a + b);
+                let fm = at(mid)?[k] - target;
+                if fm.signum() == fa.signum() {
+                    a = mid;
+                } else {
+                    b = mid;
+                }
+            }
+            let root = 0.5 * (a + b);
+            if (root - t0).abs() > margin && (t1 - root).abs() > margin {
+                return Some((root, at(root)?));
+            }
+        }
+        previous = (t, uv);
+    }
+    None
+}
 struct Plan {
+    /// A re-charted surface replacing the face's STEP parameterization.
+    surface: Option<SurfaceGeometry>,
     outer: Vec<Use>,
     holes: Vec<Vec<Use>>,
     pcurves: BTreeMap<usize, Pcurve>,
@@ -909,12 +1005,114 @@ impl Builder {
         })
     }
 
+    /// Plan a face in its STEP chart. A spherical face that fails there because it
+    /// touches or encloses a pole is retried with frames whose poles lie away from its
+    /// boundary; the sphere, its orientation and all 3D geometry are unchanged.
     fn plan(
         &mut self,
         c: &mut Context<'_, '_>,
         face: &FaceRecord,
         tolerance: f64,
-    ) -> Result<Plan, Error> {
+    ) -> Result<Planned, Error> {
+        let first = self.plan_chart(c, face, tolerance);
+        let Chart::Sphere(frame, radius) = face.chart else {
+            return first;
+        };
+        match &first {
+            Err(e) if e.kind == ErrorKind::Unsupported => {}
+            _ => return first,
+        }
+        for axis in self.sphere_axes(face, frame)? {
+            c.charge(1)?;
+            let Some(recharted) = sphere_chart(frame.o, axis, radius) else {
+                continue;
+            };
+            let mut candidate = face.clone();
+            (candidate.chart, candidate.surface) = recharted;
+            let saved = (self.edges.len(), self.adaptations);
+            match self.plan_chart(c, &candidate, tolerance) {
+                Ok(Planned::Face(mut plan)) => {
+                    plan.surface = Some(candidate.surface);
+                    self.adaptations.recharted_spheres += 1;
+                    return Ok(Planned::Face(plan));
+                }
+                Ok(split @ Planned::Split { .. }) => return Ok(split),
+                Err(e) if e.kind == ErrorKind::ResourceLimit => return Err(e),
+                Err(_) => {
+                    self.edges.truncate(saved.0);
+                    self.adaptations = saved.1;
+                }
+            }
+        }
+        first
+    }
+
+    /// Candidate sphere axes: perpendiculars to the mean boundary direction (which put
+    /// both poles a quarter turn from a cap's centre), then 26 lattice directions, all
+    /// at least 1e-3 rad from every sampled boundary direction.
+    fn sphere_axes(&self, face: &FaceRecord, frame: Frame) -> Result<Vec<V3>, Error> {
+        let mut directions = Vec::new();
+        for l in &face.loops {
+            for u in &l.uses {
+                let e = &self.edges[u.edge];
+                for i in 0..=16 {
+                    let t = e.range[0] + (e.range[1] - e.range[0]) * i as f64 / 16.;
+                    if let Ok(jet) = e.curve.evaluate(t) {
+                        let d = sub(jet.position.coordinates(), frame.o);
+                        let n = norm(d);
+                        if n > 0. {
+                            directions.push(scale(d, 1. / n));
+                        }
+                    }
+                }
+            }
+        }
+        let mut mean = [0.; 3];
+        for d in &directions {
+            mean = add(mean, *d);
+        }
+        let mut candidates = Vec::new();
+        if norm(mean) > 1e-9 {
+            let m = scale(mean, 1. / norm(mean));
+            let helper = if m[0].abs() < 0.9 {
+                [1., 0., 0.]
+            } else {
+                [0., 1., 0.]
+            };
+            let p = crate::pcurve::cross(m, helper);
+            let p = scale(p, 1. / norm(p));
+            let q = crate::pcurve::cross(m, p);
+            for i in 0..6 {
+                let a = std::f64::consts::PI * i as f64 / 6.;
+                candidates.push(add(scale(p, a.cos()), scale(q, a.sin())));
+            }
+        }
+        for x in [-1., 0., 1.] {
+            for y in [-1., 0., 1.] {
+                for z in [-1., 0., 1.] {
+                    let d: V3 = [x, y, z];
+                    if d != [0.; 3] {
+                        candidates.push(scale(d, 1. / norm(d)));
+                    }
+                }
+            }
+        }
+        Ok(candidates
+            .into_iter()
+            .filter(|axis| {
+                directions
+                    .iter()
+                    .all(|d| norm(crate::pcurve::cross(*d, *axis)) > 1e-3)
+            })
+            .collect())
+    }
+
+    fn plan_chart(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        face: &FaceRecord,
+        tolerance: f64,
+    ) -> Result<Planned, Error> {
         let inverter = Inverter {
             chart: &face.chart,
             surface: &face.surface,
@@ -967,14 +1165,15 @@ impl Builder {
                 }
                 _ => return Err(c.error(ErrorKind::InvalidGeometry, "multiple outer bounds")),
             };
-            return Ok(Plan {
+            return Ok(Planned::Face(Plan {
+                surface: None,
                 outer: face.loops[outer].uses.clone(),
                 holes: (0..face.loops.len())
                     .filter(|&i| i != outer)
                     .map(|i| face.loops[i].uses.clone())
                     .collect(),
                 pcurves,
-            });
+            }));
         }
         let periodic = |k: usize| face.chart.periods()[k].is_some();
         let pair = match wrapping.as_slice() {
@@ -1007,17 +1206,21 @@ impl Builder {
         let holes: Vec<usize> = (0..face.loops.len())
             .filter(|&i| i != a && i != b)
             .collect();
-        let (seam, ia, ib, range_j, forward) = self.seam(
+        let (seam, ia, ib, range_j, forward) = match self.seam(
             c,
             face,
             &charts,
-            a,
-            b,
-            k,
+            &pcurves,
+            (a, b, k),
             &holes,
             periodic(1 - k),
             tolerance,
-        )?;
+        )? {
+            SeamChoice::Seam(seam, ia, ib, range, forward) => (seam, ia, ib, range, forward),
+            SeamChoice::Split { edge, parameter } => {
+                return Ok(Planned::Split { edge, parameter });
+            }
+        };
         let rotate = |uses: &[Use], start: usize| -> Vec<Use> {
             uses[start..]
                 .iter()
@@ -1026,7 +1229,7 @@ impl Builder {
                 .collect()
         };
         let index = self.edges.len();
-        self.edges.push(seam);
+        self.edges.push(*seam);
         let mut outer = rotate(&face.loops[a].uses, ia);
         outer.push(Use {
             edge: index,
@@ -1054,28 +1257,30 @@ impl Builder {
             },
         );
         self.adaptations.inserted_seams += 1;
-        Ok(Plan {
+        Ok(Planned::Face(Plan {
+            surface: None,
             outer,
             holes: holes.iter().map(|&i| face.loops[i].uses.clone()).collect(),
             pcurves,
-        })
+        }))
     }
 
     /// An isoparametric seam from a vertex of loop `a` (winding +1 along axis `k`) to an
     /// aligned vertex of loop `b`, on the side where the face lies (left of `a`).
+    /// Without such a pair, it requests a split of the loop `b` edge that the
+    /// isoparametric line through a vertex of `a` crosses.
     #[allow(clippy::too_many_arguments)]
     fn seam(
         &mut self,
         c: &mut Context<'_, '_>,
         face: &FaceRecord,
         charts: &[LoopChart],
-        a: usize,
-        b: usize,
-        k: usize,
+        pcurves: &BTreeMap<usize, Pcurve>,
+        (a, b, k): (usize, usize, usize),
         holes: &[usize],
         j_periodic: bool,
         tolerance: f64,
-    ) -> Result<(EdgeRecord, usize, usize, [f64; 2], bool), Error> {
+    ) -> Result<SeamChoice, Error> {
         let j = 1 - k;
         let direction = if k == 0 { 1. } else { -1. };
         let period = face.chart.periods()[k].expect("wrapping axis is periodic");
@@ -1088,18 +1293,16 @@ impl Builder {
                 e.vertices[1]
             }
         };
-        for (ia, ua) in charts[a].starts.iter().enumerate() {
-            for (ib, ub) in charts[b].starts.iter().enumerate() {
-                c.charge(1)?;
-                let mut bj = ub[j];
-                if j_periodic {
-                    bj = ua[j] + direction * (direction * (ub[j] - ua[j])).rem_euclid(TAU);
-                }
-                let span = direction * (bj - ua[j]);
-                if span <= 0. {
-                    continue;
-                }
-                let crosses = holes.iter().any(|&h| {
+        let target_j = |ua: [f64; 2], uj: f64| {
+            if j_periodic {
+                ua[j] + direction * (direction * (uj - ua[j])).rem_euclid(TAU)
+            } else {
+                uj
+            }
+        };
+        let blocked = |ua: [f64; 2], bj: f64| {
+            direction * (bj - ua[j]) <= 0.
+                || holes.iter().any(|&h| {
                     let hk: Vec<f64> = charts[h].polygon.iter().map(|p| p[k]).collect();
                     let hj: Vec<f64> = charts[h].polygon.iter().map(|p| p[j]).collect();
                     let (kmin, kmax) = minmax(&hk);
@@ -1107,8 +1310,13 @@ impl Builder {
                     let seam_k = nearest(ua[k], 0.5 * (kmin + kmax), period);
                     let (lo, hi) = (ua[j].min(bj), ua[j].max(bj));
                     seam_k >= kmin && seam_k <= kmax && hi >= jmin && lo <= jmax
-                });
-                if crosses {
+                })
+        };
+        for (ia, ua) in charts[a].starts.iter().enumerate() {
+            for (ib, ub) in charts[b].starts.iter().enumerate() {
+                c.charge(1)?;
+                let bj = target_j(*ua, ub[j]);
+                if blocked(*ua, bj) {
                     continue;
                 }
                 let Some((curve, shape)) = seam_curve(&face.chart, k, ua[k]) else {
@@ -1128,14 +1336,14 @@ impl Builder {
                 let forward = direction > 0.;
                 let range = [ua[j].min(bj), ua[j].max(bj)];
                 c.record()?;
-                return Ok((
-                    EdgeRecord {
+                return Ok(SeamChoice::Seam(
+                    Box::new(EdgeRecord {
                         entity: None,
                         curve,
                         shape,
                         range,
                         vertices: if forward { [va, vb] } else { [vb, va] },
-                    },
+                    }),
                     ia,
                     ib,
                     range,
@@ -1143,10 +1351,91 @@ impl Builder {
                 ));
             }
         }
+        // No aligned pair: split the loop-b edge crossed by the isoparametric line
+        // through a loop-a vertex, choosing the first crossing whose seam avoids holes.
+        for ua in &charts[a].starts {
+            for u in &face.loops[b].uses {
+                c.charge(1)?;
+                let Some((parameter, uv)) = crossing(&pcurves[&u.edge], k, ua[k], period) else {
+                    continue;
+                };
+                if !blocked(*ua, target_j(*ua, uv[j])) {
+                    return Ok(SeamChoice::Split {
+                        edge: u.edge,
+                        parameter,
+                    });
+                }
+            }
+        }
         Err(c.error(
             ErrorKind::Unsupported,
-            "annular face on a periodic surface has no pair of aligned loop vertices for a seam that avoids its holes",
+            "annular face on a periodic surface has no seam between its loops that avoids its holes",
         ))
+    }
+
+    /// Split an edge at an interior curve parameter. Both halves keep the curve; every
+    /// use in every face is replaced by the two halves in traversal order.
+    fn split(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        faces: &mut [FaceRecord],
+        edge: usize,
+        parameter: f64,
+    ) -> Result<(), Error> {
+        let [a, b] = self.edges[edge].range;
+        if !(parameter > a && parameter < b) {
+            return Err(c.error(
+                ErrorKind::InvalidGeometry,
+                "edge split parameter outside the edge range",
+            ));
+        }
+        c.record()?;
+        let position = c
+            .checked(self.edges[edge].curve.evaluate(parameter))?
+            .position;
+        let vertex = VertexId(c.raw.vertices.len());
+        c.raw.vertices.push(Vertex { position });
+        c.point_entities
+            .push(self.edges[edge].entity.unwrap_or(c.current));
+        let [start, end] = self.edges[edge].vertices;
+        let mut second = self.edges[edge].clone();
+        second.range = [parameter, b];
+        second.vertices = [vertex, end];
+        let first = &mut self.edges[edge];
+        first.range = [a, parameter];
+        first.vertices = [start, vertex];
+        let index = self.edges.len();
+        self.edges.push(second);
+        for face in faces.iter_mut() {
+            for l in &mut face.loops {
+                let mut uses = Vec::with_capacity(l.uses.len() + 1);
+                for u in &l.uses {
+                    c.charge(1)?;
+                    if u.edge != edge {
+                        uses.push(*u);
+                    } else if u.forward {
+                        uses.extend([
+                            *u,
+                            Use {
+                                edge: index,
+                                forward: true,
+                            },
+                        ]);
+                    } else {
+                        uses.extend([
+                            Use {
+                                edge: index,
+                                forward: false,
+                            },
+                            *u,
+                        ]);
+                    }
+                }
+                l.uses = uses;
+            }
+        }
+        self.adaptations.split_edges += 1;
+        Ok(())
     }
 }
 
@@ -1166,6 +1455,28 @@ fn signed_area(polygon: &[[f64; 2]]) -> f64 {
         })
         .sum::<f64>()
         * 0.5
+}
+
+/// A sphere chart with the given centre, unit axis and radius.
+fn sphere_chart(center: V3, axis: V3, radius: f64) -> Option<(Chart, SurfaceGeometry)> {
+    let helper = if axis[0].abs() < 0.9 {
+        [1., 0., 0.]
+    } else {
+        [0., 1., 0.]
+    };
+    let x = crate::pcurve::cross(helper, axis);
+    let frame = PlaneFrame::new(
+        Point::new(center).ok()?,
+        Vector::new(scale(x, 1. / norm(x))).ok()?,
+        Vector::new(crate::pcurve::cross(axis, x)).ok()?,
+        NumericalTolerance::default(),
+    )
+    .ok()?;
+    let surface = Surface::sphere(frame, Length::metres(radius).ok()?).ok()?;
+    Some((
+        Chart::Sphere(Frame::new(frame), radius),
+        SurfaceGeometry::Analytic(surface),
+    ))
 }
 
 /// The isoparametric curve with fixed coordinate `k` = `value`, parameterized by the

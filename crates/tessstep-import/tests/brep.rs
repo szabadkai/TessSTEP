@@ -58,8 +58,8 @@ fn brep_annular_cylinder_inserts_one_seam_and_meshes_as_a_strip() {
     assert_eq!(
         solid.adaptations(),
         Adaptations {
-            inferred_outer_bounds: 0,
-            inserted_seams: 1
+            inserted_seams: 1,
+            ..Adaptations::default()
         }
     );
     // Two circle edges and one inserted isoparametric seam.
@@ -122,10 +122,51 @@ fn brep_elementary_surfaces_close_with_expected_volumes() {
         washer.adaptations(),
         Adaptations {
             inferred_outer_bounds: 2,
-            inserted_seams: 2
+            inserted_seams: 2,
+            ..Adaptations::default()
         }
     );
     check_volume(&mesh(&washer, chord), PI * 300. * 5. * 1e-9, chord, 0.01);
+}
+
+#[test]
+fn brep_edge_splits_and_sphere_recharting_are_reported() {
+    // Loop vertices a quarter turn apart: the top circle is split where the seam
+    // through the bottom vertex crosses it, in both faces that use it.
+    let solid = import(include_str!(
+        "../../../corpus/geometry/brep-misaligned.step"
+    ))
+    .unwrap();
+    assert_eq!(
+        solid.adaptations(),
+        Adaptations {
+            inserted_seams: 1,
+            split_edges: 1,
+            ..Adaptations::default()
+        }
+    );
+    // Two circle edges, one split half and one seam; the split vertex is new.
+    assert_eq!(
+        (
+            solid.brep().data().edges.len(),
+            solid.brep().data().vertices.len()
+        ),
+        (4, 3)
+    );
+    check_volume(&mesh(&solid, 1e-5), PI * 100. * 20. * 1e-9, 1e-5, 0.01);
+    // The STEP frame's pole lies inside the cap; a rotated frame is used instead.
+    let cap = import(include_str!(
+        "../../../corpus/geometry/brep-sphere-cap.step"
+    ))
+    .unwrap();
+    assert_eq!(
+        cap.adaptations(),
+        Adaptations {
+            recharted_spheres: 1,
+            ..Adaptations::default()
+        }
+    );
+    check_volume(&mesh(&cap, 1e-5), PI * 16. * 26. / 3. * 1e-9, 1e-5, 0.008);
 }
 
 #[test]
@@ -174,9 +215,9 @@ fn brep_rejections_are_typed_and_located() {
             "lies 5.000e-4 m from the face surface",
         ),
         (
-            include_str!("../../../corpus/geometry/brep-misaligned.step").to_string(),
+            include_str!("../../../corpus/geometry/brep-hemisphere.step").to_string(),
             ErrorKind::Unsupported,
-            "no pair of aligned loop vertices",
+            "wind around a periodic surface direction",
         ),
         (
             include_str!("../../../corpus/geometry/brep-vertex-loop.step").to_string(),
@@ -422,7 +463,8 @@ fn brep_unmodified_exporter_cube_with_hole() {
         solid.adaptations(),
         Adaptations {
             inferred_outer_bounds: 2,
-            inserted_seams: 1
+            inserted_seams: 1,
+            ..Adaptations::default()
         }
     );
     let mesh = mesh(&solid, 1e-6);

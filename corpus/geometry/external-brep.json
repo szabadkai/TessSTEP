@@ -9,7 +9,9 @@
     "chord_m": 1e-06,
     "adaptations": [
       2,
-      1
+      1,
+      0,
+      0
     ],
     "description": "50.8 x 25.4 x 25.4 mm block with an r=6.35 mm through-hole; planar faces without FACE_OUTER_BOUND and a seamless hole cylinder",
     "volume_m3": 2.9556535507730888e-05,
@@ -24,6 +26,8 @@
     "model_tolerance_m": 5e-06,
     "chord_m": 1e-05,
     "adaptations": [
+      0,
+      0,
       0,
       0
     ],
@@ -40,6 +44,8 @@
     "model_tolerance_m": 1e-05,
     "chord_m": 1e-05,
     "adaptations": [
+      0,
+      0,
       0,
       0
     ],
