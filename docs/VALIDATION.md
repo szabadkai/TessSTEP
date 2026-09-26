@@ -1,3 +1,30 @@
+# Curved import: swept surfaces and cavity shells — 2026-09-26
+
+`SURFACE_OF_LINEAR_EXTRUSION` and `SURFACE_OF_REVOLUTION` import as exact elementary
+charts or exact NURBS with the STEP normal orientation preserved; `TRIMMED_CURVE`s
+contribute their basis curve and sense; `BREP_WITH_VOIDS` cavity shells (with
+`ORIENTED_CLOSED_SHELL` orientation) mesh as inward components. Kernel additions:
+`NurbsSurface::isocurve`, `Solid::voids` with disjoint-shell validation, per-shell
+volume checks and `TessellationErrorKind::CavityOrientation`. See
+[CURVED_IMPORT.md](CURVED_IMPORT.md#swept-surfaces), [TOPOLOGY.md](TOPOLOGY.md) and
+[TESSELLATION.md](TESSELLATION.md).
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --release` | 240 tests/doctests passed, including `brep_swept_surfaces_are_exact_elementary_or_nurbs_charts`, `brep_cavity_shells_mesh_as_inward_components`, `topology_cavity_shells_are_closed_and_uniquely_owned`, `nurbs_surface_isocurves_agree_with_the_surface` |
+| Workspace fmt, Clippy (`-D warnings`, all targets/features) and rustdoc | passed |
+| Python verification tests; kernel, CLI, EXPRESS, schema, product, metamorphic, architecture checks | passed (41 tests) |
+| Fixture provenance and generated conformance | passed; 94 fixtures |
+| `check_geometry.py --require-external` | 59 reviewed outcomes passed (new: extruded circle and reversed trimmed ellipse, revolved line, B-spline semicircle and circle, cube and cylinder cavities, rejected outward cavity) |
+| `check_capi.py --library-dir target/release` (no sanitizers; local ASan hang) | installed C/C++ package checks passed |
+
+`python3 scripts/corpus.py --check` passed with 52 changed inputs and no regressions:
+roots producing solid meshes rose from 521 to 557 of 1,173. Reviewed movements: 36
+roots now mesh (25 swept, 11 OpenCASCADE cavity solids); 49 formerly unsupported roots
+reach later typed failures (trim and polygon failures on newly planned faces, off-curve
+edge endpoints, and 4 OpenCASCADE cavity solids whose voids face out of their cavity,
+diagnosed as `CavityOrientation`). The baseline was saved after this review.
+
 # Curved import: pole and apex charts — 2026-09-26
 
 Faces that reach a sphere pole, a cone apex or a collapsed B-spline side now close their

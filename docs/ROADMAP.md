@@ -166,8 +166,8 @@ vertex links, components, closure and algebraic volume are checked; solid result
 one closed component and positive volume. Closed cylinders and doubly periodic tori
 are covered. This is topological watertightness, not self-intersection/material proof.
 C/C++ mesh import and retained read-only views have installed consumer coverage. STEP
-adapters, C/C++ B-rep/tessellation entry points, nested cavity shells and industrial
-numerical hardening remain pending. Milestone 18 now adds independently supplied assembly assets and transforms.
+adapters, C/C++ B-rep/tessellation entry points and industrial numerical hardening
+remain pending; cavity shells followed with curved STEP adaptation. Milestone 18 now adds independently supplied assembly assets and transforms.
 
 **Milestone 18 delivered — independent assembly mesh assets.**
 
@@ -230,8 +230,10 @@ Edge splits for misaligned annuli and sphere re-charting followed the same day.
 Pole and apex charts followed on 2026-09-26: collapsed edges close face charts at
 sphere poles, cone apices and collapsed B-spline sides (loop joins, enclosing loops with
 pole seams, `VERTEX_LOOP`s, full spheres), with polar-wedge tessellation at pole
-copies, exact meridian pcurves and one-sided pole limits. C/C++ entry points, swept
-surfaces, cavity shells and anisotropic refinement remain pending.
+copies, exact meridian pcurves and one-sided pole limits. Swept surfaces (exact
+elementary charts or exact NURBS, with STEP normal orientation), `TRIMMED_CURVE`
+bases and `BREP_WITH_VOIDS` cavity shells followed the same day. C/C++ entry points
+and anisotropic refinement remain pending.
 
 **Import hardening backlog — observed on third-party CAD exports.**
 
@@ -246,12 +248,16 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   complex-instance encodings, import through the curved profile. Annular faces with
   misaligned loop vertices are handled by reported edge splits, spherical faces
   touching their STEP pole by re-charting, and faces reaching a pole, apex or
-  collapsed B-spline side by collapsed-edge charts. The remaining corpus blockers, by
-  frequency: open or inconsistently oriented shells (see below), edges off their
-  surface, swept surfaces, tessellation budgets and `BREP_WITH_VOIDS` cavity shells.
-  Evidence: `brep_elementary_surfaces_close_with_expected_volumes`,
+  collapsed B-spline side by collapsed-edge charts. `SURFACE_OF_LINEAR_EXTRUSION`,
+  `SURFACE_OF_REVOLUTION`, `TRIMMED_CURVE` and `BREP_WITH_VOIDS` cavity shells are
+  supported. The remaining corpus blockers, by frequency: open or inconsistently
+  oriented shells (see below), edges off their surface, trimming and tessellation
+  failures on planned faces, and tessellation budgets. Evidence:
+  `brep_elementary_surfaces_close_with_expected_volumes`,
   `brep_edge_splits_and_sphere_recharting_are_reported`,
-  `brep_poles_and_apices_close_with_collapsed_edges`.
+  `brep_poles_and_apices_close_with_collapsed_edges`,
+  `brep_swept_surfaces_are_exact_elementary_or_nurbs_charts`,
+  `brep_cavity_shells_mesh_as_inward_components`.
 - **Implicit outer bounds — delivered 2026-09-26 in the curved profile.** A face with
   several bounds and no `FACE_OUTER_BOUND` uses its unique counterclockwise loop in
   the surface chart and otherwise fails with "ambiguous outer bound"; holes on

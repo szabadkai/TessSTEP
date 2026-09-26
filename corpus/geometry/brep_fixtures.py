@@ -70,10 +70,13 @@ class Step:
     def plane(self, origin, axis, ref=(1, 0, 0)):
         return self.add(f"PLANE('',#{self.placement(origin, axis, ref)})")
 
-    def write(self, name, faces, root="MANIFOLD_SOLID_BREP", context=None):
+    def write(self, name, faces, root="MANIFOLD_SOLID_BREP", context=None, voids=()):
         shell = self.add(f"CLOSED_SHELL('',({','.join(f'#{f}' for f in faces)}))")
         assert self.next < 1000
-        self.lines.append(f"#1000={root}('',#{shell});")
+        if voids:
+            self.lines.append(f"#1000={root}('',#{shell},({','.join(f'#{v}' for v in voids)}));")
+        else:
+            self.lines.append(f"#1000={root}('',#{shell});")
         if context:
             self.lines.extend(context(self))
         header = [
@@ -142,6 +145,34 @@ def cylinder(s, radius, z0, z1, caps=True, seam=False, cap_outer=True):
     if caps:
         faces.append(s.face([s.bound([(bottom, False)], outer=cap_outer)], s.plane((0, 0, z0), (0, 0, 1)), same=False))
         faces.append(s.face([s.bound([(top, True)], outer=cap_outer)], s.plane((0, 0, z1), (0, 0, 1))))
+    return faces
+
+
+def box(s, lo, hi):
+    """Axis-aligned box with outward faces. Returns faces."""
+    corners = {}
+    for i in range(8):
+        p = tuple(hi[k] if (i >> k) & 1 else lo[k] for k in range(3))
+        corners[i] = (p, s.vertex(p))
+    edges = {}
+
+    def edge(a, b):
+        if (b, a) in edges:
+            return edges[(b, a)], False
+        if (a, b) not in edges:
+            pa, pb = corners[a][0], corners[b][0]
+            edges[(a, b)] = s.edge(corners[a][1], corners[b][1], s.line(pa, [pb[k] - pa[k] for k in range(3)]))
+        return edges[(a, b)], True
+
+    faces = []
+    # Each face: corner indices counterclockwise seen from outside, normal, reference.
+    for ring, normal, ref in [
+        ((0, 2, 3, 1), (0, 0, -1), (0, 1, 0)), ((4, 5, 7, 6), (0, 0, 1), (1, 0, 0)),
+        ((0, 1, 5, 4), (0, -1, 0), (1, 0, 0)), ((2, 6, 7, 3), (0, 1, 0), (0, 0, 1)),
+        ((0, 4, 6, 2), (-1, 0, 0), (0, 0, 1)), ((1, 3, 7, 5), (1, 0, 0), (0, 1, 0)),
+    ]:
+        uses = [edge(ring[i], ring[(i + 1) % 4]) for i in range(4)]
+        faces.append(s.face([s.bound(uses, outer=True)], s.plane(corners[ring[0]][0], normal, ref)))
     return faces
 
 
@@ -367,6 +398,111 @@ def fixtures():
                s.plane(b, (root3, root3, root3), (-1 / math.sqrt(2), 1 / math.sqrt(2), 0))),
     ]
     s.write("brep-bspline-pole.step", faces)
+
+    # Cylinder r=10 h=20 whose side is SURFACE_OF_LINEAR_EXTRUSION of its base circle:
+    # an exact cylinder chart with one inserted seam.
+    s = Step("Original cylinder r=10 h=20 mm whose side is an extruded circle")
+    v0, v1 = s.vertex((10, 0, 0)), s.vertex((10, 0, 20))
+    circle = s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10)
+    bottom = s.edge(v0, v0, circle)
+    top = s.edge(v1, v1, s.circle((0, 0, 20), (0, 0, 1), (1, 0, 0), 10))
+    extrusion = s.add(f"SURFACE_OF_LINEAR_EXTRUSION('',#{circle},#{s.add(f'VECTOR({chr(39)}{chr(39)},#{s.direction((0, 0, 1))},20.)')})")
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], extrusion),
+        s.face([s.bound([(bottom, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(top, True)])], s.plane((0, 0, 20), (0, 0, 1))),
+    ]
+    s.write("brep-extruded-cylinder.step", faces)
+
+    # Elliptic prism a=15 b=10 h=20: the side extrudes a TRIMMED_CURVE of the base
+    # ellipse whose sense disagrees with it, so the STEP surface normal points inward
+    # and the face uses same_sense .F.; the chart is a periodic NURBS extrusion cut by
+    # an isocurve seam.
+    s = Step("Original elliptic prism a=15 b=10 h=20 mm whose side extrudes a reversed trimmed ellipse")
+    v0, v1 = s.vertex((15, 0, 0)), s.vertex((15, 0, 20))
+
+    def ellipse(z):
+        return s.add(f"ELLIPSE('',#{s.placement((0, 0, z), (0, 0, 1), (1, 0, 0))},15.,10.)")
+
+    base = ellipse(0)
+    bottom = s.edge(v0, v0, base)
+    top = s.edge(v1, v1, ellipse(20))
+    trimmed = s.add(f"TRIMMED_CURVE('',#{base},(PARAMETER_VALUE(0.)),(PARAMETER_VALUE({num(2 * math.pi)})),.F.,.PARAMETER.)")
+    extrusion = s.add(f"SURFACE_OF_LINEAR_EXTRUSION('',#{trimmed},#{s.add(f'VECTOR({chr(39)}{chr(39)},#{s.direction((0, 0, 1))},1.)')})")
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], extrusion, same=False),
+        s.face([s.bound([(bottom, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(top, True)])], s.plane((0, 0, 20), (0, 0, 1))),
+    ]
+    s.write("brep-extruded-ellipse.step", faces)
+
+    # Cone tip R=10 h=10 whose lateral face revolves its generator line about z: an
+    # exact cone chart closed at the apex by a VERTEX_LOOP.
+    s = Step("Original cone R=10 h=10 mm whose lateral face revolves a line, with a vertex loop at the apex")
+    apex = s.vertex((0, 0, 10))
+    v0 = s.vertex((10, 0, 0))
+    base = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    generator = s.line((10, 0, 0), (-1 / math.sqrt(2), 0, 1 / math.sqrt(2)))
+    axis = s.add(f"AXIS1_PLACEMENT('',#{s.point((0, 0, 0))},#{s.direction((0, 0, 1))})")
+    revolution = s.add(f"SURFACE_OF_REVOLUTION('',#{generator},#{axis})")
+    vertex_loop = s.add(f"VERTEX_LOOP('',#{apex})")
+    faces = [
+        s.face([s.bound([(base, True)]), s.add(f"FACE_BOUND('',#{vertex_loop},.T.)")], revolution),
+        s.face([s.bound([(base, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-revolved-cone.step", faces)
+
+    # Sphere R=10 revolving a rational B-spline semicircle from pole to pole: a NURBS
+    # chart whose two profile ends collapse to the poles; the profile is also the face's
+    # seam edge, used in both directions.
+    s = Step("Original sphere R=10 mm revolving a rational B-spline semicircle, bounded by the profile as a seam")
+    south, north = s.vertex((0, 0, -10)), s.vertex((0, 0, 10))
+    pts = [(0, 0, -10), (10, 0, -10), (10, 0, 0), (10, 0, 10), (0, 0, 10)]
+    q = num(1 / math.sqrt(2))
+    profile = s.add("(BOUNDED_CURVE()B_SPLINE_CURVE(2,(" + ",".join(f"#{s.point(p)}" for p in pts)
+                    + "),.CIRCULAR_ARC.,.F.,.F.)B_SPLINE_CURVE_WITH_KNOTS((3,2,3),(0.,0.5,1.),.UNSPECIFIED.)"
+                    f"CURVE()GEOMETRIC_REPRESENTATION_ITEM()RATIONAL_B_SPLINE_CURVE((1.,{q},1.,{q},1.))REPRESENTATION_ITEM(''))")
+    meridian = s.edge(south, north, profile)
+    axis = s.add(f"AXIS1_PLACEMENT('',#{s.point((0, 0, 0))},#{s.direction((0, 0, 1))})")
+    revolution = s.add(f"SURFACE_OF_REVOLUTION('',#{profile},#{axis})")
+    s.write("brep-revolved-sphere.step",
+            [s.face([s.bound([(meridian, True), (meridian, False)], outer=True)], revolution)])
+
+    # Ring torus R=20 r=5 revolving its meridian circle about z: an exact torus chart.
+    s = Step("Original ring torus R=20 r=5 mm revolving a circle, with parallel and meridian seam circles")
+    v = s.vertex((25, 0, 0))
+    parallel = s.edge(v, v, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 25))
+    profile = s.circle((20, 0, 0), (0, -1, 0), (1, 0, 0), 5)
+    meridian = s.edge(v, v, profile)
+    axis = s.add(f"AXIS1_PLACEMENT('',#{s.point((0, 0, 0))},#{s.direction((0, 0, 1))})")
+    revolution = s.add(f"SURFACE_OF_REVOLUTION('',#{profile},#{axis})")
+    face = s.face([s.bound([(parallel, True), (meridian, True), (parallel, False), (meridian, False)], outer=True)], revolution)
+    s.write("brep-revolved-torus.step", [face])
+
+    # 20 mm cube with a centred 10 mm cubical cavity: BREP_WITH_VOIDS whose void is an
+    # outward inner cube shell reversed by ORIENTED_CLOSED_SHELL(.F.).
+    s = Step("Original 20 mm cube with a centred 10 mm cubical cavity")
+    outer = box(s, (0, 0, 0), (20, 20, 20))
+    inner = s.add(f"CLOSED_SHELL('',({','.join(f'#{f}' for f in box(s, (5, 5, 5), (15, 15, 15)))}))")
+    void = s.add(f"ORIENTED_CLOSED_SHELL('',*,#{inner},.F.)")
+    s.write("brep-box-cavity.step", outer, root="BREP_WITH_VOIDS", voids=[void])
+
+    # Cylinder r=10 h=20 with a spherical cavity r=5 at its centre, the sphere bounded by
+    # one VERTEX_LOOP; the void reverses an outward sphere shell.
+    s = Step("Original cylinder r=10 h=20 mm with a centred spherical cavity r=5 mm")
+    outer = cylinder(s, 10, 0, 20)
+    point = s.vertex((5, 0, 10))
+    sphere = s.add(f"SPHERICAL_SURFACE('',#{s.placement((0, 0, 10), (0, 0, 1), (1, 0, 0))},5.)")
+    ball = s.face([s.add(f"FACE_BOUND('',#{s.add(f'VERTEX_LOOP({chr(39)}{chr(39)},#{point})')},.T.)")], sphere)
+    void = s.add(f"ORIENTED_CLOSED_SHELL('',*,#{s.add(f'CLOSED_SHELL({chr(39)}{chr(39)},(#{ball}))')},.F.)")
+    s.write("brep-sphere-cavity.step", outer, root="BREP_WITH_VOIDS", voids=[void])
+
+    # Negative: a cavity shell facing out of its cavity (not reversed).
+    s = Step("Original rejected solid: a 20 mm cube whose cavity shell faces out of the cavity")
+    outer = box(s, (0, 0, 0), (20, 20, 20))
+    inner = s.add(f"CLOSED_SHELL('',({','.join(f'#{f}' for f in box(s, (5, 5, 5), (15, 15, 15)))}))")
+    void = s.add(f"ORIENTED_CLOSED_SHELL('',*,#{inner},.T.)")
+    s.write("brep-inverted-cavity.step", outer, root="BREP_WITH_VOIDS", voids=[void])
 
     # Negative: a VERTEX_LOOP at a regular point of a cone.
     s = Step("Original unsupported solid: vertex loop away from the cone apex")

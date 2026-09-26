@@ -119,7 +119,7 @@ pub fn tetrahedron() -> RawBrep {
         faces: (0..4).map(FaceId).collect(),
         closed: true,
     });
-    r.solids.push(Solid { shell: ShellId(0) });
+    r.solids.push(Solid::new(ShellId(0)));
     r
 }
 pub fn disk() -> RawBrep {
@@ -283,7 +283,7 @@ pub fn closed_cylinder() -> RawBrep {
         faces: (0..3).map(FaceId).collect(),
         closed: true,
     });
-    r.solids.push(Solid { shell: ShellId(0) });
+    r.solids.push(Solid::new(ShellId(0)));
     r
 }
 pub fn nurbs_bump() -> RawBrep {
@@ -451,7 +451,7 @@ pub fn hemisphere() -> RawBrep {
             faces: vec![FaceId(0), FaceId(1)],
             closed: true,
         }],
-        solids: vec![Solid { shell: ShellId(0) }],
+        solids: vec![Solid::new(ShellId(0))],
     }
 }
 /// Right circular cone with its apex at the origin, 45 degree semi-angle and unit top
@@ -531,6 +531,6 @@ pub fn apex_cone() -> RawBrep {
             faces: vec![FaceId(0), FaceId(1)],
             closed: true,
         }],
-        solids: vec![Solid { shell: ShellId(0) }],
+        solids: vec![Solid::new(ShellId(0))],
     }
 }

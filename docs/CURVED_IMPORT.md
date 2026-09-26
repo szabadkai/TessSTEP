@@ -1,8 +1,8 @@
 # Curved B-rep import
 
 `tessstep_import::import_brep_solid` converts a selected `MANIFOLD_SOLID_BREP` whose
-faces lie on elementary or B-spline surfaces into a validated B-rep and owned solid
-mesh. It is a superset of the edge-based [planar profile](STEP_IMPORT.md) and uses
+faces lie on elementary, B-spline or swept surfaces into a validated B-rep and owned
+solid mesh. It is a superset of the edge-based [planar profile](STEP_IMPORT.md) and uses
 the same topology, UV trimming, shared-edge sampling, tessellation and mesh checks.
 Mesh positions are metres; triangle `face_ids` are the STEP face entity IDs.
 
@@ -17,9 +17,9 @@ Rust is the only interface so far; C/C++ entry points are pending.
 
 | Contract | Supported |
 | --- | --- |
-| Root | `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL` of `ADVANCED_FACE`/`FACE_SURFACE` |
-| Surfaces | `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, ring `TOROIDAL_SURFACE`, `B_SPLINE_SURFACE_WITH_KNOTS`, `QUASI_UNIFORM_SURFACE`, rational forms |
-| Edge curves | `LINE`, `CIRCLE`, `ELLIPSE`, `B_SPLINE_CURVE_WITH_KNOTS`, `QUASI_UNIFORM_CURVE`, rational forms; any of these as the 3D curve of `SURFACE_CURVE`, `SEAM_CURVE` or `INTERSECTION_CURVE` |
+| Root | `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL` of `ADVANCED_FACE`/`FACE_SURFACE`, or `BREP_WITH_VOIDS` adding cavity shells; `ORIENTED_CLOSED_SHELL` orientation is applied to its faces |
+| Surfaces | `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, ring `TOROIDAL_SURFACE`, `B_SPLINE_SURFACE_WITH_KNOTS`, `QUASI_UNIFORM_SURFACE`, rational forms; `SURFACE_OF_LINEAR_EXTRUSION` and `SURFACE_OF_REVOLUTION` of any supported curve (see [swept surfaces](#swept-surfaces)) |
+| Edge curves | `LINE`, `CIRCLE`, `ELLIPSE`, `B_SPLINE_CURVE_WITH_KNOTS`, `QUASI_UNIFORM_CURVE`, rational forms; any of these as the 3D curve of `SURFACE_CURVE`, `SEAM_CURVE` or `INTERSECTION_CURVE`, or as the basis of a `TRIMMED_CURVE` |
 | Encodings | Simple and complex instances; the curve and surface supertype chains mirror the physical component names of complex B-spline records |
 | Loops | `EDGE_LOOP` of `ORIENTED_EDGE`; `FACE_OUTER_BOUND` optional (see below) |
 | Units | Explicit `LengthUnit` and `AngleUnit`; the angle unit applies only to `CONICAL_SURFACE.semi_angle` |
@@ -37,6 +37,31 @@ unsupported. A B-spline axis flagged closed in STEP receives a **periodic chart*
 its two boundary curves agree within the model tolerance; the flag alone is advisory.
 Periodic NURBS axes wrap evaluation (see [NURBS](NURBS.md)) so seams, chart shifts and
 annular faces behave as on analytic surfaces.
+
+## Swept surfaces
+
+`SURFACE_OF_LINEAR_EXTRUSION` and `SURFACE_OF_REVOLUTION` are converted to kernel
+surfaces without approximation. Cases that are exactly elementary surfaces use that
+chart: an extruded line is a plane, a circle extruded along its normal a cylinder, a
+revolved line a cylinder (parallel), plane (perpendicular) or cone (meeting the axis;
+the nappe containing the face is selected and a face crossing the apex is
+unsupported), and a circle revolved in a plane through the axis a sphere (centre on
+the axis) or ring torus. Everything else becomes NURBS: an extrusion is the swept
+curve's NURBS (conics as nine-control rational quadratics) swept linearly over the
+face's axial extent plus a margin; a revolution is the Piegl-Tiller rational revolve
+with a full rational quadratic circle, and a revolved skew line is a segment covering
+the face's axial range. Closed swept curves and the revolution angle receive periodic
+charts when their closure checks pass, and revolved profile ends on the axis are
+collapsed B-spline sides ([pole charts](#face-charts)).
+
+The STEP surface normal (`C'(u) × V` for an extrusion, `(a × (C − A)) × C'(v)` for a
+revolution at angle zero, reversed for a trimmed curve whose sense disagrees with its
+basis) is compared with the kernel normal at a sampled curve point, and the face
+orientation is flipped when they differ, so each face keeps its outward side.
+`TRIMMED_CURVE`s contribute their basis curve and sense only: edge vertices bound
+every use. A `LINE` whose vector magnitude is zero is read as unit speed, because
+only its direction is used. Evidence:
+`brep_swept_surfaces_are_exact_elementary_or_nurbs_charts`.
 
 ## Computed pcurves
 
@@ -73,7 +98,9 @@ Each loop is classified by its winding in the periodic surface axes.
   one periodic axis (a cylinder, cone, sphere zone or torus band bounded by two
   circles and no seam edge) is cut by an **inserted seam**. This isoparametric edge
   joins a vertex of each loop at the same periodic coordinate, on the side where the
-  face lies. It is a line on cylinders and cones and a circle on spheres and tori.
+  face lies. It is a line on cylinders and cones, a circle on spheres and tori, and
+  the isoparametric curve of a NURBS chart (repeated over neighbouring periods when
+  the other axis is periodic).
   The two loops and both seam uses become one outer loop; geometry is unchanged.
 * **Edge splits.** When no aligned vertex pair exists (for example two closed circles
   whose vertices sit at different angles), the loop edge that the isoparametric line
@@ -137,9 +164,8 @@ the uncertainty as the model tolerance is the caller's decision.
 
 ## Limits and evidence
 
-`BREP_WITH_VOIDS` cavity shells, open shells, swept surfaces
-(`SURFACE_OF_REVOLUTION`, `SURFACE_OF_LINEAR_EXTRUSION`), `TRIMMED_CURVE`, offset
-curves and surfaces, degenerate tori, singular B-spline sides and healing are
+Open shells, offset curves and surfaces, degenerate
+tori, reversed `TRIMMED_CURVE`s nested inside other curves, and healing are
 unsupported. Profile rejection is not an AP
 validity verdict. `ImportOptions::strict` rejects `$` in derived `ORIENTED_EDGE`
 endpoint slots; `max_work` separately bounds decoding, adapter and pcurve work.
@@ -154,8 +180,15 @@ spherical cap enclosing its STEP pole (one re-chart), a hemisphere (pole seam), 
 tip closed by a `VERTEX_LOOP` at its apex, a cone tip whose loop runs up a generator
 seam to the apex and back (one join), a sphere bounded by one `VERTEX_LOOP` (re-chart,
 pole-to-pole seam, two collapsed edges) and a sphere with a pole-to-pole meridian seam
-edge (two joins). Negative fixtures cover an off-surface edge, a `VERTEX_LOOP` away from
-the apex and an ambiguous outer bound. `tests/brep.rs` checks volumes against the
+edge (two joins), a tetrahedron whose base is a bilinear B-spline patch with a collapsed
+side, a cylinder whose side extrudes its base circle, an elliptic prism extruding a
+reversed trimmed ellipse (periodic NURBS, isocurve seam, flipped orientation), a cone
+tip revolving a line, a sphere revolving a rational B-spline semicircle (two collapsed
+sides) and a torus revolving a circle. Negative fixtures cover an off-surface edge, a
+`VERTEX_LOOP` away from the apex and an ambiguous outer bound. Cavity fixtures cover a cube
+with a cubical void and a cylinder with a spherical void bounded by a `VERTEX_LOOP`
+(each void an outward shell reversed by `ORIENTED_CLOSED_SHELL(.F.)`), and a cube whose
+void faces out of its cavity (rejected at tessellation). `tests/brep.rs` checks volumes against the
 chord-dependent bound, adaptations, one welded vertex per pole, strict policy,
 record-order invariance, budgets, 450 byte mutations, agreement with the planar profile
 and unit discovery.

@@ -1,4 +1,5 @@
-//! Edge-based B-rep solids with elementary and B-spline geometry.
+//! Edge-based B-rep solids with elementary, B-spline and swept geometry.
+mod swept;
 use super::*;
 use crate::pcurve::{
     Chart, CurveShape, Frame, Inverter, PcurveError, Singular, V3, add, dot, nearest, norm, scale,
@@ -114,23 +115,39 @@ pub fn import_brep_solid(
         adaptations: Adaptations::default(),
     };
     let solid = c.view(root)?;
-    if c.is(solid, "BREP_WITH_VOIDS") {
-        return Err(c.error(
-            ErrorKind::Unsupported,
-            "BREP_WITH_VOIDS cavity shells are not supported",
-        ));
-    }
     if !c.is(solid, "MANIFOLD_SOLID_BREP") {
         return Err(c.error(
             ErrorKind::Unsupported,
             "selected root does not match the requested solid profile",
         ));
     }
-    let shell = c.reference(solid, "OUTER")?;
-    for face_ref in c.aggregate(shell, "CFS_FACES")? {
-        c.charge(1)?;
-        let face = c.target(face_ref)?;
-        b.face(&mut c, face)?;
+    // The outer shell, then each BREP_WITH_VOIDS cavity shell.
+    let mut shells = vec![c.reference(solid, "OUTER")?];
+    if c.is(solid, "BREP_WITH_VOIDS") {
+        for void in c.aggregate(solid, "VOIDS")? {
+            c.charge(1)?;
+            shells.push(c.target(void)?);
+        }
+    }
+    for (index, mut shell) in shells.into_iter().enumerate() {
+        // An ORIENTED_CLOSED_SHELL uses its element's faces, reversed when .F..
+        let mut forward = true;
+        while c.is(shell, "ORIENTED_CLOSED_SHELL") {
+            c.charge(1)?;
+            c.current = shell.id;
+            forward ^= !c.boolean(shell, "ORIENTATION")?;
+            shell = c.reference(shell, "CLOSED_SHELL_ELEMENT")?;
+        }
+        for face_ref in c.aggregate(shell, "CFS_FACES")? {
+            c.charge(1)?;
+            let face = c.target(face_ref)?;
+            b.face(&mut c, face)?;
+            let record = b.faces.last_mut().expect("face just recorded");
+            record.shell = index;
+            // Reversing a face flips only its orientation; its loops stay oriented with
+            // the surface.
+            record.same ^= !forward;
+        }
     }
     b.build(&mut c, root, options)
 }
@@ -191,6 +208,8 @@ struct FaceRecord {
     surface: SurfaceGeometry,
     same: bool,
     loops: Vec<LoopRecord>,
+    /// 0 for the outer shell, i for the i-th BREP_WITH_VOIDS cavity shell.
+    shell: usize,
 }
 struct Builder {
     angle: AngleUnit,
@@ -309,6 +328,18 @@ impl Builder {
     ) -> Result<(CurveGeometry<ModelSpace, 3>, CurveShape), Error> {
         c.charge(1)?;
         c.current = v.id;
+        if c.is(v, "TRIMMED_CURVE") {
+            // Edges unwrap their own trimmed curves; elsewhere only the same sense is
+            // representable.
+            let (basis, sense) = swept::trimmed_basis(c, v)?;
+            if !sense {
+                return Err(c.error(
+                    ErrorKind::Unsupported,
+                    "reversed TRIMMED_CURVE inside another curve is not supported",
+                ));
+            }
+            return self.curve(c, basis);
+        }
         if c.is(v, "SURFACE_CURVE") {
             let inner = c.reference(v, "CURVE_3D")?;
             if c.is(inner, "SURFACE_CURVE") {
@@ -323,14 +354,22 @@ impl Builder {
             let origin = c.point(c.reference(v, "PNT")?)?;
             let vector = c.reference(v, "DIR")?;
             let direction = c.direction(c.reference(vector, "ORIENTATION")?)?;
+            // Only the direction matters: edge and chart parameters are recomputed from
+            // positions, so a zero magnitude (written by some exporters) reads as one
+            // metre per unit parameter.
             let magnitude = c.real(vector, "MAGNITUDE")?;
-            if magnitude <= 0. {
+            if magnitude < 0. {
                 return Err(c.error(
                     ErrorKind::InvalidGeometry,
-                    "LINE requires positive vector magnitude",
+                    "LINE requires a nonnegative vector magnitude",
                 ));
             }
-            let tangent = c.checked(direction.scaled(c.checked(c.unit.to_metres(magnitude))?))?;
+            let speed = if magnitude == 0. {
+                1.
+            } else {
+                c.checked(c.unit.to_metres(magnitude))?
+            };
+            let tangent = c.checked(direction.scaled(speed))?;
             let curve = c.checked(Curve::line(origin, tangent))?;
             return Ok((
                 CurveGeometry::Analytic(curve),
@@ -392,13 +431,28 @@ impl Builder {
         ))
     }
 
+    /// The face chart and kernel surface, and whether the kernel surface's normal
+    /// opposes the STEP surface normal (the face orientation is then flipped).
     fn surface<'d, 'a>(
         &mut self,
         c: &mut Context<'d, 'a>,
         v: &'d EntityView<'a>,
-    ) -> Result<(Chart, SurfaceGeometry), Error> {
+        points: &[V3],
+    ) -> Result<(Chart, SurfaceGeometry, bool), Error> {
         c.charge(1)?;
         c.current = v.id;
+        if c.is(v, "SWEPT_SURFACE") {
+            return self.swept_surface(c, v, points);
+        }
+        self.plain_surface(c, v)
+            .map(|(chart, surface)| (chart, surface, false))
+    }
+
+    fn plain_surface<'d, 'a>(
+        &mut self,
+        c: &mut Context<'d, 'a>,
+        v: &'d EntityView<'a>,
+    ) -> Result<(Chart, SurfaceGeometry), Error> {
         if c.is(v, "ELEMENTARY_SURFACE") {
             let frame = c.placement(c.reference(v, "POSITION")?)?;
             let f = Frame::new(frame);
@@ -596,7 +650,9 @@ impl Builder {
         let end = c.topological_vertex(c.reference(edge, "EDGE_END")?)?;
         c.current = edge.id;
         let same = c.boolean(edge, "SAME_SENSE")?;
-        let geometry = c.reference(edge, "EDGE_GEOMETRY")?;
+        let (geometry, sense) = swept::trimmed_basis(c, c.reference(edge, "EDGE_GEOMETRY")?)?;
+        // SAME_SENSE is relative to a trimmed curve; its basis may run the other way.
+        let same = same == sense;
         let (curve, shape) = self.curve(c, geometry)?;
         c.current = edge.id;
         let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
@@ -675,23 +731,26 @@ impl Builder {
         face: &'d EntityView<'a>,
     ) -> Result<(), Error> {
         c.current = face.id;
-        let (chart, surface) = self.surface(c, c.reference(face, "FACE_GEOMETRY")?)?;
-        c.current = face.id;
         let same = c.boolean(face, "SAME_SENSE")?;
-        let mut loops = Vec::new();
+        // Bounds first: swept surfaces without a natural extent are sized from them.
+        let mut bounds = Vec::new();
         for bound_ref in c.aggregate(face, "BOUNDS")? {
             c.charge(1)?;
             let bound = c.target(bound_ref)?;
             c.current = bound.id;
             let orientation = c.boolean(bound, "ORIENTATION")?;
+            let outer = c.is(bound, "FACE_OUTER_BOUND");
             let wire = c.reference(bound, "BOUND")?;
             if c.is(wire, "VERTEX_LOOP") {
                 let vertex = c.topological_vertex(c.reference(wire, "LOOP_VERTEX")?)?;
-                loops.push(LoopRecord {
-                    uses: Vec::new(),
-                    outer: c.is(bound, "FACE_OUTER_BOUND"),
-                    vertex: Some(vertex),
-                });
+                bounds.push((
+                    LoopRecord {
+                        uses: Vec::new(),
+                        outer,
+                        vertex: Some(vertex),
+                    },
+                    orientation,
+                ));
                 continue;
             }
             let mut uses = Vec::new();
@@ -705,19 +764,46 @@ impl Builder {
                     forward: forward == edge_same,
                 });
             }
+            bounds.push((
+                LoopRecord {
+                    uses,
+                    outer,
+                    vertex: None,
+                },
+                orientation,
+            ));
+        }
+        let mut points = Vec::new();
+        for (l, _) in &bounds {
+            if let Some(v) = l.vertex {
+                points.push(c.raw.vertices[v.0].position.coordinates());
+            }
+            for u in &l.uses {
+                let e = &self.edges[u.edge];
+                c.charge(9)?;
+                for i in 0..=8 {
+                    let t = e.range[0] + (e.range[1] - e.range[0]) * i as f64 / 8.;
+                    points.push(c.checked(e.curve.evaluate(t))?.position.coordinates());
+                }
+            }
+        }
+        c.current = face.id;
+        let (chart, surface, flipped) =
+            self.surface(c, c.reference(face, "FACE_GEOMETRY")?, &points)?;
+        c.current = face.id;
+        // The face orientation is relative to the kernel surface's normal.
+        let same = same != flipped;
+        let mut loops = Vec::new();
+        for (mut l, orientation) in bounds {
             // Store every loop oriented with the surface; the face orientation restores
             // STEP's same_sense in shell incidence and triangles.
             if orientation != same {
-                uses.reverse();
-                for u in &mut uses {
+                l.uses.reverse();
+                for u in &mut l.uses {
                     u.forward = !u.forward;
                 }
             }
-            loops.push(LoopRecord {
-                uses,
-                outer: c.is(bound, "FACE_OUTER_BOUND"),
-                vertex: None,
-            });
+            loops.push(l);
         }
         self.faces.push(FaceRecord {
             entity: face.id,
@@ -725,6 +811,7 @@ impl Builder {
             surface,
             same,
             loops,
+            shell: 0,
         });
         Ok(())
     }
@@ -852,13 +939,22 @@ impl Builder {
             face_entities.push(face.entity);
         }
         c.current = root;
+        let count = faces.iter().map(|f| f.shell + 1).max().unwrap_or(1);
+        for shell in 0..count {
+            c.record()?;
+            c.raw.shells.push(Shell {
+                faces: (0..faces.len())
+                    .filter(|&i| faces[i].shell == shell)
+                    .map(FaceId)
+                    .collect(),
+                closed: true,
+            });
+        }
         c.record()?;
-        c.record()?;
-        c.raw.shells.push(Shell {
-            faces: (0..face_entities.len()).map(FaceId).collect(),
-            closed: true,
+        c.raw.solids.push(Solid {
+            shell: ShellId(0),
+            voids: (1..count).map(ShellId).collect(),
         });
-        c.raw.solids.push(Solid { shell: ShellId(0) });
         let raw = std::mem::take(&mut c.raw);
         let brep = raw
             .validate(
@@ -1204,14 +1300,14 @@ impl Builder {
     fn iso_seam(
         &mut self,
         c: &mut Context<'_, '_>,
-        chart: &Chart,
+        (chart, surface): (&Chart, &SurfaceGeometry),
         k: usize,
         at: f64,
         (from, jf): (VertexId, f64),
         (to, jt): (VertexId, f64),
         tolerance: f64,
     ) -> Result<Option<(usize, bool, Pcurve)>, Error> {
-        let Some((curve, shape)) = seam_curve(chart, k, at) else {
+        let Some((curve, shape)) = seam_curve(chart, surface, k, at) else {
             return Ok(None);
         };
         let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
@@ -1552,7 +1648,7 @@ impl Builder {
                 };
                 let Some((seam, forward, seam_pcurve)) = self.iso_seam(
                     c,
-                    &face.chart,
+                    (&face.chart, &face.surface),
                     k,
                     ua[k],
                     (va, ua[j]),
@@ -1637,7 +1733,7 @@ impl Builder {
                 }
                 let Some((seam, forward, seam_pcurve)) = self.iso_seam(
                     c,
-                    &face.chart,
+                    (&face.chart, &face.surface),
                     k,
                     at,
                     (b, bottom.value),
@@ -1818,7 +1914,8 @@ impl Builder {
         };
         let target_j = |ua: [f64; 2], uj: f64| {
             if j_periodic {
-                ua[j] + direction * (direction * (uj - ua[j])).rem_euclid(TAU)
+                let period = face.chart.periods()[j].expect("periodic j axis");
+                ua[j] + direction * (direction * (uj - ua[j])).rem_euclid(period)
             } else {
                 uj
             }
@@ -1842,7 +1939,7 @@ impl Builder {
                 if blocked(*ua, bj) {
                     continue;
                 }
-                let Some((curve, shape)) = seam_curve(&face.chart, k, ua[k]) else {
+                let Some((curve, shape)) = seam_curve(&face.chart, &face.surface, k, ua[k]) else {
                     continue;
                 };
                 let (va, vb) = (vertex(a, ia), vertex(b, ib));
@@ -2023,9 +2120,24 @@ fn sphere_chart(center: V3, axis: V3, radius: f64) -> Option<(Chart, SurfaceGeom
 /// other surface coordinate, so its pcurve is an axis-aligned UV line.
 fn seam_curve(
     chart: &Chart,
+    surface: &SurfaceGeometry,
     k: usize,
     value: f64,
 ) -> Option<(CurveGeometry<ModelSpace, 3>, CurveShape)> {
+    if let (Chart::Nurbs(periods, _), SurfaceGeometry::Nurbs(n)) = (chart, surface) {
+        // The isocurve is parameterized by the other surface coordinate.
+        let axis = if k == 0 {
+            tessstep_surfaces::ParameterAxis::U
+        } else {
+            tessstep_surfaces::ParameterAxis::V
+        };
+        let mut curve = n.isocurve(axis, value).ok()?;
+        // On a periodic other axis a seam may start in a neighbouring period.
+        if let Some(period) = periods[1 - k] {
+            curve = periodic_extension(&curve, period)?;
+        }
+        return Some((CurveGeometry::Nurbs(curve), CurveShape::Nurbs));
+    }
     let point = |p: V3| Point::<ModelSpace, 3>::new(p).ok();
     let vector = |v: V3| Vector::<ModelSpace, 3>::new(v).ok();
     let circle =
@@ -2084,6 +2196,52 @@ fn seam_curve(
         ),
         _ => None,
     }
+}
+
+/// A closed clamped NURBS curve repeated over two periods on each side of its domain:
+/// C0 copies joined at the closure point, so evaluation needs no wrapping.
+fn periodic_extension(
+    curve: &NurbsCurve<ModelSpace, 3>,
+    period: f64,
+) -> Option<NurbsCurve<ModelSpace, 3>> {
+    let k = curve.knot_vector();
+    let p = k.degree();
+    let knots = k.knots();
+    let n = curve.controls().len();
+    let clamped = knots[..=p].iter().all(|&x| x == knots[0])
+        && knots[knots.len() - p - 1..]
+            .iter()
+            .all(|&x| x == knots[knots.len() - 1]);
+    let [lo, hi] = k.domain();
+    if !clamped || (hi - lo - period).abs() > 1e-12 * period.max(1.) {
+        return None;
+    }
+    let interior = &knots[p + 1..knots.len() - p - 1];
+    let mut out_knots = vec![lo - 2. * period; p + 1];
+    let mut controls = Vec::with_capacity(5 * n);
+    let mut weights = Vec::with_capacity(5 * n);
+    for copy in 0..5 {
+        let shift = (copy as f64 - 2.) * period;
+        out_knots.extend(interior.iter().map(|x| x + shift));
+        out_knots.extend(std::iter::repeat_n(
+            hi + shift,
+            if copy == 4 { p + 1 } else { p },
+        ));
+        let skip = usize::from(copy > 0);
+        controls.extend_from_slice(&curve.controls()[skip..]);
+        weights.extend_from_slice(&curve.weights()[skip..]);
+    }
+    NurbsCurve::new(
+        p,
+        &out_knots,
+        &controls,
+        &weights,
+        SplineLimits {
+            max_controls: controls.len(),
+            max_knots: out_knots.len(),
+        },
+    )
+    .ok()
 }
 
 /// Closest-parameter inversion on a NURBS curve: sampled seed plus Newton iteration.

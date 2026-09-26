@@ -390,7 +390,7 @@ fn import_solid(
         faces: (0..faces.len()).map(FaceId).collect(),
         closed: true,
     });
-    c.raw.solids.push(Solid { shell: ShellId(0) });
+    c.raw.solids.push(Solid::new(ShellId(0)));
     let brep = c
         .raw
         .validate(

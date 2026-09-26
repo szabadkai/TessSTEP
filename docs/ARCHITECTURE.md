@@ -5,8 +5,9 @@ and runtime reflection, plus a bounded product semantics slice, checked math and
 independent analytic/NURBS curves and surfaces, structural topology, supplied-pcurve UV
 reconstruction, shared-edge sampling, adaptive regular-face tessellation and owned
 manifold shell/solid meshes, selected planar faceted STEP import, existing
-tessellation import and curved B-rep import with root/unit discovery. Pole/apex charts,
-cavity shells, swept surfaces and industrial hardening remain pending.
+tessellation import and curved B-rep import (elementary, B-spline and swept surfaces,
+pole/apex charts, cavity shells) with root/unit discovery. Industrial hardening remains
+pending.
 
 ## Implemented dependency graph
 

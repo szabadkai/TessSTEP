@@ -633,10 +633,15 @@ fn singular_crossing(
                 .iter()
                 .map(|&t| at(t, s.point))
                 .collect::<Result<Vec<_>, _>>()?;
+            // Curve ends at the point: a minimum converging to them is an end touch.
+            let ends = [at(range[0], s.point)?, at(range[1], s.point)?];
+            let step = (w[1] - w[0]) / SAMPLES as f64;
+            let touches =
+                |t: f64| (0..2).any(|k| (t - range[k]).abs() <= step && ends[k] <= tolerance);
             for i in 0..=SAMPLES {
                 let lower = i == 0 || d[i] <= d[i - 1];
                 let upper = i == SAMPLES || d[i] <= d[i + 1];
-                if !(lower && upper) {
+                if !(lower && upper) || touches(ts[i]) {
                     continue;
                 }
                 let (mut a, mut b) = (ts[i.saturating_sub(1)], ts[(i + 1).min(SAMPLES)]);
@@ -650,7 +655,11 @@ fn singular_crossing(
                     }
                 }
                 let t = 0.5 * (a + b);
-                if at(t, s.point)? <= tolerance && t - range[0] > margin && range[1] - t > margin {
+                if at(t, s.point)? <= tolerance
+                    && t - range[0] > margin
+                    && range[1] - t > margin
+                    && !touches(t)
+                {
                     return Ok(Some(t));
                 }
             }

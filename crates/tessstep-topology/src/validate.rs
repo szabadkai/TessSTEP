@@ -302,9 +302,40 @@ impl RawBrep {
         // Faces may be intentionally unsewn; shells may be open. Solids may not.
         let mut solids = vec![false; self.shells.len()];
         for (i, s) in self.solids.iter().enumerate() {
-            own(&mut solids, s.shell.0, "shell")?;
-            if !self.shells[s.shell.0].closed {
-                return Err(fail(Defect::OpenShell, "solid", i));
+            spend(&mut work, s.voids.len().saturating_add(1))?;
+            // Outer and void shells are each owned by one solid and must be closed.
+            for shell in std::iter::once(&s.shell).chain(&s.voids) {
+                own(&mut solids, shell.0, "shell")?;
+                if !self.shells[shell.0].closed {
+                    return Err(fail(Defect::OpenShell, "solid", i));
+                }
+            }
+            // A solid's boundary shells are disjoint: no shared edge or vertex.
+            if !s.voids.is_empty() {
+                let mut edge_shell = BTreeMap::new();
+                for shell in std::iter::once(&s.shell).chain(&s.voids) {
+                    for &f in &self.shells[shell.0].faces {
+                        let face = &self.faces[f.0];
+                        for w in std::iter::once(&face.outer).chain(&face.holes) {
+                            for &c in &self.wires[w.0].coedges {
+                                spend(&mut work, 1)?;
+                                let e = self.coedges[c.0].edge;
+                                if *edge_shell.entry(e).or_insert(*shell) != *shell {
+                                    return Err(fail(Defect::NonManifoldEdge, "solid", i));
+                                }
+                            }
+                        }
+                    }
+                }
+                let mut vertex_shell = BTreeMap::new();
+                for (e, shell) in edge_shell {
+                    spend(&mut work, 2)?;
+                    for v in self.edges[e.0].vertices {
+                        if *vertex_shell.entry(v).or_insert(shell) != shell {
+                            return Err(fail(Defect::NonManifoldVertex, "solid", i));
+                        }
+                    }
+                }
             }
         }
         let mut singular = vec![false; self.vertices.len()];

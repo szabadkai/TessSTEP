@@ -67,8 +67,20 @@ pub struct Shell {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Solid {
-    /// One closed boundary shell. Cavity/nesting semantics are not yet implemented.
+    /// The closed outer boundary shell, facing out of the material.
     pub shell: ShellId,
+    /// Closed shells bounding cavities, facing into them (out of the material).
+    /// Containment in the outer shell and disjointness are not checked.
+    pub voids: Vec<ShellId>,
+}
+impl Solid {
+    /// A solid bounded by one closed shell, without cavities.
+    pub fn new(shell: ShellId) -> Self {
+        Self {
+            shell,
+            voids: Vec::new(),
+        }
+    }
 }
 /// Handles of different topology kinds cannot be substituted.
 /// ```compile_fail

@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0–5 with bounded local 3D product semantics and independent geometry Milestones 6–19; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20); curved B-rep import with elementary and B-spline geometry and pole/apex charts; root and context-unit discovery",
+  "scope": "Milestones 0–5 with bounded local 3D product semantics and independent geometry Milestones 6–19; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated tessellation import (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery",
   "features": [
     {
       "feature": "streaming lexer",
@@ -186,7 +186,7 @@
       "feature": "STEP geometry / topology / meshes",
       "status": "faceted, edge-based planar and curved B-rep subsets implemented",
       "test": "planar_edge_brep_to_mesh_preserves_topology_and_line_trims",
-      "limitations": "Explicit root/units or discovered context units; reduced profiles; elementary and B-spline surfaces with computed pcurves; pole and apex charts; no cavity shells, swept surfaces, healing or AP claim"
+      "limitations": "Explicit root/units or discovered context units; reduced profiles; elementary, B-spline and swept surfaces with computed pcurves; pole and apex charts; BREP_WITH_VOIDS cavities; no healing or AP claim"
     },
     {
       "feature": "public C ABI",
@@ -435,6 +435,12 @@
       "limitations": "closed edges within model tolerance of their vertex; single use in closed shells; singular vertices; no healing"
     },
     {
+      "feature": "Solid cavity shells",
+      "status": "implemented",
+      "test": "topology_cavity_shells_are_closed_and_uniquely_owned",
+      "limitations": "closed, uniquely owned void shells sharing no edge or vertex with other shells of the solid; containment not checked"
+    },
+    {
       "feature": "Shared mesh assets and nested occurrence scenes",
       "status": "implemented",
       "test": "scene_nested_reuse_preserves_buffers_and_composition_order",
@@ -585,10 +591,28 @@
       "limitations": "Sphere poles and cone apices: loop joins, enclosing loops with pole seams, VERTEX_LOOPs and full spheres; exact meridian pcurves; counted adaptations; no singular B-spline sides or interior singular crossings"
     },
     {
+      "feature": "Swept surfaces in curved STEP import",
+      "status": "implemented",
+      "test": "brep_swept_surfaces_are_exact_elementary_or_nurbs_charts",
+      "limitations": "SURFACE_OF_LINEAR_EXTRUSION/SURFACE_OF_REVOLUTION as exact elementary charts or exact NURBS (sized from face bounds where unbounded); STEP normal orientation preserved; TRIMMED_CURVE basis and sense only; no offset curves"
+    },
+    {
+      "feature": "BREP_WITH_VOIDS cavities in curved STEP import",
+      "status": "implemented",
+      "test": "brep_cavity_shells_mesh_as_inward_components",
+      "limitations": "ORIENTED_CLOSED_SHELL orientation applied; one mesh component per shell, positive outer and negative cavity volumes; containment not checked"
+    },
+    {
+      "feature": "NURBS surface isoparametric curves",
+      "status": "implemented",
+      "test": "nurbs_surface_isocurves_agree_with_the_surface",
+      "limitations": "exact rational row combination over the other axis's knots; periodic fixed axis wrapped"
+    },
+    {
       "feature": "Curved import rejections and budgets",
       "status": "implemented",
       "test": "brep_rejections_are_typed_and_located",
-      "limitations": "Off-surface curves, vertex loops away from poles, loops enclosing no pole, ambiguous outer bounds, horn tori, invalid cone angles, cavity shells and out-of-profile types are typed failures"
+      "limitations": "Off-surface curves, vertex loops away from poles, loops enclosing no pole, ambiguous outer bounds, horn tori, invalid cone angles, shared cavity shells and out-of-profile types are typed failures"
     },
     {
       "feature": "Root and representation-context unit discovery",

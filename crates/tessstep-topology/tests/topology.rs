@@ -90,7 +90,7 @@ fn topology_shells_check_closure_connectivity_and_orientation() {
         faces: vec![FaceId(0), FaceId(1)],
         closed: false,
     });
-    r.solids.push(Solid { shell: ShellId(0) });
+    r.solids.push(Solid::new(ShellId(0)));
     assert_eq!(defect(r), Defect::OpenShell);
     let r = square();
     assert_eq!(
@@ -196,4 +196,87 @@ fn topology_collapsed_edges_close_pole_and_apex_charts() {
         );
         assert_eq!(defect(open), Defect::OpenShell);
     }
+}
+#[test]
+fn topology_cavity_shells_are_closed_and_uniquely_owned() {
+    // Two disjoint tetrahedra: the second shell is the first solid's cavity.
+    let two = |closed: bool| {
+        let mut r = polygons(
+            &[
+                [0., 0., 0.],
+                [1., 0., 0.],
+                [0., 1., 0.],
+                [0., 0., 1.],
+                [5., 0., 0.],
+                [6., 0., 0.],
+                [5., 1., 0.],
+                [5., 0., 1.],
+            ],
+            &[
+                vec![0, 2, 1],
+                vec![0, 1, 3],
+                vec![1, 2, 3],
+                vec![2, 0, 3],
+                vec![4, 6, 5],
+                vec![4, 5, 7],
+                vec![5, 6, 7],
+                vec![6, 4, 7],
+            ],
+        );
+        r.shells.push(Shell {
+            faces: (0..4).map(FaceId).collect(),
+            closed: true,
+        });
+        r.shells.push(Shell {
+            faces: (4..8).map(FaceId).collect(),
+            closed,
+        });
+        r.solids.push(Solid {
+            shell: ShellId(0),
+            voids: vec![ShellId(1)],
+        });
+        r
+    };
+    let n = two(true)
+        .validate(tolerance(), ValidationLimits::default())
+        .unwrap()
+        .normalize();
+    assert_eq!(n.data().solids[0].voids, [ShellId(1)]);
+    assert_eq!(defect(two(false)), Defect::OpenShell);
+    let mut shared = tetrahedron();
+    shared.solids[0].voids.push(ShellId(0));
+    assert_eq!(defect(shared), Defect::DuplicateOwnership);
+    // A cavity shell may not share an edge with the outer shell: the second
+    // tetrahedron is the first turned half a revolution about their common x edge.
+    let mut touching = polygons(
+        &[
+            [0., 0., 0.],
+            [1., 0., 0.],
+            [0., 1., 0.],
+            [0., 0., 1.],
+            [0., -1., 0.],
+            [0., 0., -1.],
+        ],
+        &[
+            vec![0, 2, 1],
+            vec![0, 1, 3],
+            vec![1, 2, 3],
+            vec![2, 0, 3],
+            vec![0, 4, 1],
+            vec![0, 1, 5],
+            vec![1, 4, 5],
+            vec![4, 0, 5],
+        ],
+    );
+    for (faces, closed) in [(0..4, true), (4..8, true)] {
+        touching.shells.push(Shell {
+            faces: faces.map(FaceId).collect(),
+            closed,
+        });
+    }
+    touching.solids.push(Solid {
+        shell: ShellId(0),
+        voids: vec![ShellId(1)],
+    });
+    assert_eq!(defect(touching), Defect::NonManifoldEdge);
 }

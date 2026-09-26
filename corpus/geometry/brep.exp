@@ -1,6 +1,8 @@
 (* Original bounded import profile, not an ISO schema. Matches the physical
    attributes of edge-based B-rep solids with elementary and B-spline geometry;
-   excludes general AP rules. The curve and surface supertype chains mirror the
+   excludes general AP rules. Swept surfaces and trimmed curves are included; the
+   importer reads a trimmed curve's basis curve and sense only, because edge vertices
+   bound every use. The curve and surface supertype chains mirror the
    physical component names of complex B-spline instances. SURFACE_CURVE
    associated geometry is generalized to representation_item: the importer
    retains those links without decoding them and computes its own pcurves. *)
@@ -19,6 +21,13 @@ END_TYPE;
 TYPE preferred_surface_curve_representation = ENUMERATION OF
  (curve_3d, pcurve_s1, pcurve_s2);
 END_TYPE;
+TYPE parameter_value = REAL;
+END_TYPE;
+TYPE trimming_select = SELECT (cartesian_point, parameter_value);
+END_TYPE;
+TYPE trimming_preference = ENUMERATION OF
+ (cartesian, parameter, unspecified);
+END_TYPE;
 ENTITY representation_item;
  name : STRING;
 END_ENTITY;
@@ -33,6 +42,10 @@ END_ENTITY;
 ENTITY vector SUBTYPE OF (geometric_representation_item);
  orientation : direction;
  magnitude : REAL;
+END_ENTITY;
+ENTITY axis1_placement SUBTYPE OF (geometric_representation_item);
+ location : cartesian_point;
+ axis : OPTIONAL direction;
 END_ENTITY;
 ENTITY axis2_placement_3d SUBTYPE OF (geometric_representation_item);
  location : cartesian_point;
@@ -74,6 +87,13 @@ END_ENTITY;
 ENTITY rational_b_spline_curve SUBTYPE OF (b_spline_curve);
  weights_data : LIST [2:?] OF REAL;
 END_ENTITY;
+ENTITY trimmed_curve SUBTYPE OF (bounded_curve);
+ basis_curve : curve;
+ trim_1 : SET [1:2] OF trimming_select;
+ trim_2 : SET [1:2] OF trimming_select;
+ sense_agreement : BOOLEAN;
+ master_representation : trimming_preference;
+END_ENTITY;
 ENTITY surface_curve SUBTYPE OF (curve);
  curve_3d : curve;
  associated_geometry : LIST [1:2] OF representation_item;
@@ -103,6 +123,15 @@ END_ENTITY;
 ENTITY toroidal_surface SUBTYPE OF (elementary_surface);
  major_radius : REAL;
  minor_radius : REAL;
+END_ENTITY;
+ENTITY swept_surface SUBTYPE OF (surface);
+ swept_curve : curve;
+END_ENTITY;
+ENTITY surface_of_linear_extrusion SUBTYPE OF (swept_surface);
+ extrusion_axis : vector;
+END_ENTITY;
+ENTITY surface_of_revolution SUBTYPE OF (swept_surface);
+ axis_position : axis1_placement;
 END_ENTITY;
 ENTITY bounded_surface SUBTYPE OF (surface);
 END_ENTITY;

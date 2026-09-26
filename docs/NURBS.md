@@ -90,6 +90,14 @@ required, geometry is unchanged, and knot insertion preserves the declaration.
 `SurfaceGeometry::domain` reports such axes as periodic, so trimming chart shifts and
 tessellation periodic guards apply.
 
+## Isoparametric curves
+
+`NurbsSurface::isocurve(axis, value)` returns the curve at a fixed parameter of one axis
+(wrapped on a periodic axis) as a NURBS curve over the other axis's knot vector. Each
+control is the rational combination of one control row across the fixed axis, so the
+curve agrees with the surface along the whole line; the importer uses it for seams on
+periodic B-spline charts. Evidence: `nurbs_surface_isocurves_agree_with_the_surface`.
+
 ## Refinement
 
 `insert_knot` inserts one strictly interior parameter, preserving geometry and its

@@ -56,7 +56,7 @@ An entity type outside the reduced profile is reported by name (every component 
 a complex instance, marking those outside the profile), as outside the import
 profile rather than as unknown to STEP.
 
-Curved edges/surfaces, `BREP_WITH_VOIDS`, enclosed cavity shells, multiple bounds
+Curved edges/surfaces, `BREP_WITH_VOIDS` (see [curved import](CURVED_IMPORT.md)), multiple bounds
 without an explicit outer, assembly placement, automatic units, STEP appearance and
 healing remain outside these profiles. Profile rejection is not an AP validity verdict.
 The [curved B-rep profile](CURVED_IMPORT.md) is a superset of the edge-based profile

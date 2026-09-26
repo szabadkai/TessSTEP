@@ -400,3 +400,44 @@ fn nurbs_periodic_axes_require_closure_and_wrap_evaluation() {
         1e-12,
     );
 }
+#[test]
+fn nurbs_surface_isocurves_agree_with_the_surface() {
+    let q = std::f64::consts::FRAC_1_SQRT_2;
+    // A rational quarter cylinder and the bilinear rational patch.
+    let cylinder = S::new(
+        [2, 1],
+        [&[0., 0., 0., 1., 1., 1.], &[0., 0., 1., 1.]],
+        [3, 2],
+        &pts(&[
+            [1., 0., 0.],
+            [1., 0., 2.],
+            [1., 1., 0.],
+            [1., 1., 2.],
+            [0., 1., 0.],
+            [0., 1., 2.],
+        ]),
+        &[1., 1., q, q, 1., 1.],
+        Default::default(),
+    )
+    .unwrap();
+    for s in [cylinder, patch()] {
+        for fixed in [0., 0.3, 0.5, 1.] {
+            let along_v = s.isocurve(ParameterAxis::U, fixed).unwrap();
+            let along_u = s.isocurve(ParameterAxis::V, fixed).unwrap();
+            for i in 0..=8 {
+                let t = f64::from(i) / 8.;
+                near(
+                    along_v.evaluate(t).unwrap().position.coordinates(),
+                    s.evaluate(fixed, t).unwrap().position.coordinates(),
+                    1e-14,
+                );
+                near(
+                    along_u.evaluate(t).unwrap().position.coordinates(),
+                    s.evaluate(t, fixed).unwrap().position.coordinates(),
+                    1e-14,
+                );
+            }
+        }
+        assert!(s.isocurve(ParameterAxis::U, 1.5).is_err());
+    }
+}

@@ -440,7 +440,7 @@ fn solid_torus_welds_both_periodic_seams() {
         faces: vec![FaceId(0)],
         closed: true,
     });
-    r.solids.push(Solid { shell: ShellId(0) });
+    r.solids.push(Solid::new(ShellId(0)));
     let n = normalize(r);
     let t = tol(0.03, 0.4);
     let m = tessellate_solid(&n, SolidId(0), t, Default::default()).unwrap();

@@ -173,15 +173,19 @@ the tessellator treats it that way:
 The hemisphere and apex-cone kernel tests
 (`pole_and_apex_charts_close_with_collapsed_edges`) check watertightness, one welded
 pole vertex, the chord-dependent volume bound, dense independent polar-wedge probes
-(within 5% of the tolerances) and determinism. Charts that reach a singularity on a
-NURBS surface side are not yet recognized; see [curved import](CURVED_IMPORT.md).
+(within 5% of the tolerances) and determinism. Collapsed B-spline sides use the same
+mechanism; see [curved import](CURVED_IMPORT.md).
 
 ## Owned shell and solid meshes (Milestone 17)
 
 `tessellate_shell` uses a model-local shell handle and enforces its declared closure
 and connectedness. `tessellate_solid` additionally requires a single closed component
 with positive algebraic volume; inward orientation is diagnosed instead of repaired.
-The existing topology contract supplies one boundary shell, without cavity nesting.
+A solid with cavity shells (`Solid::voids`) is meshed in one pass under one budget and
+must be watertight with one component per shell, a positive outer volume and a
+negative volume for every cavity shell (which faces into its cavity), computed per
+shell from triangle face IDs; otherwise `CavityOrientation` or a mesh error is
+returned. Cavity containment and disjoint interiors are not checked.
 
 Assembly welds positions by topological vertex identity or canonical edge/sample index.
 Distinct coincident edges/vertices are never merged by coordinate proximity. Face-interior

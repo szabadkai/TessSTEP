@@ -1,6 +1,6 @@
 use crate::{Error, Evaluation};
 use tessstep_curves::spline::{
-    HARD_MAX_CONTROLS, KnotSide, KnotVector, MAX_DEGREE, SplineError, SplineLimits,
+    HARD_MAX_CONTROLS, KnotSide, KnotVector, MAX_DEGREE, NurbsCurve, SplineError, SplineLimits,
     validate_weights,
 };
 use tessstep_math::{Point3, Space, Vector3};
@@ -122,6 +122,51 @@ impl<S: Space> NurbsSurface<S> {
     }
     pub fn shape(&self) -> [usize; 2] {
         [self.u.control_count(), self.v.control_count()]
+    }
+    /// The isoparametric curve at `value` of `axis` (wrapped on a periodic axis), as a
+    /// NURBS curve over the other axis with that axis's knot vector. Each control is
+    /// the rational combination of one control row across the fixed axis, so the curve
+    /// agrees with the surface everywhere on the line.
+    pub fn isocurve(&self, axis: ParameterAxis, value: f64) -> Result<NurbsCurve<S, 3>, Error> {
+        let (k, fixed, free) = match axis {
+            ParameterAxis::U => (0, &self.u, &self.v),
+            ParameterAxis::V => (1, &self.v, &self.u),
+        };
+        let basis = fixed.basis(self.wrap(k, value, KnotSide::Right))?;
+        let nv = self.v.control_count();
+        let mut controls = Vec::with_capacity(free.control_count());
+        let mut weights = Vec::with_capacity(free.control_count());
+        for j in 0..free.control_count() {
+            let mut w = 0.;
+            let mut h = [0.; 3];
+            for (i, &n) in basis.values().iter().enumerate() {
+                let index = if k == 0 {
+                    (basis.start() + i) * nv + j
+                } else {
+                    j * nv + basis.start() + i
+                };
+                let c = n * self.weights[index];
+                w += c;
+                for (d, x) in self.controls[index].coordinates().iter().enumerate() {
+                    h[d] += c * x;
+                }
+            }
+            if w <= 0. || !w.is_finite() {
+                return Err(SplineError::NumericRange.into());
+            }
+            controls.push(Point3::new(h.map(|x| x / w))?);
+            weights.push(w);
+        }
+        Ok(NurbsCurve::new(
+            free.degree(),
+            free.knots(),
+            &controls,
+            &weights,
+            SplineLimits {
+                max_controls: free.control_count(),
+                max_knots: free.knots().len(),
+            },
+        )?)
     }
     pub fn knot_vectors(&self) -> [&KnotVector; 2] {
         [&self.u, &self.v]

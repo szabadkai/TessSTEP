@@ -24,7 +24,8 @@ Volume uses a translation-relative compensated sum; extreme finite coordinates c
 produce an explicit numeric failure. Open-mesh volume is not a physical volume.
 `is_watertight()` means zero boundary edges after the manifold checks.
 `require_solid()` also requires one component and positive signed volume. It does not
-prove nonintersection, material containment or cavity nesting. No tolerance-based weld,
+prove nonintersection, material containment or cavity nesting; solids with cavities are
+checked per shell by `tessellate_solid` (see [tessellation](TESSELLATION.md)). No tolerance-based weld,
 orientation repair or self-intersection algorithm is hidden in these checks.
 
 The C ABI imports flat scalar triangle buffers into an owned opaque mesh and returns

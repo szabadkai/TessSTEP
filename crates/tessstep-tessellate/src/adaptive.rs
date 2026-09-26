@@ -46,6 +46,9 @@ pub enum TessellationErrorKind {
     Geometry,
     SingularSurface,
     UnresolvedTolerance,
+    /// A cavity shell does not face into its cavity (non-negative volume), or the
+    /// cavities outweigh the outer shell.
+    CavityOrientation,
     Sampling(crate::Error),
     Boundary(BoundaryError),
     Polygon(PlanarError),
@@ -289,6 +292,9 @@ pub fn tessellate_shell(
     }
     Ok(mesh)
 }
+/// A closed oriented mesh of a solid: one component per boundary shell, a positive
+/// outer volume and a negative volume for every cavity shell (which faces into its
+/// cavity). Cavity containment and disjointness are not checked.
 pub fn tessellate_solid(
     brep: &NormalizedBrep,
     solid: SolidId,
@@ -300,8 +306,61 @@ pub fn tessellate_solid(
         .solids
         .get(solid.0)
         .ok_or_else(|| error(Failure::InvalidHandle))?;
-    let mesh = tessellate_shell(brep, solid.shell, tolerance, options)?;
-    mesh.require_solid().map_err(|e| error(Failure::Mesh(e)))?;
+    if solid.voids.is_empty() {
+        let mesh = tessellate_shell(brep, solid.shell, tolerance, options)?;
+        mesh.require_solid().map_err(|e| error(Failure::Mesh(e)))?;
+        return Ok(mesh);
+    }
+    let shells = brep.data();
+    let mut owner = BTreeMap::new();
+    let mut faces = Vec::new();
+    for (k, shell) in std::iter::once(&solid.shell)
+        .chain(&solid.voids)
+        .enumerate()
+    {
+        let shell = shells
+            .shells
+            .get(shell.0)
+            .ok_or_else(|| error(Failure::InvalidHandle))?;
+        for &face in &shell.faces {
+            owner.insert(face.0 as u64, k);
+            faces.push(face);
+        }
+    }
+    let mesh = tessellate_faces(brep, &faces, tolerance, options)?;
+    if !mesh.is_watertight() {
+        return Err(error(Failure::Mesh(tessstep_mesh::Error::Open)));
+    }
+    if mesh.statistics().components != 1 + solid.voids.len() {
+        return Err(error(Failure::Mesh(tessstep_mesh::Error::Disconnected)));
+    }
+    // Per-shell algebraic volume, relative to the first position like the mesh total.
+    let d = mesh.data();
+    let origin = d.positions[0];
+    let mut volumes = vec![0.; 1 + solid.voids.len()];
+    for (tri, face) in d.triangles.iter().zip(&d.face_ids) {
+        let [a, b, c] = tri.map(|i| {
+            let p = d.positions[i as usize];
+            [p[0] - origin[0], p[1] - origin[1], p[2] - origin[2]]
+        });
+        let cross = [
+            b[1] * c[2] - b[2] * c[1],
+            b[2] * c[0] - b[0] * c[2],
+            b[0] * c[1] - b[1] * c[0],
+        ];
+        volumes[owner[face]] += (a[0] * cross[0] + a[1] * cross[1] + a[2] * cross[2]) / 6.;
+    }
+    if volumes.iter().any(|v| !v.is_finite()) {
+        return Err(error(Failure::Mesh(tessstep_mesh::Error::NonFinite)));
+    }
+    if volumes[0] <= 0. {
+        return Err(error(Failure::Mesh(
+            tessstep_mesh::Error::NonPositiveVolume,
+        )));
+    }
+    if volumes[1..].iter().any(|&v| v >= 0.) || mesh.statistics().signed_volume <= 0. {
+        return Err(error(Failure::CavityOrientation));
+    }
     Ok(mesh)
 }
 fn assemble(

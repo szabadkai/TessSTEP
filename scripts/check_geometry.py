@@ -64,10 +64,21 @@ BREP_EXPECTED = {
     "brep-sphere.step": (("accepted",) * 3, (0, 1, 0, 1, 2), (4 / 3 * math.pi * 1e-6, 0.01)),
     "brep-sphere-seam.step": (("accepted",) * 3, (0, 0, 0, 0, 2), (4 / 3 * math.pi * 1e-6, 0.01)),
     "brep-bspline-pole.step": (("accepted",) * 3, (0, 0, 0, 0, 1), (1e-6 / 6, math.inf)),
+    "brep-extruded-cylinder.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
+    "brep-extruded-ellipse.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * 3000e-9, 0.01)),
+    "brep-revolved-cone.step": (("accepted",) * 3, (0, 1, 0, 0, 1), (math.pi / 3 * 1e-6, 0.01)),
+    "brep-revolved-sphere.step": (("accepted",) * 3, (0, 0, 0, 0, 2), (4 / 3 * math.pi * 1e-6, 0.01)),
+    "brep-revolved-torus.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (2 * math.pi ** 2 * 20 * 25e-9, 0.005)),
+    "brep-box-cavity.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (7000e-9, math.inf)),
+    "brep-sphere-cavity.step": (("accepted",) * 3, (0, 2, 0, 1, 2),
+                                (math.pi * 2000e-9 - 4 / 3 * math.pi * 125e-9, 0.005)),
+    "brep-inverted-cavity.step": (("accepted", "accepted", "rejected"), None, None),
     "brep-regular-vertex-loop.step": (("accepted", "unsupported", "not_run"), None, None),
     "brep-ambiguous-outer.step": (("accepted", "rejected", "not_run"), None, None),
 }
 BREP_CHORD = 1e-5
+# Mesh components of accepted solids with BREP_WITH_VOIDS cavities (others have one).
+BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2}
 ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges")
 
 
@@ -153,7 +164,7 @@ def main():
         if volume is not None:
             exact, radius = volume
             bound = 1e-12 if math.isinf(radius) else 2 * BREP_CHORD / radius
-            case["passed"] &= r.get("boundary_edges") == 0 and r.get("components") == 1
+            case["passed"] &= r.get("boundary_edges") == 0 and r.get("components") == BREP_COMPONENTS.get(name, 1)
             case["passed"] &= abs(r.get("volume_m3", 0) - exact) <= bound * exact
         cases.append(case)
     # The curved profile reproduces the planar profile's accepted fixtures.

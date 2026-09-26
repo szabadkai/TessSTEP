@@ -262,6 +262,145 @@ fn brep_poles_and_apices_close_with_collapsed_edges() {
 }
 
 #[test]
+fn brep_swept_surfaces_are_exact_elementary_or_nurbs_charts() {
+    use tessstep_topology::SurfaceGeometry;
+    let chord = 1e-5;
+    for (name, text, nurbs, adaptations, volume, radius) in [
+        // An extruded circle along its normal is a cylinder.
+        (
+            "extruded circle",
+            include_str!("../../../corpus/geometry/brep-extruded-cylinder.step"),
+            false,
+            Adaptations {
+                inserted_seams: 1,
+                ..Adaptations::default()
+            },
+            PI * 2000e-9,
+            0.01,
+        ),
+        // A reversed trimmed ellipse: a periodic NURBS extrusion whose STEP normal
+        // points inward, cut by an isocurve seam.
+        (
+            "extruded ellipse",
+            include_str!("../../../corpus/geometry/brep-extruded-ellipse.step"),
+            true,
+            Adaptations {
+                inserted_seams: 1,
+                ..Adaptations::default()
+            },
+            PI * 3000e-9,
+            0.01,
+        ),
+        // A revolved generator line is a cone, closed at its apex.
+        (
+            "revolved line",
+            include_str!("../../../corpus/geometry/brep-revolved-cone.step"),
+            false,
+            Adaptations {
+                inserted_seams: 1,
+                collapsed_edges: 1,
+                ..Adaptations::default()
+            },
+            PI / 3. * 1e-6,
+            0.01,
+        ),
+        // A revolved B-spline semicircle: NURBS whose profile ends collapse to poles.
+        (
+            "revolved B-spline",
+            include_str!("../../../corpus/geometry/brep-revolved-sphere.step"),
+            true,
+            Adaptations {
+                collapsed_edges: 2,
+                ..Adaptations::default()
+            },
+            4. / 3. * PI * 1e-6,
+            0.01,
+        ),
+        // A circle revolved in a plane through the axis is a ring torus.
+        (
+            "revolved circle",
+            include_str!("../../../corpus/geometry/brep-revolved-torus.step"),
+            false,
+            Adaptations::default(),
+            2. * PI * PI * 20. * 25. * 1e-9,
+            0.005,
+        ),
+    ] {
+        let solid = import(text).unwrap();
+        assert_eq!(solid.adaptations(), adaptations, "{name}");
+        assert_eq!(
+            matches!(
+                solid.brep().data().faces[0].surface,
+                SurfaceGeometry::Nurbs(_)
+            ),
+            nurbs,
+            "{name}"
+        );
+        check_volume(&mesh(&solid, chord), volume, chord, radius);
+    }
+    // Outward normals follow the swept curve's sense: reversing the trimmed curve's
+    // sense without flipping the face turns the prism inside out.
+    let inverted = include_str!("../../../corpus/geometry/brep-extruded-ellipse.step")
+        .replace(".F.,.PARAMETER.)", ".T.,.PARAMETER.)");
+    let tolerance =
+        TessellationTolerance::new(Length::metres(chord).unwrap(), Angle::radians(0.1).unwrap())
+            .unwrap();
+    assert!(
+        import(&inverted)
+            .and_then(|s| s.tessellate(tolerance, TessellationOptions::default()))
+            .is_err()
+    );
+}
+
+#[test]
+fn brep_cavity_shells_mesh_as_inward_components() {
+    let chord = 1e-5;
+    for (text, volume, radius) in [
+        (
+            include_str!("../../../corpus/geometry/brep-box-cavity.step"),
+            7000e-9,
+            f64::INFINITY,
+        ),
+        (
+            include_str!("../../../corpus/geometry/brep-sphere-cavity.step"),
+            PI * 2000e-9 - 4. / 3. * PI * 125e-9,
+            0.005,
+        ),
+    ] {
+        let solid = import(text).unwrap();
+        let data = solid.brep().data();
+        assert_eq!((data.shells.len(), data.solids[0].voids.len()), (2, 1));
+        let tolerance = TessellationTolerance::new(
+            Length::metres(chord).unwrap(),
+            Angle::radians(0.1).unwrap(),
+        )
+        .unwrap();
+        let mesh = solid
+            .tessellate(tolerance, TessellationOptions::default())
+            .unwrap();
+        assert!(mesh.is_watertight());
+        assert_eq!(mesh.statistics().components, 2);
+        let v = mesh.statistics().signed_volume;
+        assert!(
+            ((v - volume) / volume).abs() <= 2. * chord / radius + 1e-12,
+            "{v} vs {volume}"
+        );
+    }
+    // A cavity shell facing out of its cavity is diagnosed, never meshed.
+    let solid = import(include_str!(
+        "../../../corpus/geometry/brep-inverted-cavity.step"
+    ))
+    .unwrap();
+    let tolerance =
+        TessellationTolerance::new(Length::metres(chord).unwrap(), Angle::radians(0.1).unwrap())
+            .unwrap();
+    let error = solid
+        .tessellate(tolerance, TessellationOptions::default())
+        .unwrap_err();
+    assert!(error.message.contains("CavityOrientation"), "{error}");
+}
+
+#[test]
 fn brep_bspline_faces_and_rational_complex_instances() {
     let solid = import(BSPLINE_CUBE).unwrap();
     let mesh = mesh(&solid, 1e-6);
@@ -344,8 +483,7 @@ fn brep_rejections_are_typed_and_located() {
         assert!(error.message.contains(message), "{error}");
         assert!(error.entity.is_some() && error.source.is_some());
     }
-    // BREP_WITH_VOIDS decodes (its ORIENTED_CLOSED_SHELL faces are a `*` slot) but
-    // cavity shells are not supported.
+    // BREP_WITH_VOIDS whose cavity reuses the outer shell cannot own it twice.
     let shell = CYLINDER
         .lines()
         .find(|l| l.starts_with("#1000="))
@@ -358,21 +496,17 @@ fn brep_rejections_are_typed_and_located() {
     );
     assert_ne!(voids, CYLINDER);
     let error = import(&voids).unwrap_err();
-    assert_eq!(
-        (error.kind, error.stage),
-        (ErrorKind::Unsupported, Stage::Geometry)
-    );
-    assert!(error.message.contains("BREP_WITH_VOIDS"));
+    assert_eq!(error.stage, Stage::Topology, "{error}");
     // Types outside the profile are named.
-    let swept = CYLINDER.replacen("CYLINDRICAL_SURFACE('',", "SURFACE_OF_REVOLUTION('',", 1);
-    let error = import(&swept).unwrap_err();
+    let offset = CYLINDER.replacen("CYLINDRICAL_SURFACE('',", "OFFSET_SURFACE('',", 1);
+    let error = import(&offset).unwrap_err();
     assert_eq!(
         (error.kind, error.stage),
         (ErrorKind::Unsupported, Stage::Profile)
     );
     assert_eq!(
         error.message,
-        "SURFACE_OF_REVOLUTION is outside the tessstep_brep import profile"
+        "OFFSET_SURFACE is outside the tessstep_brep import profile"
     );
 }
 

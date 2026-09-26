@@ -25,7 +25,7 @@ lines += ['', 'The JSON manifest tracks physical syntax, the EXPRESS frontend an
           'Independent analytic/NURBS curves and surfaces are tested separately from STEP geometry adaptation.',
           'Constructed topology, UV loops, adaptive tessellation and owned mesh checks are independent stages.',
           'Selected faceted, edge-based planar and curved B-rep STEP import and existing triangulated tessellation import are implemented;',
-          'cavity shells, swept surfaces, AP conformance and industrial hardening remain future work.', '',
+          'AP conformance and industrial hardening remain future work.', '',
           'See [PART21.md](PART21.md), [ERROR_MODEL.md](ERROR_MODEL.md) and',
           '[VALIDATION.md](VALIDATION.md) for exact behavior and actual verification results.']
 content = '\n'.join(lines) + '\n'

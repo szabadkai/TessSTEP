@@ -34,7 +34,10 @@ Unsewn faces and open shells are permitted. Declared shells must be nonempty and
 connected through edges; at most two uses meet each edge and paired effective
 orientations oppose. Vertex links must be connected paths or cycles. Declared closed
 shells require two uses per edge and cyclic vertex links. Solids reference one uniquely
-owned closed shell. Cavity shells and nesting semantics are not implemented.
+owned closed shell plus closed, uniquely owned cavity shells (`Solid::voids`). A
+solid's shells may not share an edge (`NonManifoldEdge`) or vertex
+(`NonManifoldVertex`); cavity containment and nesting are not checked. Evidence:
+`topology_cavity_shells_are_closed_and_uniquely_owned`.
 
 These are structural validity states: validation does **not** certify self-intersection,
 face/surface agreement, continuous curve interiors, shell outwardness, positive volume,
