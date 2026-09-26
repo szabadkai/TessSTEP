@@ -59,6 +59,10 @@ inline_select: OPTIONAL SELECT(left,int);
 END_ENTITY;
 END_SCHEMA;"#,
         },
+        Source {
+            name: "redeclare.exp",
+            text: include_str!("../../../corpus/express/valid/redeclare.exp"),
+        },
     ];
     let c = compile(&sources, Default::default());
     assert!(c.ir.is_some(), "{:?}", c.diagnostics);
@@ -127,6 +131,17 @@ fn main() {
     let _choice = schema_base::Type_CHOICE(schema_base::Domain1::Alternative_3(reference));
     let _right = schema_edge::Entity_RIGHT { attr_match: "root".into(), attr_state: None, attr_back: None };
     assert_eq!(schema_edge::Type_LOGIC(Logical::Unknown).0, Logical::Unknown);
+    // A redeclaration keeps the ancestor's field; same-named inherited attributes are qualified.
+    let tagged = schema_redeclare::Entity_TAGGED { attr_name: schema_redeclare::Type_LABEL("t".into()), attr_description: None, attr_end_marker: true };
+    let both = schema_redeclare::Entity_BOTH { attr_named__name: tagged.attr_name.clone(), attr_description: None, attr_dated__name: schema_redeclare::Type_LABEL("d".into()), attr_stamp: 1, attr_end_count: 0 };
+    assert_eq!(both.attr_named__name, tagged.attr_name);
+    // TUPLE/ITEM_VALUE recurse through a Vec, so the bindings above compiled.
+    let redeclare = SCHEMA_SET.schema("redeclare").unwrap();
+    let DeclarationKind::Entity { attributes, .. } = SCHEMA_SET.declaration(redeclare.lookup("TAGGED").unwrap()).unwrap().kind else { panic!() };
+    assert_eq!(attributes[0].redeclares, Some(redeclare.lookup("NAMED").unwrap()));
+    assert_eq!(attributes[1].redeclares, None);
+    assert!(matches!(attributes[2].kind, AttributeKind::Derived(_)));
+    assert_eq!(attributes[2].redeclares, Some(redeclare.lookup("NAMED").unwrap()));
     let schema = SCHEMA_SET.schema("consumer").unwrap();
     let component = schema.lookup("component").unwrap();
     assert_eq!(component,schema_base::Entity_PART::DECLARATION);

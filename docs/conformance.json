@@ -120,7 +120,13 @@
       "feature": "EXPRESS declaration and graph validation",
       "status": "implemented",
       "test": "express_semantic_checks_and_graph_cycles",
-      "limitations": "no full expression/type/cardinality semantics or AP claim"
+      "limitations": "no full expression/type/cardinality semantics or AP claim; aggregate-recursive defined types are valid"
+    },
+    {
+      "feature": "EXPRESS attribute redeclaration and qualified inherited names",
+      "status": "implemented",
+      "test": "express_redeclarations_qualified_names_and_end_identifiers",
+      "limitations": "explicit and DERIVE redeclarations resolved to a declaring ancestor; domain compatibility not validated; INVERSE redeclaration unsupported"
     },
     {
       "feature": "EXPRESS inverse target lookup",

@@ -207,7 +207,7 @@ smoke, a benchmark and three hash-pinned unmodified exporter files (NIST, CATIA,
 HOOPS) cover this slice. See [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).
 C/C++ entry points, tessellated edges/vertices, presentation tessellations, corpus
 survey integration and representation selection remain pending. The next numbered
-milestone is 21: systematic AP242 coverage.
+milestone is 21: systematic AP242 coverage, planned below.
 
 **Curved STEP adaptation — first slice delivered 2026-09-26.**
 
@@ -413,6 +413,122 @@ adapter. These items feed Milestone 21.
   face-surface, edge-curve and root types per source from decoded records and keep
   them in the baseline. The existing `unsupported_entity_types` summary names only
   the first rejection per root, so it hides entities behind an earlier failure.
+
+**Milestone 21 plan — systematic AP schema coverage (planned 2026-09-26).**
+
+Goal: every input whose header names a supported application protocol passes a real
+schema stage, and every geometric, topological and shape-representation entity type
+in those schemas has a recorded, tested outcome: adapted, a named typed rejection, or
+an explicit out-of-scope decision. Coverage is derived from the compiled schemas, not
+from whichever entities the corpus happens to contain. No ISO schema is compiled
+today. The importers decode through five original reduced profiles
+(`corpus/geometry/*.exp`), and the corpus schema and product stages are
+`not_configured` for all 3,227 inputs.
+
+Target schemas follow the corpus headers. File paths declare `AUTOMOTIVE_DESIGN`
+(AP214; 2,723, plus 62 `_CC1`/`_CC2`/`_CC04`), the AP242 MIM long form (184),
+`CONFIG_CONTROL_DESIGN` (AP203; 80) and the AP203 edition 2 MIM long form (14). The
+remaining headers (AP238, AP209, AP210, IFC4, test schemas; about 170 paths) stay
+`not_configured`, with the declared name reported. The pinned stepcode revision
+ships long forms for all four: `data/ap242/242_mim_lf.exp` (WG12 N11521; 2,407
+entities, 528 types, 348 functions, 58 rules), `data/ap214e3/AP214E3_2010.exp` (915
+entities), `data/ap203e2/ap203e2_mim_lf.exp` (1,006) and `data/ap203/ap203.exp` (254).
+
+- **21.1 Schema sourcing.** Fetch the four long forms by pinned revision and SHA-256,
+  the same way as the corpus. Do not commit them until the ISO and stepcode
+  redistribution terms have been reviewed and recorded in `schemas/README.md`. CI
+  fetches them with the corpus.
+- **21.2 EXPRESS frontend gaps.** On 2026-09-26 `expressc` failed on all four
+  schemas. The blockers found, in order:
+  - attribute redeclaration `SELF\entity.attribute : type` in explicit and DERIVE
+    sections, including multi-line forms. There are 1,011 such lines in AP242, and
+    redeclaration is the first failure in every schema;
+  - opaque-expression scanning stops at identifiers that begin with `end_` (for
+    example `end_exit_faces` in `solid_with_slot` WR2), mistaking them for `END_*`
+    keywords;
+  - recursion through aggregates (`maths_value` ↔ `maths_tuple`, `atom_based_value`
+    ↔ `atom_based_tuple`) is rejected as a type cycle (EX2007);
+  - same-named attributes inherited through different supertypes are rejected
+    (EX2008). There are 88 in AP203 edition 2 (`name`, `description`, `id`,
+    `definition`), and they should be retained as distinct, group-qualified
+    attributes.
+
+  With the first two blockers worked around in a scratch copy, AP242 resolves 3,363
+  declarations with 5,884 unsupported diagnostics and fails only on the five cycles.
+  More gaps may be hidden behind these. Fix each gap with an original small fixture in
+  `corpus/express/`, not an ISO extract. Then generate bindings and a validator for
+  each schema, measure generation and rustc time and output size, and set explicit
+  budgets. Acceptance: all four compile without errors; unsupported diagnostics come
+  only from retained rules, functions and WHERE/UNIQUE bodies and are counted in the
+  report; the generated bindings and validators build in CI.
+- **21.3 Corpus schema stage.** Select the schema from `FILE_SCHEMA` through an
+  explicit name table, with no fuzzy matching. Record the declared name and object
+  identifier, and report edition mismatches (for example, AP242 identifiers of other
+  editions validated against N11521) instead of hiding them. Decide whether the AP214
+  `_CC*` headers are validated against AP214e3 as a labelled approximation or stay
+  `not_configured`. Run structural validation on every mapped input, with its own
+  reviewed baseline. Each rejection must be a real structural violation or a named
+  frontend or decoder gap. `--check` gates schema regressions.
+- **21.4 Import through AP metadata.** Decode each selected root closure against the
+  input's AP schema and adapt those records. The reduced profiles remain only as
+  authored test schemas. A profile rejection then names an entity that is valid in
+  the AP but not adapted. Meshes of roots that were already accepted must not change
+  (compare hashes); VALIDATION.md explains any outcome change.
+- **21.5 Generated coverage matrix.** From each compiled schema, enumerate every
+  instantiable subtype of `geometric_representation_item`,
+  `topological_representation_item` and `shape_representation`. Check in a generated
+  table giving each one's status and its evidence test. A test fails when a schema
+  entity has no classification or a classification cites a missing test. Add the
+  reproducible coverage survey above to `scripts/corpus.py`, counting every type in
+  each decoded closure rather than only the first rejection.
+- **21.6 Geometry adapters and named rejections**, from the coverage gaps above, by
+  corpus frequency:
+  - read supplied pcurves on `SURFACE_CURVE` / `SEAM_CURVE`, honouring
+    `master_representation` and checking each pcurve against its 3D curve within
+    model tolerance; compute pcurves only where none is supplied;
+  - `DEGENERATE_TOROIDAL_SURFACE` spindle tori, with the `select_outer` part as the
+    domain and the axis points as collapsed edges (this blocks the Onshape export);
+  - `UNIFORM_*` and `BEZIER_*` B-spline forms, and `HYPERBOLA` / `PARABOLA` edges;
+  - named typed rejections for the rare entities listed above;
+  - recorded scope decisions: `SHELL_BASED_SURFACE_MODEL` (proposed: import as
+    shell meshes, never as solids) and `CURVE_BOUNDED_SURFACE` (proposed: named
+    unsupported for v1.0).
+- **21.7 Product structure and assemblies.** Run the product stage on the corpus with
+  AP metadata. Link each solid root to its product definition, shape representation
+  and occurrence placements, and build a Milestone 18 scene whose assets are the
+  imported meshes. Missing or ambiguous placements fail as in Milestone 5. Evidence:
+  stepcode `data/ap214e3/as1-oc-214.stp` and a NIST assembly with repeated parts.
+  External document references stay a named unsupported outcome.
+- **21.8 Presentation.** Adapt `STYLED_ITEM` / `OVER_RIDING_STYLED_ITEM` surface
+  colour and transparency (through presentation style assignments, surface style
+  usages and `SURFACE_STYLE_RENDERING`) to Milestone 19 appearance at root, shell
+  and face level. Layers, invisibility, curve styles and textures are named
+  unsupported. PMI is out of scope for v1.0.
+- **21.9 Public interfaces.** Provide C ABI and C++ entry points, with installed
+  consumer tests, for schema selection and validation results, assembly import and
+  imported appearance. C/C++ entry points for tessellated and curved import belong to
+  the Milestone 20 and curved-import follow-ups.
+
+Order: 21.1 → 21.2 → 21.3; then 21.4, 21.5 and 21.7 in parallel, with 21.8 after
+21.7. 21.6 does not depend on schema work and can start now. 21.9 accompanies each
+public operation.
+
+Exit criteria: all four schemas compile, and their bindings and validators build in
+CI. The corpus schema and product stages run on every mapped input, with reviewed
+baselines. The coverage matrix is complete and tested. No solid root fails on an
+unnamed entity. The Onshape export imports as a closed solid, or its remaining
+blocker is on this roadmap. `as1-oc-214.stp` imports as a scene. The
+conformance rows for AP242/AP214/AP203 move to "structural subset implemented",
+with limits. EXPRESS rules, functions and WHERE clauses are not evaluated, so no AP
+conformance is claimed.
+
+Deferred to Milestone 22 (industrial hardening), from the backlog above: default
+parse budgets; opt-in sewing and orientation repair (124 `OpenShell`, 38
+`BrokenWire` and 35 `InconsistentOrientation` roots in the latest run); tolerance
+handling for edges off their surface (70) and endpoints off their curves (22);
+tessellation budgets and anisotropic refinement (42 resource-limit roots); a
+document-level import session and scaling benchmark; extended fuzzing. Whether
+v1.0 needs evaluated EXPRESS rules is an open decision.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

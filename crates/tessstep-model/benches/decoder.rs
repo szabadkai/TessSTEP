@@ -47,6 +47,7 @@ static SCHEMAS: SchemaSet = SchemaSet {
                     },
                     optional: false,
                     kind: AttributeKind::Explicit,
+                    redeclares: None,
                 },
                 Attribute {
                     name: "NEXT",
@@ -54,6 +55,7 @@ static SCHEMAS: SchemaSet = SchemaSet {
                     domain: Domain::Named(DeclarationId(0)),
                     optional: false,
                     kind: AttributeKind::Explicit,
+                    redeclares: None,
                 },
             ],
         },

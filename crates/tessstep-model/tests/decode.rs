@@ -26,6 +26,7 @@ const fn attr(name: &'static str, domain: Domain, optional: bool) -> Attribute {
         domain,
         optional,
         kind: AttributeKind::Explicit,
+        redeclares: None,
     }
 }
 const fn entity(

@@ -73,6 +73,9 @@ pub struct Attribute {
     pub ty: TypeExpr,
     pub optional: bool,
     pub kind: AttributeKind,
+    /// The supertype named by `SELF\supertype.name`; the attribute redeclares that
+    /// supertype's attribute instead of adding a new one.
+    pub redeclares: Option<Name>,
     pub span: Span,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]

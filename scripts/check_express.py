@@ -38,6 +38,10 @@ assert not run([imports], 1)["structural_valid"]
 for path in sorted((ROOT / "corpus/express/invalid").glob("*.exp")):
     assert not run([path], 1)["structural_valid"]
 run([Path("corpus/express/valid/opaque.exp")], 0)
+redeclare = run([Path("corpus/express/valid/redeclare.exp")], 0)
+assert redeclare["structural_valid"]
+assert sum(d["message"].startswith("attribute redeclaration retained") for d in redeclare["diagnostics"]) == 2
+assert all(d["severity"] == "unsupported" for d in redeclare["diagnostics"])
 with tempfile.TemporaryDirectory() as directory:
     filename = 'unicode-é.exp' if os.name == 'nt' else 'quote"slash\\line\né.exp'
     path = Path(directory) / filename

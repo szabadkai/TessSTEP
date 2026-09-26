@@ -28,7 +28,8 @@ standard or future semantic layer has been certified. No AP242 support is claime
 | archives / BOM / tolerant recovery | unsupported | — | clear-text input only; strict first-error behavior |
 | EXPRESS lexer and source-located AST | implemented | express_ast_covers_declarations_and_retains_expressions | declaration subset; expression grammar is opaque |
 | EXPRESS imports and schema IR | implemented | express_import_resolution_and_reexports | explicitly supplied sources; basic structural checks only |
-| EXPRESS declaration and graph validation | implemented | express_semantic_checks_and_graph_cycles | no full expression/type/cardinality semantics or AP claim |
+| EXPRESS declaration and graph validation | implemented | express_semantic_checks_and_graph_cycles | no full expression/type/cardinality semantics or AP claim; aggregate-recursive defined types are valid |
+| EXPRESS attribute redeclaration and qualified inherited names | implemented | express_redeclarations_qualified_names_and_end_identifiers | explicit and DERIVE redeclarations resolved to a declaring ancestor; domain compatibility not validated; INVERSE redeclaration unsupported |
 | EXPRESS inverse target lookup | implemented | express_inverse_targets_are_checked | forward type compatibility/cardinality explicitly unsupported |
 | EXPRESS expressions and algorithms | syntax preservation only | express_opaque_semantics_are_never_silent | verbatim source with unsupported diagnostics; bodies not semantically validated |
 | EXPRESS budgets and malformed input | implemented | express_resource_limits_cover_parsing_and_resolution | logical budgets; hard nesting ceiling 128; no recovery |
