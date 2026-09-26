@@ -93,8 +93,10 @@ standard or future semantic layer has been certified. No AP242 support is claime
 | Faceted STEP orientation and hole topology | implemented | faceted_through_hole_preserves_material_volume | Explicit planar surfaces and polygon loops; no healing or enclosed cavity shells |
 | C/C++ faceted import ownership and diagnostics | implemented | c_abi_faceted_import_ownership_errors_and_limits | Additive ABI 1 with explicit root/units; typed stage/entity diagnostics; installed C/C++ consumers |
 | Planar edge-based STEP solid import | implemented | planar_edge_and_face_orientation_semantics | LINE support/trim checks; canonical STEP vertex/edge identity; single plain bound or explicit outer for holes; no healing |
-| Explicit physical-profile derived slots | implemented | physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode | Named opt-in * slots only; no general DERIVE evaluation or AP semantics |
+| Explicit physical-profile derived slots | implemented | physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode | Named opt-in slots accept * (and $ unless strict); no general DERIVE evaluation or AP semantics |
 | C/C++ planar STEP import | implemented | c_abi_planar_import_owns_mesh_and_preserves_error_contract | Additive ABI 1 functions; same options layout and retained mesh ownership; external exporter test requires pinned corpus |
+| Named out-of-profile import diagnostics | implemented | planar_unsupported_entities_are_named_as_outside_the_profile | Names simple and complex-instance record types outside the reduced import profile; no statement about AP schema membership |
+| Strict/tolerant planar import policy | implemented | planar_unset_derived_slots_are_tolerated_unless_strict | Tolerant default accepts $ in derived ORIENTED_EDGE endpoint slots; strict rejects it; C ts_import_policy flags and C++ ImportPolicy; no other deviations tolerated |
 
 The JSON manifest tracks physical syntax, the EXPRESS frontend and generated bindings.
 Structural schema decoding and product graph adaptation are separate checked stages.

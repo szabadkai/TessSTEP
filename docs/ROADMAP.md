@@ -188,6 +188,57 @@ explicitly independent of ISO style semantics. See [APPEARANCE.md](APPEARANCE.md
 STEP presentation adapters, textures, lighting models, surface-side styling and rendering
 remain pending. The next numbered milestone is 20: existing tessellations.
 
+**Import hardening backlog — observed on third-party CAD exports.**
+
+Running the planar importers over every solid root of unmodified exports from
+several CAD systems exposed the gaps below. They feed Milestones 21–22 and the
+pending curved STEP adaptation; none is a conformance claim. Each item needs
+authored fixtures, typed outcomes and corpus-stage evidence before delivery.
+
+- **Curved geometry is the dominant blocker.** Most solid roots in real exports
+  fail at the profile stage on curved entities, not on planar-profile defects.
+  Prioritize adapters by observed frequency: `CIRCLE`/`ELLIPSE` edges, cylindrical
+  and conical surfaces, then (rational) B-spline curves and surfaces, including
+  complex-instance encodings. `BREP_WITH_VOIDS` cavity shells follow.
+- **Implicit outer bounds.** Several exporters never emit `FACE_OUTER_BOUND`; faces
+  with holes use only plain `FACE_BOUND`s, which the schema allows. Otherwise
+  valid solids are rejected solely for this. Infer the outer loop from
+  plane/UV-projected containment and orientation, failing with a typed ambiguity
+  error rather than guessing. Apply the same rule to curved faces once supported.
+- **Default parse budgets.** The defaults (4M total values, 1M entities, 2M records)
+  reject well-formed exports of a few tens of megabytes. Size defaults against
+  realistic industrial files, or derive them from input size, while keeping every
+  budget explicit. Expose them in `stepdump` and the corpus runner, and name the
+  exceeded limit and its configured value in the diagnostic. Changes to C
+  `ts_parse_options_init` defaults are documented behavior changes.
+- **Actionable unsupported-entity diagnostics — delivered 2026-09-26.** Profile
+  rejection names the entity type, or every complex-instance component and those
+  outside the profile, and says "outside the selected import profile" rather than
+  "unknown to the schema". Evidence: `planar_unsupported_entities_are_named_as_outside_the_profile`.
+- **Disconnected closed shells.** Some exporters write `CLOSED_SHELL`s whose faces
+  share no edges or vertices. Strict rejection stays the default. Any sewing must be
+  an explicit, opt-in, tolerance-bounded repair stage whose repairs are reported.
+  Reports should classify this defect separately from other open-shell failures.
+- **Per-root import cost.** Importing many roots from one document appears to repeat
+  document-wide work, so the cost per root grows with document size. Share decoded
+  and index state across roots (a document-level import session). Add a benchmark
+  showing assembly import scales with total closure size, not roots × document size.
+- **Root and unit discovery.** Callers currently find solid roots and length units by
+  hand; files often carry hundreds of roots and more than one representation context.
+  Connect Milestone 5 product/unit semantics to root selection, with explicit
+  per-root units and no silent default.
+- **Corpus geometry stage — delivered 2026-09-26.** The corpus runner imports every
+  solid root and reports per-root outcomes grouped by stage and error category; see
+  [corpus testing](corpus-testing.md#solid-import-stage). Units are still an explicit
+  runner assumption until root and unit discovery lands. The baseline was refreshed
+  with the new stage on 2026-09-26 after review.
+- **Unset derived slots — delivered 2026-09-26.** `$` instead of `*` in derived
+  `ORIENTED_EDGE` endpoint slots is accepted by default and rejected by an explicit
+  strict switch (`ImportOptions::strict`, C `TS_IMPORT_STRICT`, C++ `ImportPolicy`).
+  In the corpus this moves 177 roots past the profile stage; all of them then fail
+  topology checks (open or inconsistently oriented shells, broken wires), so they
+  feed the disconnected-shell item above.
+
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
 analytic curves/surfaces and NURBS. Milestones 11–12 establish topology validity states

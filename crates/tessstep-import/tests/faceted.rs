@@ -12,7 +12,7 @@ fn import(source: &str, unit: LengthUnit) -> Result<ImportedSolid, Error> {
         EntityId::new(1000).unwrap(),
         unit,
         model_tolerance(),
-        ImportLimits::default(),
+        ImportOptions::default(),
     )
 }
 fn mesh(solid: &ImportedSolid) -> tessstep_mesh::Mesh {
@@ -158,13 +158,13 @@ fn faceted_rejects_invalid_and_unsupported_without_healing() {
 fn faceted_limits_and_selected_root_are_explicit() {
     let doc = tessstep_model::parse(BOX.as_bytes(), ParseLimits::default()).unwrap();
     for limits in [
-        ImportLimits {
+        ImportOptions {
             max_work: 0,
-            ..ImportLimits::default()
+            ..ImportOptions::default()
         },
-        ImportLimits {
+        ImportOptions {
             max_records: 0,
-            ..ImportLimits::default()
+            ..ImportOptions::default()
         },
     ] {
         assert_eq!(
@@ -186,7 +186,7 @@ fn faceted_limits_and_selected_root_are_explicit() {
             EntityId::new(1).unwrap(),
             LengthUnit::METRE,
             model_tolerance(),
-            ImportLimits::default()
+            ImportOptions::default()
         )
         .unwrap_err()
         .kind,
@@ -256,9 +256,10 @@ fn faceted_order_and_bounded_mutation_smoke() {
                 EntityId::new(1000).unwrap(),
                 LengthUnit::MILLIMETRE,
                 model_tolerance(),
-                ImportLimits {
+                ImportOptions {
                     max_work: 50_000,
                     max_records: 1000,
+                    ..ImportOptions::default()
                 },
             );
             if let Ok(solid) = imported {

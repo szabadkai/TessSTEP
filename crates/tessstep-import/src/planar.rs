@@ -4,15 +4,16 @@ use super::*;
 /// EDGE_CURVEs. Shared vertices/edges retain VERTEX_POINT/EDGE_CURVE identity.
 /// One plain FACE_BOUND is an unambiguous outer bound; multiple bounds require
 /// one explicit FACE_OUTER_BOUND. No coordinate welding, healing or unit inference.
-/// ORIENTED_EDGE endpoint slots must be `*`; their values come from EDGE_ELEMENT.
+/// ORIENTED_EDGE endpoint slots must be `*`, or `$` unless `options.strict`; their
+/// values come from EDGE_ELEMENT.
 pub fn import_planar_solid(
     document: &Document,
     root: EntityId,
     unit: LengthUnit,
     tolerance: ModelTolerance,
-    limits: ImportLimits,
+    options: ImportOptions,
 ) -> Result<ImportedSolid, Error> {
-    import_solid(document, root, unit, tolerance, limits, true)
+    import_solid(document, root, unit, tolerance, options, true)
 }
 impl<'d, 'a> Context<'d, 'a> {
     fn topological_vertex(&mut self, v: &'d EntityView<'a>) -> Result<VertexId, Error> {

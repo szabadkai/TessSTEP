@@ -58,16 +58,20 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 #[derive(Clone, Copy, Debug)]
-pub struct ImportLimits {
+pub struct ImportOptions {
     /// Independent profile-decoding and adapter work budgets, not a process RSS cap.
     pub max_work: usize,
     pub max_records: usize,
+    /// Reject common exporter deviations that the default accepts without changing
+    /// geometry: `$` instead of `*` in derived ORIENTED_EDGE endpoint slots.
+    pub strict: bool,
 }
-impl Default for ImportLimits {
+impl Default for ImportOptions {
     fn default() -> Self {
         Self {
             max_work: 5_000_000,
             max_records: 100_000,
+            strict: false,
         }
     }
 }
@@ -153,9 +157,53 @@ pub fn import_faceted_solid(
     root: EntityId,
     unit: LengthUnit,
     tolerance: ModelTolerance,
-    limits: ImportLimits,
+    options: ImportOptions,
 ) -> Result<ImportedSolid, Error> {
-    import_solid(document, root, unit, tolerance, limits, false)
+    import_solid(document, root, unit, tolerance, options, false)
+}
+
+/// Reduced import profiles are not STEP schemas: an undeclared name is outside the
+/// profile, which says nothing about whether the application protocol defines it.
+fn outside_profile(
+    document: &Document,
+    schemas: &tessstep_schema::SchemaSet,
+    schema_name: &str,
+    entity: Option<EntityId>,
+) -> String {
+    let Some(records) = entity
+        .and_then(|id| document.entities().get(id))
+        .map(|e| e.kind.records())
+    else {
+        return format!("entity outside the {schema_name} import profile");
+    };
+    let declared = |name: &str| {
+        schemas.schema(schema_name).is_some_and(|s| {
+            s.symbols.iter().any(|symbol| {
+                symbol.name.eq_ignore_ascii_case(name)
+                    && schemas.declaration(symbol.declaration).is_some_and(|d| {
+                        matches!(d.kind, tessstep_schema::DeclarationKind::Entity { .. })
+                    })
+            })
+        })
+    };
+    let outside: Vec<&str> = records
+        .iter()
+        .map(|r| r.name.as_ref())
+        .filter(|name| !declared(name))
+        .collect();
+    if records.len() == 1 {
+        format!(
+            "{} is outside the {schema_name} import profile",
+            records[0].name.as_ref()
+        )
+    } else {
+        let all: Vec<&str> = records.iter().map(|r| r.name.as_ref()).collect();
+        format!(
+            "complex instance ({}) has components outside the {schema_name} import profile: {}",
+            all.join(", "),
+            outside.join(", ")
+        )
+    }
 }
 
 fn import_solid(
@@ -163,7 +211,7 @@ fn import_solid(
     root: EntityId,
     unit: LengthUnit,
     tolerance: ModelTolerance,
-    limits: ImportLimits,
+    options: ImportOptions,
     planar: bool,
 ) -> Result<ImportedSolid, Error> {
     use tessstep_schema::EntityBinding;
@@ -177,24 +225,27 @@ fn import_solid(
         decode::OmittedSlot {
             entity: oriented,
             attribute: "EDGE_START",
+            allow_unset: !options.strict,
         },
         decode::OmittedSlot {
             entity: oriented,
             attribute: "EDGE_END",
+            allow_unset: !options.strict,
         },
     ];
+    let schema_name = if planar {
+        "tessstep_planar"
+    } else {
+        "tessstep_faceted"
+    };
     let decoded = decode::decode_reachable_profile(
         document,
         schema,
-        if planar {
-            "tessstep_planar"
-        } else {
-            "tessstep_faceted"
-        },
+        schema_name,
         &[root],
         if planar { &slots } else { &[] },
         decode::Limits {
-            max_work: limits.max_work,
+            max_work: options.max_work,
             ..decode::Limits::default()
         },
     )
@@ -210,7 +261,11 @@ fn import_solid(
         stage: Stage::Profile,
         entity: e.entity,
         source: e.source,
-        message: e.to_string(),
+        message: if e.kind == decode::ErrorKind::UnknownEntity {
+            outside_profile(document, schema, schema_name, e.entity)
+        } else {
+            e.to_string()
+        },
     })?;
     let mut c = Context {
         decoded: &decoded,
@@ -219,8 +274,8 @@ fn import_solid(
         point_entities: Vec::new(),
         edges: BTreeMap::new(),
         edge_entities: BTreeMap::new(),
-        remaining: limits.max_work,
-        max_records: limits.max_records.min(1_000_000),
+        remaining: options.max_work,
+        max_records: options.max_records.min(1_000_000),
         records: 0,
         current: root,
         unit,
@@ -319,8 +374,8 @@ fn import_solid(
         .validate(
             tolerance,
             ValidationLimits {
-                max_records: limits.max_records,
-                max_work: limits.max_work,
+                max_records: options.max_records,
+                max_work: options.max_work,
             },
         )
         .map_err(|e| Error {

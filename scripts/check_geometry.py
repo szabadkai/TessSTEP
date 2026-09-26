@@ -26,15 +26,16 @@ PLANAR_EXPECTED = {
     "planar-tube.step": ("accepted", "accepted", "accepted"),
     "planar-off-line.step": ("accepted", "rejected", "not_run"),
     "planar-sense.step": ("accepted", "rejected", "not_run"),
-    "planar-placeholder.step": ("rejected", "not_run", "not_run"),
+    # `$` in a derived ORIENTED_EDGE slot: tolerated by default, rejected when strict.
+    "planar-placeholder.step": ("accepted", "accepted", "accepted"),
     "planar-open-shell.step": ("accepted", "rejected", "not_run"),
     "planar-curved.step": ("unsupported", "not_run", "not_run"),
 }
 
 
-def inspect(binary, path, root_id=1000, unit=0.001, scope="faceted-solid"):
+def inspect(binary, path, root_id=1000, unit=0.001, scope="faceted-solid", strict=False):
     started = time.monotonic()
-    p = subprocess.run([str(binary), str(path), str(root_id), str(unit)],
+    p = subprocess.run([str(binary), str(path), str(root_id), str(unit), *(["--strict"] if strict else [])],
                        capture_output=True, text=True, timeout=30, cwd=ROOT)
     assert p.returncode in (0, 1), (path, p.returncode, p.stderr)
     result = json.loads(p.stdout)
@@ -75,6 +76,12 @@ def main():
             case["passed"] &= (r.get("vertices"),r.get("triangles"),r.get("boundary_edges"),r.get("components")) == (16,32,0,1)
             case["passed"] &= math.isclose(r.get("volume_m3",0),3.84e-6,rel_tol=1e-12)
         cases.append(case)
+    for name in ("planar-placeholder.step", "planar-box.step"):
+        case = inspect(planar_binary, ROOT / "corpus/geometry" / name, scope="planar-solid", strict=True)
+        expected = ("rejected", "not_run", "not_run") if name == "planar-placeholder.step" else ("accepted", "accepted", "accepted")
+        case["expected"] = {"strict": expected}
+        case["passed"] = tuple(case["result"][k] for k in ("profile", "geometry", "tessellation")) == expected
+        cases.append(case)
     # Selected upstream adversarial faceted inputs: no copying, healing or expected
     # success is inferred from their parser baseline. These known malformed inputs
     # must never produce a solid mesh under this profile.
@@ -112,7 +119,7 @@ def main():
     for c in cases:
         r=c["result"]
         rows.append("<tr>"+"".join("<td>"+html.escape(str(v))+"</td>" for v in
-                    [Path(c["path"]).name,c["passed"],r["profile"],r["geometry"],r["tessellation"],c["diagnostic"]])+"</tr>")
+                    [Path(c["path"]).name+(" (strict)" if isinstance(c["expected"],dict) and "strict" in c["expected"] else ""),c["passed"],r["profile"],r["geometry"],r["tessellation"],c["diagnostic"]])+"</tr>")
     (output/"index.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>Planar STEP import verification</title>'
         '<style>body{font:16px system-ui;margin:32px}td,th{padding:12px;border:1px solid #ccc;text-align:left}table{border-collapse:collapse}</style>'
         '<h1>Planar STEP import verification</h1><p>Selected-root reduced profile. Explicit source units. Full AP schema and product validation are unmeasured.</p>'

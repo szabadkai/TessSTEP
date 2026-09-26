@@ -3,7 +3,7 @@ use crate::{
     TS_UNSUPPORTED, TsDocument, TsMesh, boundary, clear, initialize,
 };
 use std::{ptr, sync::Arc};
-use tessstep_import::{ErrorKind, ImportLimits, Stage, TessellationOptions};
+use tessstep_import::{ErrorKind, ImportOptions, Stage, TessellationOptions};
 use tessstep_math::{Angle, Length, LengthUnit, ModelTolerance, TessellationTolerance};
 use tessstep_part21::EntityId;
 
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn ts_document_tessellate_faceted(
             options,
             out,
             error,
-            false,
+            Profile::Faceted,
         )
     }
 }
@@ -115,9 +115,94 @@ pub unsafe extern "C" fn ts_document_tessellate_planar(
             options,
             out,
             error,
-            true,
+            Profile::Planar { strict: false },
         )
     }
+}
+
+pub const TS_IMPORT_STRICT: u32 = 1;
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct TsImportPolicy {
+    pub struct_size: u32,
+    pub abi_version: u32,
+    pub flags: u32,
+    pub reserved: u32,
+}
+impl Default for TsImportPolicy {
+    fn default() -> Self {
+        Self {
+            struct_size: size_of::<Self>() as u32,
+            abi_version: 1,
+            flags: 0,
+            reserved: 0,
+        }
+    }
+}
+/// # Safety
+/// Non-NULL out must be aligned writable storage for a complete C policy record.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_import_policy_init(out: *mut TsImportPolicy) -> u32 {
+    boundary(|| {
+        // SAFETY: caller supplies valid writable policy storage.
+        if unsafe { clear(out) } {
+            TS_OK
+        } else {
+            TS_INVALID_ARGUMENT
+        }
+    })
+}
+/// # Safety
+/// Follow tessstep.h live-document, options, policy and disjoint output-slot contracts.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_document_tessellate_planar_with_policy(
+    document: *const TsDocument,
+    entity_id: u64,
+    metres_per_unit: f64,
+    options: *const TsPlanarOptions,
+    policy: *const TsImportPolicy,
+    out: *mut *const TsMesh,
+    error: *mut TsImportError,
+) -> u32 {
+    let p = if policy.is_null() {
+        TsImportPolicy::default()
+    } else {
+        // SAFETY: non-NULL policy is a complete readable record per the header.
+        unsafe { *policy }
+    };
+    if p.struct_size != size_of::<TsImportPolicy>() as u32
+        || p.abi_version != 1
+        || p.flags & !TS_IMPORT_STRICT != 0
+        || p.reserved != 0
+    {
+        // SAFETY: output slots follow the documented clearing contract.
+        unsafe {
+            initialize(out, ptr::null());
+            if !error.is_null() {
+                clear(error);
+            }
+        }
+        return TS_INVALID_ARGUMENT;
+    }
+    // SAFETY: this entry point forwards the same documented pointer contract.
+    unsafe {
+        tessellate_import(
+            document,
+            entity_id,
+            metres_per_unit,
+            options,
+            out,
+            error,
+            Profile::Planar {
+                strict: p.flags & TS_IMPORT_STRICT != 0,
+            },
+        )
+    }
+}
+#[derive(Clone, Copy)]
+enum Profile {
+    Faceted,
+    Planar { strict: bool },
 }
 unsafe fn tessellate_import(
     document: *const TsDocument,
@@ -126,7 +211,7 @@ unsafe fn tessellate_import(
     options: *const TsFacetedOptions,
     out: *mut *const TsMesh,
     error: *mut TsImportError,
-    planar: bool,
+    profile: Profile,
 ) -> u32 {
     // SAFETY: non-NULL output slots are disjoint writable storage supplied by caller.
     let output_ok = unsafe { initialize(out, ptr::null()) };
@@ -194,22 +279,20 @@ unsafe fn tessellate_import(
         opts.mesh.max_work = work;
         opts.mesh.max_vertices = vertices;
         opts.mesh.max_triangles = triangles;
-        let importer = if planar {
-            tessstep_import::import_planar_solid
-        } else {
-            tessstep_import::import_faceted_solid
+        let limits = ImportOptions {
+            max_work: work,
+            max_records: records,
+            strict: matches!(profile, Profile::Planar { strict: true }),
         };
-        let result = importer(
-            document,
-            id,
-            unit,
-            model,
-            ImportLimits {
-                max_work: work,
-                max_records: records,
-            },
-        )
-        .and_then(|s| s.tessellate(tess, opts));
+        let imported = match profile {
+            Profile::Planar { .. } => {
+                tessstep_import::import_planar_solid(document, id, unit, model, limits)
+            }
+            Profile::Faceted => {
+                tessstep_import::import_faceted_solid(document, id, unit, model, limits)
+            }
+        };
+        let result = imported.and_then(|s| s.tessellate(tess, opts));
         match result {
             Ok(mesh) => {
                 // SAFETY: required output slot was cleared and ownership transfers once.

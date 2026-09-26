@@ -737,3 +737,112 @@ fn c_abi_planar_import_owns_mesh_and_preserves_error_contract() {
         ts_mesh_release(mesh);
     }
 }
+
+#[test]
+fn c_abi_import_policy_strictness_and_invalid_records() {
+    assert_eq!(size_of::<TsImportPolicy>(), 16);
+    let text = include_str!("../../../corpus/geometry/planar-box.step")
+        .replace("ORIENTED_EDGE('',*,*,", "ORIENTED_EDGE('',$,$,");
+    // SAFETY: complete disjoint records, live handles, balanced releases.
+    unsafe {
+        let mut doc = ptr::null();
+        let mut report = ptr::null_mut();
+        assert_eq!(
+            ts_document_parse(
+                text.as_ptr(),
+                text.len(),
+                ptr::null(),
+                &mut doc,
+                &mut report
+            ),
+            TS_OK
+        );
+        ts_diagnostics_release(report);
+        let mut policy = TsImportPolicy {
+            flags: 7,
+            ..TsImportPolicy::default()
+        };
+        assert_eq!(ts_import_policy_init(&mut policy), TS_OK);
+        assert_eq!(
+            (policy.struct_size, policy.abi_version, policy.flags),
+            (16, 1, 0)
+        );
+        let mut error = TsImportError::default();
+        for tolerant in [ptr::null(), &policy as *const TsImportPolicy] {
+            let mut mesh = ptr::null();
+            assert_eq!(
+                ts_document_tessellate_planar_with_policy(
+                    doc,
+                    1000,
+                    0.001,
+                    ptr::null(),
+                    tolerant,
+                    &mut mesh,
+                    &mut error
+                ),
+                TS_OK
+            );
+            ts_mesh_release(mesh);
+        }
+        let mut mesh = ptr::null();
+        assert_eq!(
+            ts_document_tessellate_planar(doc, 1000, 0.001, ptr::null(), &mut mesh, &mut error),
+            TS_OK
+        );
+        let mut failed = mesh;
+        policy.flags = TS_IMPORT_STRICT;
+        assert_eq!(
+            ts_document_tessellate_planar_with_policy(
+                doc,
+                1000,
+                0.001,
+                ptr::null(),
+                &policy,
+                &mut failed,
+                &mut error
+            ),
+            TS_INVALID_GEOMETRY
+        );
+        assert!(failed.is_null());
+        assert_eq!(error.stage, 1);
+        assert_ne!(error.entity_id, 0);
+        for invalid in [
+            TsImportPolicy {
+                flags: 2,
+                ..TsImportPolicy::default()
+            },
+            TsImportPolicy {
+                reserved: 1,
+                ..TsImportPolicy::default()
+            },
+            TsImportPolicy {
+                struct_size: 12,
+                ..TsImportPolicy::default()
+            },
+            TsImportPolicy {
+                abi_version: 2,
+                ..TsImportPolicy::default()
+            },
+        ] {
+            failed = mesh;
+            error.stage = 9;
+            assert_eq!(
+                ts_document_tessellate_planar_with_policy(
+                    doc,
+                    1000,
+                    0.001,
+                    ptr::null(),
+                    &invalid,
+                    &mut failed,
+                    &mut error
+                ),
+                TS_INVALID_ARGUMENT
+            );
+            assert!(failed.is_null());
+            assert_eq!(error.stage, 0);
+        }
+        assert_eq!(ts_import_policy_init(ptr::null_mut()), TS_INVALID_ARGUMENT);
+        ts_document_release(doc);
+        ts_mesh_release(mesh);
+    }
+}

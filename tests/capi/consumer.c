@@ -213,9 +213,44 @@ static void solid_import_contract(int planar) {
     assert(ts_mesh_get_view(mesh,&view) == TS_OK && view.vertex_count == 8);
     ts_mesh_release(mesh);
 }
+static void import_policy_contract(void) {
+    _Static_assert(sizeof(ts_import_policy) == 16, "import policy layout");
+    FILE *file = fopen("placeholder.step", "rb");
+    assert(file);
+    uint8_t bytes[16384];
+    size_t count = fread(bytes,1,sizeof(bytes),file);
+    assert(!ferror(file) && count < sizeof(bytes));
+    fclose(file);
+    ts_document *doc = NULL;
+    ts_diagnostics *report = NULL;
+    assert(ts_document_parse(bytes,count,NULL,&doc,&report) == TS_OK);
+    ts_diagnostics_release(report);
+    ts_import_policy policy;
+    assert(ts_import_policy_init(NULL) == TS_INVALID_ARGUMENT);
+    assert(ts_import_policy_init(&policy) == TS_OK);
+    assert(policy.struct_size == sizeof(policy) && policy.abi_version == TS_ABI_VERSION && policy.flags == 0);
+    ts_mesh *mesh = NULL, *failed = NULL;
+    ts_import_error error;
+    assert(ts_document_tessellate_planar(doc,1000,0.001,NULL,&mesh,&error) == TS_OK);
+    ts_mesh_release(mesh);
+    assert(ts_document_tessellate_planar_with_policy(doc,1000,0.001,NULL,&policy,&mesh,&error) == TS_OK);
+    policy.flags = TS_IMPORT_STRICT;
+    failed = mesh;
+    assert(ts_document_tessellate_planar_with_policy(doc,1000,0.001,NULL,&policy,&failed,&error) == TS_INVALID_GEOMETRY);
+    assert(failed == NULL && error.stage == TS_IMPORT_STAGE_PROFILE && error.entity_id != 0);
+    policy.flags = 2u;
+    failed = mesh;
+    assert(ts_document_tessellate_planar_with_policy(doc,1000,0.001,NULL,&policy,&failed,&error) == TS_INVALID_ARGUMENT);
+    assert(failed == NULL && error.stage == TS_IMPORT_STAGE_NONE);
+    ts_document_release(doc);
+    ts_mesh_view view;
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK && view.vertex_count == 8);
+    ts_mesh_release(mesh);
+}
 int main(void) {
     solid_import_contract(0);
     solid_import_contract(1);
+    import_policy_contract();
     appearance_contract();
     scene_contract();
     mesh_contract();
