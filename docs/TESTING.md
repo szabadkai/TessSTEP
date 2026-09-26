@@ -6,6 +6,8 @@ Run from the repository root:
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --locked
+python3 scripts/check_kernel.py
+python3 scripts/check_metamorphic.py
 cargo build --workspace --locked
 python3 scripts/check_architecture.py
 python3 scripts/check_corpus.py
@@ -51,6 +53,15 @@ require `python3 scripts/corpus.py --check`. Inspect the per-file report and sum
 changes without refreshing the baseline to hide regressions. See
 [corpus-testing.md](corpus-testing.md). Run the Python runner tests with
 `python3 -m unittest discover -s scripts -p 'test_*.py'`.
+
+`check_kernel.py` wraps workspace tests, continues across failed test executables,
+and writes per-test HTML/JSON/JUnit plus the complete log under `reports/kernel/`.
+`check_metamorphic.py` generates 74 unique authored positive/adversarial STEP inputs
+with reviewed expectations and repeated JSON checks under `reports/generated/`.
+Schema/product scripts also export their expectations and stage results through
+the same format-2 report. CI retains these four suites on every stable OS job,
+including failure evidence. External observation baselines, authored expectations
+and constructed geometry tests have distinct verdicts and coverage totals.
 
 EXPRESS tests cover source spans, literal/comment lexing, declarations, preserved opaque
 expressions, imports/aliases/reexports, name collisions, wrong declaration kinds,

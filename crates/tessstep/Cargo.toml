@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+tessstep-import.workspace = true
 tessstep-mesh.workspace = true
 tessstep-topology.workspace = true
 tessstep-trim.workspace = true

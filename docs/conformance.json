@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim",
+  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import",
   "features": [
     {
       "feature": "streaming lexer",
@@ -184,21 +184,21 @@
     },
     {
       "feature": "STEP geometry / topology / meshes",
-      "status": "not implemented",
-      "test": null,
-      "limitations": "constructed geometry/topology and regular face/solid tessellation available; no STEP geometry adapter"
+      "status": "faceted and edge-based planar subsets implemented",
+      "test": "planar_edge_brep_to_mesh_preserves_topology_and_line_trims",
+      "limitations": "Explicit root/units; reduced profiles; polygon or LINE edge loops; no curved import/AP claim"
     },
     {
       "feature": "public C ABI",
-      "status": "physical documents, meshes, assembly scenes and appearance implemented",
+      "status": "physical documents, meshes, assembly scenes and appearance implemented; faceted import implemented",
       "test": "c_abi_document_and_diagnostic_contract",
-      "limitations": "additive ABI 1; physical documents, triangle meshes, explicit scenes and appearance; schema/B-rep/tessellation APIs pending"
+      "limitations": "additive ABI 1; physical documents, triangle meshes, explicit scenes and appearance; schema/B-rep/tessellation APIs pending; selected planar faceted import, broader schema/B-rep APIs pending"
     },
     {
       "feature": "public C++ wrapper / CMake package",
-      "status": "physical documents, meshes, assembly scenes and appearance implemented",
+      "status": "physical documents, meshes, assembly scenes and appearance implemented; faceted import implemented",
       "test": "tests/capi/consumer.cpp",
-      "limitations": "C++17 RAII for documents/meshes/scenes/appearance, retained zero-copy mesh views and typed results; installed TessSTEP::TessSTEP target; static linkage pending"
+      "limitations": "C++17 RAII for documents/meshes/scenes/appearance, retained zero-copy mesh views and typed results; installed TessSTEP::TessSTEP target; static linkage pending; selected planar faceted import, broader schema/B-rep APIs pending"
     },
     {
       "feature": "Generated schema validator and corpus stage",
@@ -481,6 +481,42 @@
       "status": "implemented",
       "test": "product_indirect_contexts_associations_and_uncertainties",
       "limitations": "budgeted closures; positive measures retained individually, never converted into implicit tessellation tolerances"
+    },
+    {
+      "feature": "Selected-root schema decoding",
+      "status": "implemented",
+      "test": "schema_reachable_scope_is_cycle_safe_bounded_and_explicit",
+      "limitations": "Local reference closure only; not whole-document/AP conformance"
+    },
+    {
+      "feature": "Faceted STEP orientation and hole topology",
+      "status": "implemented",
+      "test": "faceted_through_hole_preserves_material_volume",
+      "limitations": "Explicit planar surfaces and polygon loops; no healing or enclosed cavity shells"
+    },
+    {
+      "feature": "C/C++ faceted import ownership and diagnostics",
+      "status": "implemented",
+      "test": "c_abi_faceted_import_ownership_errors_and_limits",
+      "limitations": "Additive ABI 1 with explicit root/units; typed stage/entity diagnostics; installed C/C++ consumers"
+    },
+    {
+      "feature": "Planar edge-based STEP solid import",
+      "status": "implemented",
+      "test": "planar_edge_and_face_orientation_semantics",
+      "limitations": "LINE support/trim checks; canonical STEP vertex/edge identity; single plain bound or explicit outer for holes; no healing"
+    },
+    {
+      "feature": "Explicit physical-profile derived slots",
+      "status": "implemented",
+      "test": "physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode",
+      "limitations": "Named opt-in * slots only; no general DERIVE evaluation or AP semantics"
+    },
+    {
+      "feature": "C/C++ planar STEP import",
+      "status": "implemented",
+      "test": "c_abi_planar_import_owns_mesh_and_preserves_error_contract",
+      "limitations": "Additive ABI 1 functions; same options layout and retained mesh ownership; external exporter test requires pinned corpus"
     }
   ]
 }

@@ -27,7 +27,19 @@ def main():
         dependencies = "\n".join(f'{name} = {{ path = {json.dumps(str(ROOT / "crates" / name))} }}' for name in ("tessstep-model", "tessstep-schema", "tessstep-ap242"))
         (work / "Cargo.toml").write_text('[package]\nname="product-checkers"\nversion="0.0.0"\nedition="2024"\n[workspace]\n[dependencies]\n' + dependencies + '\n', encoding="utf-8")
         subprocess.run(["cargo", "build", "--offline", "--release", "--manifest-path", str(work / "Cargo.toml"), "--target-dir", str(work / "target")], check=True)
-        subprocess.run([sys.executable, str(ROOT / "scripts/corpus.py"), "--corpus", str(ROOT / "corpus/product"), "--output", str(ROOT / "reports/product"), "--baseline", str(work / "no-baseline.json"), "--schema-validator", str(work / "target/release" / ("schema-validator" + suffix)), "--product-validator", str(work / "target/release" / ("product-validator" + suffix)), "--schema-name", "product_test"], cwd=ROOT, check=True)
+        expectations = {Path(item["path"]).name: {"stages": {"schema": "accepted", "product": item["product"]}}
+                        for item in json.loads((ROOT / "corpus/manifest.json").read_text(encoding="utf-8"))["files"]
+                        if item["path"].startswith("product/") and item["path"].endswith(".step")}
+        for item in json.loads((ROOT / "corpus/manifest.json").read_text(encoding="utf-8"))["files"]:
+            if item.get("product") == "accepted":
+                measurements = dict(item["product_counts"])
+                # Only the first relationship is an authored numerical oracle.
+                expectations[Path(item["path"]).name]["first_relationship_matrix"] = item["first_relationship_matrix"]
+                if Path(item["path"]).name == "indirect.step":
+                    measurements["uncertainty_values_si"] = [0.00001]
+                expectations[Path(item["path"]).name]["product_result_contains"] = measurements
+        (work / "expectations.json").write_text(json.dumps({"cases": expectations}), encoding="utf-8")
+        subprocess.run([sys.executable, str(ROOT / "scripts/corpus.py"), "--corpus", str(ROOT / "corpus/product"), "--output", str(ROOT / "reports/product"), "--baseline", str(work / "no-baseline.json"), "--expectations", str(work / "expectations.json"), "--title", "Authored product structure", "--repeat", "2", "--schema-validator", str(work / "target/release" / ("schema-validator" + suffix)), "--product-validator", str(work / "target/release" / ("product-validator" + suffix)), "--schema-name", "product_test"], cwd=ROOT, check=True)
     report = json.loads((ROOT / "reports/product/latest.json").read_text())
     expected = {Path(item["path"]).name: item["product"] for item in json.loads((ROOT / "corpus/manifest.json").read_text())["files"] if item["path"].startswith("product/") and item["path"].endswith(".step")}
     actual = {path: case["stages"]["product"] for case in report["cases"] for path in case["paths"]}

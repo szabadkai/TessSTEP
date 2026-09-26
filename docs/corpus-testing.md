@@ -3,7 +3,7 @@
 Run from the repository root (Python 3.10+ and Rust are required):
 
 ```sh
-python3 scripts/corpus.py --check
+python3 scripts/corpus.py --check --repeat 2
 ```
 
 This builds the release `stepdump`, discovers `.step`, `.stp` and `.p21` files
@@ -22,6 +22,15 @@ records source and executable hashes, input SHA-256 hashes, elapsed time,
 entity counts and parser diagnostic codes. Runtime is observational and is not
 a performance gate. Run only one corpus runner per output directory at a time.
 
+Report format 2 adds source and stage coverage, field-level baseline differences,
+expectation verdicts, diagnostic frequencies, timing percentiles and searchable
+per-file evidence. Filter the offline HTML by source, physical outcome, verdict,
+or stage outcome. Expand a file for aliases and diagnostics. `summary.md`,
+`junit.xml` and `cases.csv` accompany every completed run. JSON retains the
+individual measurements; CSV lists every path, including duplicate aliases.
+Source totals assign each unique content to its first discovered source, so
+shared copies do not inflate unique coverage.
+
 ## What the results mean
 
 | Observation | Meaning |
@@ -32,9 +41,12 @@ a performance gate. Run only one corpus runner per output directory at a time.
 | `crash` | Process terminated by signal or Rust panic |
 | `timeout` | Process exceeded the per-input deadline (30 seconds by default) |
 | `runner_error` | I/O, CLI, output protocol or output budget failure |
+| `nondeterministic` | Repeated physical parsing produced different JSON bytes |
 
-Without configured validators, schema/product validation, geometry construction and tessellation remain explicitly
-`not_implemented`. Physical acceptance does not establish correct CAD geometry.
+Without configured validators, schema/product validation is `not_configured`.
+Geometry and tessellation are `not_integrated` in this runner; the workspace's
+constructed-model tests are reported separately. A stage blocked by an earlier
+failure is `not_run`. None of these are passes. Physical acceptance does not establish correct CAD geometry.
 Rejection of a deliberately malformed fixture may be correct. The external
 defect catalog includes schema, geometric and runtime expectations, so its
 entries are not automatically converted into parser pass/fail assertions.
@@ -50,6 +62,9 @@ as changes, not automatically claimed as conformance improvements. Comparisons
 use content hashes, so modified fixtures appear as removed and added inputs.
 Duplicate aliases do not multiply test coverage; disappearing aliases of a
 still-present input do not count as removed unique inputs.
+Increased missing-reference counts, accepted schema/product stages becoming
+non-accepted, and nondeterministic output also fail. Old `not_implemented` stage
+labels are normalized for comparison without modifying the committed baseline.
 
 After each implementation milestone, run the Rust tests and corpus check,
 inspect changed files, and summarize the change in supported stages and outcomes.
@@ -65,6 +80,51 @@ python3 scripts/corpus.py --save-baseline
 Baseline replacement is refused if any input crashes, times out or encounters a
 runner error. The baseline is an observed compatibility contract, not an oracle
 for whether malformed files should be accepted.
+
+## Reviewed expectations and generated corpus
+
+The report separates `passed` (explicit expectations matched), `compatible`
+(no observation-baseline regression), `failed` and `unreviewed`. New inputs
+without an oracle are unreviewed even when a baseline exists. JUnit emits them
+as skipped, while missing baseline inputs, runtime faults and mismatched
+expectations fail. A reviewed malformed input passes only when its expected
+rejection is observed.
+
+```sh
+python3 scripts/check_metamorphic.py
+python3 scripts/check_schema.py
+python3 scripts/check_product.py
+python3 scripts/check_kernel.py
+```
+
+The generated suite creates 76 original fixture paths (74 unique byte streams)
+with expectations defined independently of parser output. Graphs of 1–127
+entities vary IDs, order, comments, Unicode, CRLF and DATA sections while keeping
+known entity/reference properties. Additional cases cover missing references,
+invalid IDs, numeric overflow/underflow, bad encodings, binary padding, duplicate
+records, deep nesting, truncation and strings up to 65,536 characters. Two runs
+must produce byte-identical physical-parser JSON. Fixtures are generated in a
+temporary directory; per-case expectations and content hashes remain in
+`reports/generated/`. No external download is needed.
+
+To supply your own oracle, use `--expectations expected.json` containing
+`{"cases": {"relative/file.step": {"status": "clean", "entity_count": 3}}}`.
+Every discovered path must have a nonempty expectation. Supported checks are
+`status`, `entity_count`, `entity_counts`, `missing_references`, exact
+`diagnostic_codes`, a subset of `stages`, exact `schema_result`/`product_result`,
+and `product_result_contains`/`first_relationship_matrix` for product numerical
+checks. Product object subsets use exact array lengths and float tolerances of
+1e-12 relative/absolute. Expectation mismatches fail regardless of `--check`.
+The report records the expectation-file hash. `--repeat 2` repeats physical
+parsing only; schema/product results have separate reviewed assertions.
+
+`reports/kernel/` contains individual Rust test outcomes, JUnit and the full
+log. The runner uses `--no-fail-fast` to collect other suites after a failure;
+build failures and timeouts also fail the report. It includes constructed
+geometry/mesh tests, authored integration tests and doctests. These results
+must not be counted as successful external STEP geometry imports. The added
+planar tessellation test checks 72 combinations of scale, translation, boundary
+start and face orientation against independent area and edge-incidence checks.
 
 Useful options:
 
@@ -87,9 +147,12 @@ No source compilation or schema success is inferred from a STEP header.
 
 Every PR and main push reconstructs all 3,227 unique inputs from pinned public
 sources, runs the baseline check, and publishes an Actions summary plus HTML,
-JSON and JUnit artifacts. CI has 3,230 paths because local duplicate directory
+JSON, CSV and JUnit artifacts. CI has 3,230 paths because local duplicate directory
 copies are omitted. Unique content coverage is identical. See
 [CI and releases](RELEASING.md) for downloads, retention and release gates.
+All three OS jobs also publish `test-reports-<os>` with authored schema/product,
+generated transformations and per-test Rust evidence. Summaries and uploads run
+after failures. Repeated parsing is enabled in both authored and external suites.
 
 ## Configured schema stage (Milestone 4)
 
@@ -101,7 +164,7 @@ are runner errors. Executable hash and schema identity are recorded, and the val
 is snapshotted before the run. Schema acceptance regressions now fail `--check`.
 
 Use a separate output/baseline for a configured schema corpus. Without these options,
-the existing physical baseline and `schema: not_implemented` observations remain unchanged.
+the existing physical baseline is unchanged and schema is reported as `not_configured`.
 `python3 scripts/check_schema.py` builds an original tiny schema validator and checks six
 reviewed positive/negative/unsupported fixtures through the real runner. Expected outcomes
 and provenance are in `corpus/manifest.json`; the per-file report is `reports/schema/`.
@@ -122,7 +185,7 @@ reviewed fixtures through physical, schema and product stages. See `reports/prod
 Six product models are accepted, four rejected and one unsupported; all eleven pass
 structural decoding. Accepted matrices, graph counts and uncertainty values are verified. These are test applications, not bundled AP validators.
 
-Without a checker, product remains `not_implemented`. Older baseline entries without
-this field compare as `not_implemented`, avoiding artificial outcome changes. The
-physical baseline is not rewritten. No semantic result is inferred for the external
-AP corpus; geometry and tessellation remain unimplemented.
+Without a checker, product remains `not_configured`. Older unmeasured baseline
+entries compare equivalently, avoiding artificial outcome changes. The physical
+baseline is not rewritten. No semantic result is inferred for the external AP
+corpus; its geometry and tessellation stages remain `not_integrated` in this runner.

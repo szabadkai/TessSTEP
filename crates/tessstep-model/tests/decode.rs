@@ -845,3 +845,94 @@ fn schema_decode_boolean_logical_select_values_share_equality() {
     );
     assert_decode(&s, "#1=HOLDER((BOOL(.T.),LOGIC(.U.)));", None);
 }
+
+#[test]
+fn schema_reachable_scope_is_cycle_safe_bounded_and_explicit() {
+    let doc = parse("#1=BASE(1,#2);#2=BASE(2,#1);#3=UNKNOWN(#99);");
+    let root = EntityId::new(1).unwrap();
+    let result =
+        decode::decode_reachable(&doc, &SCHEMAS, "TEST", &[root, root], Limits::default()).unwrap();
+    assert_eq!(result.entities().len(), 2);
+    assert!(decode::decode(&doc, &SCHEMAS, "TEST", Limits::default()).is_err());
+    let bad = parse("#1=BASE(1,#99);");
+    let e =
+        decode::decode_reachable(&bad, &SCHEMAS, "TEST", &[root], Limits::default()).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::MissingReference);
+    assert_eq!(e.entity, Some(root));
+    assert!(e.source.is_some());
+    let e = decode::decode_reachable(
+        &doc,
+        &SCHEMAS,
+        "TEST",
+        &[root],
+        Limits {
+            max_work: 0,
+            ..Limits::default()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::ResourceLimit);
+}
+
+#[test]
+fn physical_profile_markers_are_explicit_and_do_not_weaken_schema_decode() {
+    let doc = parse("#1=BASE(*,$);");
+    let root = EntityId::new(1).unwrap();
+    let slot = decode::OmittedSlot {
+        entity: DeclarationId(0),
+        attribute: "number",
+    };
+    assert_eq!(
+        decode::decode_reachable(&doc, &SCHEMAS, "TEST", &[root], Limits::default())
+            .unwrap_err()
+            .kind,
+        ErrorKind::TypeMismatch
+    );
+    let decoded = decode::decode_reachable_profile(
+        &doc,
+        &SCHEMAS,
+        "TEST",
+        &[root],
+        &[slot],
+        Limits::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded.entities().len(), 1);
+    for source in ["#1=BASE(1,$);", "#1=BASE($,$);"] {
+        let doc = parse(source);
+        assert_eq!(
+            decode::decode_reachable_profile(
+                &doc,
+                &SCHEMAS,
+                "TEST",
+                &[root],
+                &[slot],
+                Limits::default()
+            )
+            .unwrap_err()
+            .kind,
+            ErrorKind::TypeMismatch
+        );
+    }
+    for slots in [
+        vec![slot, slot],
+        vec![decode::OmittedSlot {
+            attribute: "missing",
+            ..slot
+        }],
+    ] {
+        assert_eq!(
+            decode::decode_reachable_profile(
+                &doc,
+                &SCHEMAS,
+                "TEST",
+                &[root],
+                &slots,
+                Limits::default()
+            )
+            .unwrap_err()
+            .kind,
+            ErrorKind::InvalidMetadata
+        );
+    }
+}

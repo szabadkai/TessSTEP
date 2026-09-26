@@ -1,6 +1,9 @@
 #include <tessstep/tessstep.hpp>
 #include <cassert>
 #include <future>
+#include <cmath>
+#include <fstream>
+#include <iterator>
 #include <type_traits>
 using namespace tessstep;
 static_assert(!std::is_copy_constructible_v<Document>);
@@ -118,7 +121,65 @@ static void appearance_contract() {
     auto limited=Appearance::create(scene.value(),{{1,{1,0,0,1}}},{},&options);
     assert(!limited && limited.error().code==ErrorCode::resource_limit);
 }
-int main() {
+static void faceted_contract() {
+    auto retained = [] {
+        std::ifstream file("faceted.step", std::ios::binary);
+        assert(file);
+        const std::string bytes{std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>()};
+        auto parsed = Document::parse(bytes);
+        assert(parsed);
+        Document document = std::move(parsed).value();
+        auto imported = document.tessellate_faceted(1000,0.001);
+        assert(imported);
+        auto view = imported.value().view();
+        assert(view && view.value().data().face_ids[0] == 106);
+        auto bad = document.tessellate_faceted(1,0.001);
+        assert(!bad && bad.error().code == ErrorCode::unsupported);
+        assert(bad.error().import_failure.stage == ImportStage::geometry);
+        assert(bad.error().import_failure.entity_id == 1);
+        assert(!parsed.value().tessellate_faceted(1000,0.001));
+        return std::move(view).value();
+    }();
+    assert(retained.data().vertex_count == 8 && retained.data().triangle_count == 12);
+    assert(retained.data().boundary_edges == 0 && retained.data().components == 1);
+    assert(retained.data().signed_volume > 0.000005999 && retained.data().signed_volume < 0.000006001);
+}
+static void planar_contract(const char* path, uint64_t root, double scale, double volume,
+    double x, double y, double z) {
+    auto retained = [&] {
+        std::ifstream file(path,std::ios::binary); assert(file);
+        const std::string bytes{std::istreambuf_iterator<char>(file),std::istreambuf_iterator<char>()};
+        auto parsed = Document::parse(bytes); assert(parsed);
+        auto options = default_planar_options();
+        auto converted = parsed.value().tessellate_planar(root,scale,&options); assert(converted);
+        auto view = converted.value().view(); assert(view);
+        assert(view.value().data().face_ids[0] == 106);
+        auto bad = parsed.value().tessellate_planar(root,0.);
+        assert(!bad && bad.error().code == ErrorCode::invalid_argument);
+        options.max_work=0;
+        bad = parsed.value().tessellate_planar(root,scale,&options);
+        assert(!bad && bad.error().code == ErrorCode::resource_limit);
+        assert(bad.error().import_failure.stage == ImportStage::profile);
+        return std::move(view).value();
+    }();
+    const auto& data=retained.data();
+    assert(data.vertex_count == 8 && data.triangle_count == 12 && data.boundary_edges == 0 && data.components == 1);
+    assert(std::abs(data.signed_volume-volume)<volume*1e-10);
+    const double bounds[] = {x,y,z};
+    for(size_t axis=0;axis<3;++axis) {
+        double maximum=0.;
+        for(size_t v=0;v<data.vertex_count;++v) {
+            const auto value=data.positions[3*v+axis];
+            assert(value>=-1e-12);
+            if(value>maximum) maximum=value;
+        }
+        assert(std::abs(maximum-bounds[axis])<1e-12);
+    }
+}
+int main(int argc, char** argv) {
+    planar_contract("planar.step",1000,0.001,6e-6,0.01,0.02,0.03);
+    if(argc == 2) planar_contract(argv[1],121,1.,0.000098322384,0.0508,0.0254,0.0762);
+    faceted_contract();
     appearance_contract();
     scene_contract();
     mesh_contract();

@@ -16,7 +16,7 @@ namespace tessstep {
 enum class ErrorCode : uint32_t {
     invalid_argument = TS_INVALID_ARGUMENT, parse_error = TS_PARSE_ERROR,
     unsupported = TS_UNSUPPORTED, resource_limit = TS_RESOURCE_LIMIT,
-    not_found = TS_NOT_FOUND, internal_error = TS_INTERNAL_ERROR, invalid_mesh = TS_INVALID_MESH, invalid_scene = TS_INVALID_SCENE, invalid_appearance = TS_INVALID_APPEARANCE
+    not_found = TS_NOT_FOUND, internal_error = TS_INTERNAL_ERROR, invalid_mesh = TS_INVALID_MESH, invalid_scene = TS_INVALID_SCENE, invalid_appearance = TS_INVALID_APPEARANCE, invalid_geometry = TS_INVALID_GEOMETRY
 };
 enum class Severity : uint32_t { error = TS_SEVERITY_ERROR, warning = TS_SEVERITY_WARNING };
 struct Diagnostic {
@@ -24,9 +24,19 @@ struct Diagnostic {
     uint64_t entity_id, start_offset, end_offset, line, column;
     std::string code, message;
 };
+enum class ImportStage : uint32_t {
+    none = TS_IMPORT_STAGE_NONE, profile = TS_IMPORT_STAGE_PROFILE,
+    geometry = TS_IMPORT_STAGE_GEOMETRY, topology = TS_IMPORT_STAGE_TOPOLOGY,
+    tessellation = TS_IMPORT_STAGE_TESSELLATION
+};
+struct ImportFailure {
+    ImportStage stage = ImportStage::none;
+    uint64_t entity_id = 0, start_offset = 0, end_offset = 0;
+};
 struct Error {
     ErrorCode code;
     std::vector<Diagnostic> diagnostics;
+    ImportFailure import_failure{};
 };
 template<class T> class [[nodiscard]] Result {
     std::variant<T, Error> data_;
@@ -76,6 +86,15 @@ inline Result<std::vector<Diagnostic>> copy_report(const Report& report) {
     return result;
 }
 }
+using FacetedOptions = ts_faceted_options;
+inline FacetedOptions default_faceted_options() noexcept {
+    FacetedOptions options{}; ts_faceted_options_init(&options); return options;
+}
+using PlanarOptions = ts_planar_options;
+inline PlanarOptions default_planar_options() noexcept {
+    PlanarOptions options{}; ts_planar_options_init(&options); return options;
+}
+class Mesh;
 class Document {
     std::unique_ptr<ts_document, detail::DocumentDeleter> handle_;
     explicit Document(ts_document* handle) noexcept : handle_(handle) {}
@@ -104,6 +123,11 @@ public:
         }
         return error;
     }
+    // Explicit root and source units. The owned result survives this document.
+    Result<Mesh> tessellate_faceted(uint64_t entity_id, double metres_per_unit,
+        const FacetedOptions* options = nullptr) const;
+    Result<Mesh> tessellate_planar(uint64_t entity_id, double metres_per_unit,
+        const PlanarOptions* options = nullptr) const;
     // A moved-from Document is safe to destroy, reassign or query. Queries return
     // invalid_argument. Concurrent const queries require the wrapper to stay alive.
     Result<DocumentInfo> info() const {
@@ -164,6 +188,7 @@ public:
 };
 class Mesh {
     friend class Scene;
+    friend class Document;
     std::unique_ptr<ts_mesh, detail::MeshDeleter> handle_;
     explicit Mesh(ts_mesh* raw) noexcept : handle_(raw) {}
 public:
@@ -190,6 +215,38 @@ public:
         return MeshView(handle_.get(), data);
     }
 };
+
+inline Result<Mesh> Document::tessellate_faceted(uint64_t entity_id, double metres_per_unit,
+    const FacetedOptions* options) const {
+    ts_mesh* raw = nullptr;
+    ts_import_error failure{};
+    const auto status = ts_document_tessellate_faceted(handle_.get(), entity_id,
+        metres_per_unit, options, &raw, &failure);
+    Mesh mesh(raw);
+    if (status != TS_OK) {
+        auto error = detail::error(status);
+        error.import_failure = {static_cast<ImportStage>(failure.stage), failure.entity_id,
+            failure.start_offset, failure.end_offset};
+        return error;
+    }
+    return mesh;
+}
+
+inline Result<Mesh> Document::tessellate_planar(uint64_t entity_id, double metres_per_unit,
+    const PlanarOptions* options) const {
+    ts_mesh* raw = nullptr;
+    ts_import_error failure{};
+    const auto status = ts_document_tessellate_planar(handle_.get(), entity_id,
+        metres_per_unit, options, &raw, &failure);
+    Mesh mesh(raw);
+    if (status != TS_OK) {
+        auto error = detail::error(status);
+        error.import_failure = {static_cast<ImportStage>(failure.stage), failure.entity_id,
+            failure.start_offset, failure.end_offset};
+        return error;
+    }
+    return mesh;
+}
 
 using SceneOptions = ts_scene_options;
 using SceneInstance = ts_scene_instance;

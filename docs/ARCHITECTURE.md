@@ -4,7 +4,8 @@ Status: repository foundation, Part 21 vertical slice, EXPRESS frontend, Rust ge
 and runtime reflection, plus a bounded product semantics slice, checked math and
 independent analytic/NURBS curves and surfaces, structural topology, supplied-pcurve UV
 reconstruction, shared-edge sampling, adaptive regular-face tessellation and owned
-manifold shell/solid meshes. STEP geometry adaptation and industrial hardening remain pending.
+manifold shell/solid meshes and selected planar faceted STEP import. General curved
+STEP adaptation and industrial hardening remain pending.
 
 ## Implemented dependency graph
 
@@ -451,3 +452,35 @@ evaluated maps remain separate; independent caller graphs can retain missing pla
 which expansion explicitly rejects. Corpus acceptance now checks evaluated matrices
 and uncertainty values as well as graph counts. Full AP validation and STEP geometry
 adaptation remain distinct stages.
+
+
+## First STEP geometry integration
+
+`tessstep-import` is an explicit composition boundary above model/schema,
+math/curves/surfaces/topology, trim/tessellate and mesh. It supplies a generated,
+original reduced faceted profile; the generic model decoder now offers bounded
+`decode_reachable` without changing whole-document validation semantics. Traversal
+is iterative and cycle-safe, charges work, and preserves reference-owner source
+locations. No unsupported schema diagnostics are removed. Named attributes and
+resolved type identities drive adaptation; no tessellator reads STEP records.
+
+The adapter selects one explicit root, converts caller-supplied units, checks planar
+polygons, and builds canonical topology and linear pcurves. The independent solid
+pipeline validates and tessellates this model. Point identity determines shared
+vertices; point-pair identity determines polygon edges. Geometry is never healed.
+`Mesh::into_data` transfers owned buffers for source-face remapping; `Mesh::new`
+revalidates the returned mesh. `tessstep` reexports this crate, and the isolated C
+bridge composes it with existing mesh handles. No new unsafe kernel code or external
+production dependency is introduced. Per-stage budgets are explicit; schema
+scanning includes unrelated input records in work accounting, but not validation.
+The selected-root result never implies whole-document/AP or assembly validity.
+
+
+The planar edge-based extension reuses the import composition boundary and all
+independent geometry/mesh code. A separate generated reduced profile describes
+straight-edge B-reps. Explicit physical omitted-slot mappings are opt-in to scoped
+decoding; ordinary structural validation remains unchanged. The adapter interprets
+those endpoints through the referenced edge and orientation, validates LINE support
+and trimming, and preserves physical VERTEX_POINT/EDGE_CURVE identity. It never
+welds separate topology entities or replaces invalid curves with endpoint chords.
+The C bridge adds two functions and an options type alias with no layout changes.

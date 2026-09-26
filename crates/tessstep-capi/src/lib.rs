@@ -2,6 +2,8 @@
 //! Opaque handles expose no Rust representation. This is the only unsafe crate.
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod import;
+pub use import::*;
 mod appearance;
 pub use appearance::*;
 mod mesh;
@@ -23,6 +25,7 @@ pub const TS_INTERNAL_ERROR: u32 = 6;
 pub const TS_INVALID_MESH: u32 = 7;
 pub const TS_INVALID_SCENE: u32 = 8;
 pub const TS_INVALID_APPEARANCE: u32 = 9;
+pub const TS_INVALID_GEOMETRY: u32 = 10;
 
 #[derive(Debug)]
 pub struct TsDocument {

@@ -24,7 +24,7 @@ lines += ['', 'The JSON manifest tracks physical syntax, the EXPRESS frontend an
           'Structural schema decoding and product graph adaptation are separate checked stages.',
           'Independent analytic/NURBS curves and surfaces are tested separately from STEP geometry adaptation.',
           'Constructed topology, UV loops, adaptive tessellation and owned mesh checks are independent stages.',
-          'Full AP conformance, STEP geometry adaptation and industrial geometric hardening remain future work.', '',
+          'Selected faceted and edge-based planar STEP import is implemented; general curved import, AP conformance and industrial hardening remain future work.', '',
           'See [PART21.md](PART21.md), [ERROR_MODEL.md](ERROR_MODEL.md) and',
           '[VALIDATION.md](VALIDATION.md) for exact behavior and actual verification results.']
 content = '\n'.join(lines) + '\n'

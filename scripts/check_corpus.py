@@ -9,6 +9,7 @@ actual = {str(path.relative_to(ROOT / "corpus")).replace("\\", "/") for path in 
 actual |= {str(path.relative_to(ROOT / "corpus")).replace("\\", "/") for path in (ROOT / "corpus" / "express").glob("*/*.exp")}
 actual |= {path.relative_to(ROOT / "corpus").as_posix() for path in (ROOT / "corpus/schema").iterdir() if path.suffix in {".step", ".exp"}}
 actual |= {path.relative_to(ROOT / "corpus").as_posix() for path in (ROOT / "corpus/product").iterdir() if path.suffix in {".step", ".exp"}}
+actual |= {path.relative_to(ROOT / "corpus").as_posix() for path in (ROOT / "corpus/geometry").iterdir() if path.suffix in {".step", ".exp"}}
 assert expected == actual, "Every fixture needs provenance"
 for item in manifest["files"]:
     path = ROOT / "corpus" / item["path"]

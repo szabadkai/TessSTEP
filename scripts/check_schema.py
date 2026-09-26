@@ -24,7 +24,11 @@ def main():
         (work / "Cargo.toml").write_text('[package]\nname="schema-validator"\nversion="0.0.0"\nedition="2024"\n[workspace]\n[dependencies]\n' + dependencies + '\n', encoding="utf-8")
         subprocess.run(["cargo", "build", "--offline", "--release", "--manifest-path", str(work / "Cargo.toml"), "--target-dir", str(work / "target")], check=True)
         validator = work / "target/release" / ("schema-validator" + suffix)
-        subprocess.run([sys.executable, str(ROOT / "scripts/corpus.py"), "--corpus", str(ROOT / "corpus/schema"), "--output", str(ROOT / "reports/schema"), "--baseline", str(work / "no-baseline.json"), "--schema-validator", str(validator), "--schema-name", "sample"], cwd=ROOT, check=True)
+        expectations = {Path(item["path"]).name: {"stages": {"schema": item["schema"]}}
+                        for item in json.loads((ROOT / "corpus/manifest.json").read_text(encoding="utf-8"))["files"]
+                        if item["path"].startswith("schema/") and item["path"].endswith(".step")}
+        (work / "expectations.json").write_text(json.dumps({"cases": expectations}), encoding="utf-8")
+        subprocess.run([sys.executable, str(ROOT / "scripts/corpus.py"), "--corpus", str(ROOT / "corpus/schema"), "--output", str(ROOT / "reports/schema"), "--baseline", str(work / "no-baseline.json"), "--expectations", str(work / "expectations.json"), "--title", "Authored schema structure", "--repeat", "2", "--schema-validator", str(validator), "--schema-name", "sample"], cwd=ROOT, check=True)
     report = json.loads((ROOT / "reports/schema/latest.json").read_text())
     expected = {Path(item["path"]).name: item["schema"] for item in json.loads((ROOT / "corpus/manifest.json").read_text())["files"] if item["path"].startswith("schema/") and item["path"].endswith(".step")}
     actual = {path: case["stages"]["schema"] for case in report["cases"] for path in case["paths"]}

@@ -1,0 +1,72 @@
+(* Original bounded import profile, not an ISO schema. Matches the physical
+   attributes used by planar edge-based B-rep geometry; excludes general AP rules. *)
+SCHEMA tessstep_planar;
+ENTITY representation_item;
+ name : STRING;
+END_ENTITY;
+ENTITY cartesian_point SUBTYPE OF (representation_item);
+ coordinates : LIST [3:3] OF REAL;
+END_ENTITY;
+ENTITY direction SUBTYPE OF (representation_item);
+ direction_ratios : LIST [3:3] OF REAL;
+END_ENTITY;
+ENTITY axis2_placement_3d SUBTYPE OF (representation_item);
+ location : cartesian_point;
+ axis : OPTIONAL direction;
+ ref_direction : OPTIONAL direction;
+END_ENTITY;
+ENTITY plane SUBTYPE OF (representation_item);
+ position : axis2_placement_3d;
+END_ENTITY;
+ENTITY vertex_point SUBTYPE OF (representation_item);
+ vertex_geometry : cartesian_point;
+END_ENTITY;
+ENTITY vector SUBTYPE OF (representation_item);
+ orientation : direction;
+ magnitude : REAL;
+END_ENTITY;
+ENTITY line SUBTYPE OF (representation_item);
+ pnt : cartesian_point;
+ dir : vector;
+END_ENTITY;
+ENTITY edge SUBTYPE OF (representation_item);
+ edge_start : vertex_point;
+ edge_end : vertex_point;
+END_ENTITY;
+ENTITY edge_curve SUBTYPE OF (edge);
+ edge_geometry : line;
+ same_sense : BOOLEAN;
+END_ENTITY;
+(* The importer declares EDGE_START/EDGE_END as physical * slots for this subtype.
+   Their semantic endpoints are taken from EDGE_ELEMENT using ORIENTATION.
+   This profile does not claim general EXPRESS derived-redeclaration evaluation. *)
+ENTITY oriented_edge SUBTYPE OF (edge);
+ edge_element : edge_curve;
+ orientation : BOOLEAN;
+END_ENTITY;
+ENTITY edge_loop SUBTYPE OF (representation_item);
+ edge_list : LIST [3:?] OF oriented_edge;
+END_ENTITY;
+ENTITY face_bound SUBTYPE OF (representation_item);
+ bound : edge_loop;
+ orientation : BOOLEAN;
+END_ENTITY;
+ENTITY face_outer_bound SUBTYPE OF (face_bound);
+END_ENTITY;
+ENTITY face SUBTYPE OF (representation_item);
+ bounds : SET [1:?] OF face_bound;
+END_ENTITY;
+ENTITY face_surface SUBTYPE OF (face);
+ face_geometry : plane;
+ same_sense : BOOLEAN;
+END_ENTITY;
+ENTITY advanced_face SUBTYPE OF (face_surface);
+END_ENTITY;
+ENTITY closed_shell SUBTYPE OF (representation_item);
+ cfs_faces : SET [1:?] OF face_surface;
+END_ENTITY;
+ENTITY manifold_solid_brep SUBTYPE OF (representation_item);
+ outer : closed_shell;
+END_ENTITY;
+
+END_SCHEMA;

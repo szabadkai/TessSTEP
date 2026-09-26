@@ -57,6 +57,7 @@ def main():
         # Authored fixtures only; external CAD inputs are never shipped.
         shutil.copytree(ROOT / "corpus/part21", package / "examples/part21")
         shutil.copytree(ROOT / "corpus/express", package / "examples/express")
+        shutil.copytree(ROOT / "corpus/geometry", package / "examples/geometry")
         parsed = subprocess.check_output([str(package / "bin" / ("stepdump" + suffix)), "--json", str(package / "examples/part21/valid/empty.step")], cwd=temporary)
         if json.loads(parsed)["document"] is None:
             raise ValueError("Packaged stepdump failed its fixture smoke test")
@@ -71,8 +72,8 @@ def main():
         verify_installed(package)
         (package / "PACKAGE.json").write_text(json.dumps({"version": version, "target": args.target,
             "commit": os.environ.get("GITHUB_SHA", "local"), "tools": ["stepdump", "expressc"],
-            "c_abi": {"version": 1, "scope": "physical_documents", "linkage": "shared"},
-            "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP"}, "tessellation": "not_implemented"}, indent=2) + "\n", encoding="utf-8")
+            "c_abi": {"version": 1, "scope": "documents_meshes_scenes_appearance_planar_import", "linkage": "shared"},
+            "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP"}, "tessellation": "planar_and_faceted_brep_explicit_root_and_units"}, indent=2) + "\n", encoding="utf-8")
         if suffix:
             archive = output / (name + ".zip")
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as stream:

@@ -1,6 +1,7 @@
 #include <tessstep/tessstep.h>
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
 
 /* Frozen ABI 1 layouts on the supported 64-bit targets. Independent of Rust. */
 _Static_assert(sizeof(ts_status) == 4, "status width");
@@ -171,7 +172,50 @@ static void appearance_contract(void) {
     assert(ts_appearance_retain(NULL)==TS_INVALID_ARGUMENT);ts_appearance_release(NULL);
     ts_scene_release(retained);
 }
+static void solid_import_contract(int planar) {
+    _Static_assert(sizeof(ts_faceted_options) == 80, "faceted options layout");
+    _Static_assert(offsetof(ts_faceted_options, max_work) == 48, "faceted budgets offset");
+    _Static_assert(sizeof(ts_import_error) == 32, "import error layout");
+    ts_status (TS_CALL *convert)(const ts_document*, uint64_t, double, const ts_faceted_options*, ts_mesh**, ts_import_error*) =
+        planar ? ts_document_tessellate_planar : ts_document_tessellate_faceted;
+    FILE *file = fopen(planar ? "planar.step" : "faceted.step", "rb");
+    assert(file);
+    uint8_t bytes[16384];
+    size_t count = fread(bytes,1,sizeof(bytes),file);
+    assert(!ferror(file) && count < sizeof(bytes));
+    fclose(file);
+    ts_document *doc = NULL;
+    ts_diagnostics *report = NULL;
+    assert(ts_document_parse(bytes,count,NULL,&doc,&report) == TS_OK);
+    ts_diagnostics_release(report);
+    ts_faceted_options options;
+    assert((planar ? ts_planar_options_init(&options) : ts_faceted_options_init(&options)) == TS_OK);
+    ts_mesh *mesh = NULL;
+    ts_import_error error;
+    assert(convert(doc,1000,0.001,&options,&mesh,&error) == TS_OK);
+    assert(error.stage == TS_IMPORT_STAGE_NONE);
+    ts_mesh_view view;
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK);
+    assert(view.vertex_count == 8 && view.triangle_count == 12 && view.boundary_edges == 0);
+    assert(view.signed_volume > 0.000005999 && view.signed_volume < 0.000006001);
+    assert(view.face_ids[0] == 106);
+    ts_mesh *failed = mesh;
+    options.max_work = 0;
+    assert(convert(doc,1000,0.001,&options,&failed,&error) == TS_RESOURCE_LIMIT);
+    assert(failed == NULL && error.stage == TS_IMPORT_STAGE_PROFILE);
+    assert(convert(doc,1000,0.,NULL,&failed,&error) == TS_INVALID_ARGUMENT);
+    assert(failed == NULL && error.stage == TS_IMPORT_STAGE_NONE);
+    assert(convert(doc,1,0.001,NULL,&failed,&error) == TS_UNSUPPORTED);
+    assert(error.entity_id == 1 && error.end_offset > error.start_offset);
+    assert(convert(doc,9999,0.001,NULL,&failed,NULL) == TS_NOT_FOUND);
+    assert(convert(NULL,1000,0.001,NULL,&failed,&error) == TS_INVALID_ARGUMENT);
+    ts_document_release(doc);
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK && view.vertex_count == 8);
+    ts_mesh_release(mesh);
+}
 int main(void) {
+    solid_import_contract(0);
+    solid_import_contract(1);
     appearance_contract();
     scene_contract();
     mesh_contract();

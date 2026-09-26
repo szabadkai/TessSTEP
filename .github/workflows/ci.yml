@@ -32,7 +32,8 @@ jobs:
           python-version: '3.12'
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-      - run: cargo test --workspace --locked
+      - name: Rust tests and per-test evidence
+        run: python scripts/check_kernel.py
       - run: cargo build --workspace --release --locked
       - run: cargo build --workspace --locked
       - run: python scripts/check_architecture.py
@@ -42,6 +43,8 @@ jobs:
       - run: python scripts/check_express.py
       - run: python scripts/check_schema.py
       - run: python scripts/check_product.py
+      - run: python scripts/check_geometry.py
+      - run: python scripts/check_metamorphic.py
       - run: python scripts/conformance.py --check
       - name: C/C++ consumer sanitizers
         if: runner.os != 'Windows'
@@ -59,6 +62,21 @@ jobs:
           path: dist/*
           retention-days: 7
           if-no-files-found: error
+      - name: Summarize authored corpus suites
+        if: always()
+        run: python scripts/corpus_summary.py --report reports/schema/latest.json --report reports/product/latest.json --report reports/generated/latest.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: test-reports-${{ matrix.os }}
+          path: |
+            reports/kernel/
+            reports/schema/
+            reports/product/
+            reports/geometry/
+            reports/generated/
+          retention-days: 14
+          if-no-files-found: warn
   msrv:
     name: Minimum Rust 1.85
     runs-on: ubuntu-24.04
@@ -103,7 +121,13 @@ jobs:
       - name: Download and verify pinned corpus
         run: python scripts/fetch_corpus.py --output target/step-corpus
       - name: Test every unique corpus input against the committed baseline
-        run: python scripts/corpus.py --corpus target/step-corpus --check
+        run: python scripts/corpus.py --corpus target/step-corpus --check --repeat 2
+      - name: Verify unmodified planar exporter import in Rust and installed C++
+        env:
+          TESSSTEP_CORPUS: target/step-corpus
+        run: |
+          python scripts/check_geometry.py --require-external
+          python scripts/check_capi.py --sanitizers
       - name: Write Actions summary and JUnit results
         if: always()
         run: python scripts/corpus_summary.py
@@ -111,6 +135,8 @@ jobs:
         if: always()
         with:
           name: corpus-report
-          path: reports/corpus/
+          path: |
+            reports/corpus/
+            reports/geometry/
           retention-days: 14
           if-no-files-found: warn

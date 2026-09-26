@@ -9,7 +9,10 @@ mod hierarchy;
 mod select;
 
 use crate::Document;
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 use tessstep_part21::{EntityId, EntityKind, SourceSpan, StepValue, ValueKind};
 use tessstep_schema::{
     AggregateKind, Attribute, AttributeKind, Builtin, DeclarationId, DeclarationKind, Domain,
@@ -111,6 +114,55 @@ pub fn decode<'a>(
     schema_name: &str,
     limits: Limits,
 ) -> Result<DecodedDocument<'a>, Error> {
+    decode_scope(document, schemas, schema_name, limits, None, &[])
+}
+
+/// Structurally decode only the local entity-reference closure of explicit roots.
+/// Unrelated records are not validated. FILE_SCHEMA is not interpreted and this
+/// result does not establish schema conformance of the complete document.
+/// Traversal is iterative, cycle-safe, and shares the decoding work budget.
+pub fn decode_reachable<'a>(
+    document: &'a Document,
+    schemas: &'a SchemaSet,
+    schema_name: &str,
+    roots: &[EntityId],
+    limits: Limits,
+) -> Result<DecodedDocument<'a>, Error> {
+    decode_scope(document, schemas, schema_name, limits, Some(roots), &[])
+}
+
+/// An explicitly declared physical-profile slot that must contain `*`.
+/// The profile adapter, not the structural decoder, supplies its semantic value.
+/// This is not general EXPRESS DERIVE evaluation or schema conformance.
+#[derive(Clone, Copy, Debug)]
+pub struct OmittedSlot {
+    pub entity: DeclarationId,
+    pub attribute: &'static str,
+}
+
+/// Decode a selected reference closure under an explicit physical mapping profile.
+/// Only declared slots accept `*`, and those slots reject every other value.
+/// Ordinary `decode` and `decode_reachable` never permit this override. Metadata
+/// rules/unsupported diagnostics are still checked without suppression.
+pub fn decode_reachable_profile<'a>(
+    document: &'a Document,
+    schemas: &'a SchemaSet,
+    schema_name: &str,
+    roots: &[EntityId],
+    omitted: &[OmittedSlot],
+    limits: Limits,
+) -> Result<DecodedDocument<'a>, Error> {
+    decode_scope(document, schemas, schema_name, limits, Some(roots), omitted)
+}
+
+fn decode_scope<'a>(
+    document: &'a Document,
+    schemas: &'a SchemaSet,
+    schema_name: &str,
+    limits: Limits,
+    roots: Option<&[EntityId]>,
+    omitted: &[OmittedSlot],
+) -> Result<DecodedDocument<'a>, Error> {
     let mut cx = Context {
         schemas,
         schema: None,
@@ -133,6 +185,25 @@ pub fn decode<'a>(
         return Err(cx.error(ErrorKind::UnknownSchema, "selected schema is not supplied"));
     }
     cx.check_diagnostics()?;
+    let mut slots = BTreeSet::new();
+    for slot in omitted {
+        cx.tick()?;
+        let mut matches = 0;
+        for owner in cx.hierarchy(slot.entity)? {
+            for attribute in cx.local_attributes(owner)? {
+                cx.tick()?;
+                if attribute.name == slot.attribute {
+                    matches += 1;
+                }
+            }
+        }
+        if matches != 1 || !slots.insert((slot.entity, slot.attribute)) {
+            return Err(cx.error(
+                ErrorKind::InvalidMetadata,
+                "ambiguous, missing or duplicate physical-profile slot",
+            ));
+        }
+    }
     for section in document.data_sections() {
         cx.tick()?;
         if !section.parameters.is_empty() {
@@ -143,8 +214,69 @@ pub fn decode<'a>(
             ));
         }
     }
-    // Resolve all identities before inspecting values, allowing forward references.
+    let mut selected = BTreeSet::new();
+    if let Some(roots) = roots {
+        let mut pending = Vec::new();
+        for &root in roots {
+            cx.tick()?;
+            if selected.insert(root) {
+                pending.push(root);
+            }
+        }
+        while let Some(id) = pending.pop() {
+            cx.entity = Some(id);
+            cx.source = document.entities().get(id).map(|e| e.source);
+            cx.tick()?;
+            let entity = document.entities().get(id).ok_or_else(|| {
+                cx.error(
+                    ErrorKind::MissingReference,
+                    "closure references a nonlocal entity",
+                )
+            })?;
+            for record in entity.kind.records() {
+                cx.tick()?;
+                let mut values = Vec::new();
+                for value in &record.parameters {
+                    cx.tick()?;
+                    values.push(value);
+                }
+                while let Some(value) = values.pop() {
+                    cx.tick()?;
+                    cx.source = Some(value.source);
+                    match &value.kind {
+                        ValueKind::Reference(target) => {
+                            if document.entities().get(*target).is_none() {
+                                return Err(cx.error(
+                                    ErrorKind::MissingReference,
+                                    "closure references a nonlocal entity",
+                                ));
+                            }
+                            if selected.insert(*target) {
+                                pending.push(*target);
+                            }
+                        }
+                        ValueKind::Aggregate(items) => {
+                            for item in items {
+                                cx.tick()?;
+                                values.push(item);
+                            }
+                        }
+                        ValueKind::Typed { value, .. } => values.push(value),
+                        _ => (),
+                    }
+                }
+            }
+        }
+    }
+    let mut instances = Vec::new();
     for entity in document.entities().iter() {
+        cx.tick()?;
+        if roots.is_none() || selected.contains(&entity.id) {
+            instances.push(entity);
+        }
+    }
+    // Resolve all identities before inspecting values, allowing forward references.
+    for entity in &instances {
         cx.entity = Some(entity.id);
         cx.source = Some(entity.source);
         cx.tick()?;
@@ -153,7 +285,7 @@ pub fn decode<'a>(
     }
     let mut entities = Vec::new();
     let mut by_id = BTreeMap::new();
-    for entity in document.entities().iter() {
+    for entity in &instances {
         cx.entity = Some(entity.id);
         cx.attribute = None;
         cx.source = Some(entity.source);
@@ -186,7 +318,28 @@ pub fn decode<'a>(
             for ((owner, attribute), value) in attributes.into_iter().zip(&record.parameters) {
                 cx.attribute = Some(attribute.name);
                 cx.source = Some(value.source);
-                cx.value(&attribute.domain, value, attribute.optional, 0)?;
+                let mut placeholder = false;
+                for slot in omitted {
+                    cx.tick()?;
+                    if slot.attribute == attribute.name {
+                        for index in 0..cx.types[&entity.id].len() {
+                            cx.tick()?;
+                            if cx.types[&entity.id][index] == slot.entity {
+                                placeholder = true;
+                            }
+                        }
+                    }
+                }
+                if placeholder {
+                    if !matches!(value.kind, ValueKind::Omitted) {
+                        return Err(cx.error(
+                            ErrorKind::TypeMismatch,
+                            "physical-profile slot requires a derived marker",
+                        ));
+                    }
+                } else {
+                    cx.value(&attribute.domain, value, attribute.optional, 0)?;
+                }
                 views.push(AttributeView {
                     owner,
                     declaration: attribute,

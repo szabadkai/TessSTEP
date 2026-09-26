@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Install, relocate, and test ABI 1 C/C++ consumers without Cargo in their PATH."""
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -11,6 +13,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SYMBOLS = {
+    "ts_planar_options_init", "ts_document_tessellate_planar",
+    "ts_faceted_options_init", "ts_document_tessellate_faceted",
     "ts_appearance_options_init", "ts_appearance_create", "ts_appearance_retain", "ts_appearance_release",
     "ts_appearance_get_info", "ts_appearance_material_at", "ts_appearance_binding_at",
     "ts_appearance_resolve_triangle", "ts_appearance_get_scene",
@@ -71,6 +75,15 @@ def verify_installed(package, *, sanitizers=False):
         shutil.copytree(package, relocated)
         source = work / "consumer"
         shutil.copytree(ROOT / "tests/capi", source)
+        shutil.copy2(ROOT / "corpus/geometry/box.step", source / "faceted.step")
+        shutil.copy2(ROOT / "corpus/geometry/planar-box.step", source / "planar.step")
+        external = Path(os.environ.get("TESSSTEP_CORPUS", str(Path.home() / "step-corpus"))) / "vendor/foxtrot/examples/cuboid.step"
+        if external.is_file():
+            expected = json.loads((ROOT / "corpus/geometry/external-planar.json").read_text())
+            if hashlib.sha256(external.read_bytes()).hexdigest() != expected["sha256"]:
+                raise RuntimeError("Unreviewed external cuboid bytes; do not refresh the hash without review")
+            # Test-only temporary copy; never installed or added to release archives.
+            shutil.copy2(external, source / "external-cuboid.step")
         env = os.environ.copy()
         # Stub executables make accidental Rust toolchain use an explicit failure,
         # including on machines where Cargo shares a directory with C/C++ tools.

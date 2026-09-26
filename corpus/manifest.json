@@ -555,6 +555,118 @@
           0.0
         ]
       ]
+    },
+    {
+      "path": "geometry/box.step",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "d4ca6b35eaf9e47f3508e69fb5eddc9bfd49c641eb330e6ca81af8c95ad3ad51",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/curved.step",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "47097d834f5548c0e5b652e1a5be7322252d3d8cce034c4549399a5f16cdd4d4",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/duplicate-point.step",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "f6d55ef25f98de4373a0a2693ca1fe019ab5ba347a28aa5c9c68ccb681dc3fd1",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/faceted.exp",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "cbda22fb5d1c15b8af68e98ee4d7daea42993ae8db35cbfeb724951402a05029",
+      "syntax": "express-profile"
+    },
+    {
+      "path": "geometry/missing-point.step",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "2f0758cfdce3bbe849cc8d74e3bfb7a8f2f45eec667cf17118828d376164f4e1",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/nonplanar.step",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "76f49b8db8758313c0d2bc64a5c15b62204703f2df33d8c1dc08077ffa70dcc5",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/open-shell.step",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "b7540610d98addf02f54d436dcb2eaad091fffe6fabb26d1492b7c895dcb4e8c",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/tube.step",
+      "source": "Original TessSTEP planar faceted import profile and geometry fixture; authored here, no third-party CAD or ISO schema text copied.",
+      "license": "MIT",
+      "sha256": "285a4a75c71eb019fb924cbafb995575ed821c14bb368931c1615a3e2e2e23ce",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar-box.step",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "b8f10f4466ca7b9d729e263d4db022e61a10543d6d1bdaa7ad189980bcafd233",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar-curved.step",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "a80406c090654af097463c2e642834e393ac2fea17df279f08016341332d7069",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar-off-line.step",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "420defb304a248c3d12c41ee60c9d0de41b99e443e089e3e94fc2814929597be",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar-open-shell.step",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "c933b324d03a78761822184ef34342b9bf2975287e75f901b7aa89cad755707e",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar-placeholder.step",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "c90ad6e974e895f176c21caf1d2a02ee76c6e7256c7e1bf989557eea3e1821e0",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar-sense.step",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "a3eefb35bbf1b32a6f421c99c2197c92ecb089ed693fed20c966b0295bac5b30",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar-tube.step",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "5d8f71e08c8d9fba98a3bf5d82f3d0e3e4bbdac3f10fed8f435fbd03b0ce2243",
+      "syntax": "valid"
+    },
+    {
+      "path": "geometry/planar.exp",
+      "source": "Original TessSTEP planar B-rep profile/fixture; authored here, no third-party CAD or ISO schema copied.",
+      "license": "MIT",
+      "sha256": "faa3259672b2dd2da8a589549b019bc249fbb66cc3585402c68e650ae8b86b24",
+      "syntax": "express-profile"
     }
   ]
 }

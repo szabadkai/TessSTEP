@@ -4,8 +4,9 @@
 //! deterministic Rust generation and static schema reflection.
 //! A bounded structural instance decoder is available in `model::decode`.
 //! A bounded product graph adapter is available in `ap242`, with an independent
-//! owned model in `product`. No AP conformance, STEP geometry adaptation or
-//! STEP-to-mesh conversion is implemented. Product placements and bounded assembly expansion are implemented. Independent
+//! owned model in `product`. `import` provides selected planar FACETED_BREP and
+//! edge-based MANIFOLD_SOLID_BREP import with explicit units; curved STEP geometry and AP
+//! conformance remain unsupported. Product placements and bounded assembly expansion are implemented. Independent
 //! coordinates, units, tolerances and affine transforms are available in `math`;
 //! analytic lines/conics, derivatives, parameter spans and NURBS are in `curves`.
 //! Analytic and tensor-product NURBS evaluators are available in `surfaces`.
@@ -49,3 +50,5 @@ pub use tessstep_topology as topology;
 pub use tessstep_trim as trim;
 
 pub use tessstep_mesh as mesh;
+
+pub use tessstep_import as import;

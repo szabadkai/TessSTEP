@@ -24,11 +24,18 @@ their upstream licenses are not replaced by TessSTEP's MIT license.
 
 The Actions run summary shows outcome counts and baseline changes. Download
 `corpus-report` from that run to inspect `index.html`, `latest.json`,
-`summary.md` and `junit.xml`. JUnit represents compatibility regressions,
+`summary.md`, `cases.csv` and `junit.xml`. JUnit represents compatibility regressions,
 not full STEP conformance. A known rejection can be a passing regression test.
 Acquisition failures, missing inputs, crashes and timeouts fail CI; reporting
 and artifact upload run even after a test failure. Historical runs and their
 summaries remain visible in Actions; downloadable reports expire after 14 days.
+
+Each stable OS job also uploads `test-reports-<os>` for 14 days, containing
+per-test Rust evidence and authored schema, product and generated transformation
+corpora. Format-2 reports distinguish expectations from baseline compatibility
+and unreviewed observations, with stage/source coverage and failure details.
+Physical parsing runs twice to detect nondeterminism. Product reports include
+numerical relationship/count expectations, so those failures appear in JUnit.
 
 The nightly workflow performs bounded instrumented fuzzing, release-mode tests
 and benchmarks. These jobs also support manual dispatch. The corpus job runs
@@ -61,8 +68,8 @@ Packaging installs and relocates the C/C++ SDK, compiles/runs standalone C11/C++
 consumers in both Debug and Release, and checks the exact exported ABI symbol set.
 No Rust toolchain is used by those consumers. The existing Linux/Windows/macOS release
 matrix runs this gate before creating archives; Linux/macOS CI also instruments native
-consumers with ASan/UBSan. Shared linkage is the only packaged configuration. Schema
-operations, geometry and mesh views are not exposed by the public ABI yet. Local
+consumers with ASan/UBSan. Shared linkage is the only packaged configuration. General schema and B-rep construction operations remain unavailable. Mesh views,
+scenes, appearance and selected faceted and edge-based planar STEP-to-mesh conversion are exposed. Local
 verification does not substitute for the cross-platform CI results in `C_API.md`.
 
 Local equivalents:

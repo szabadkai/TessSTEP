@@ -26,6 +26,7 @@ dependencies = [
  "tessstep-codegen",
  "tessstep-curves",
  "tessstep-express",
+ "tessstep-import",
  "tessstep-math",
  "tessstep-mesh",
  "tessstep-model",
@@ -53,6 +54,8 @@ dependencies = [
 name = "tessstep-capi"
 version = "0.1.0"
 dependencies = [
+ "tessstep-import",
+ "tessstep-math",
  "tessstep-mesh",
  "tessstep-model",
  "tessstep-part21",
@@ -75,6 +78,22 @@ dependencies = [
 [[package]]
 name = "tessstep-express"
 version = "0.1.0"
+
+[[package]]
+name = "tessstep-import"
+version = "0.1.0"
+dependencies = [
+ "tessstep-curves",
+ "tessstep-math",
+ "tessstep-mesh",
+ "tessstep-model",
+ "tessstep-part21",
+ "tessstep-schema",
+ "tessstep-surfaces",
+ "tessstep-tessellate",
+ "tessstep-topology",
+ "tessstep-trim",
+]
 
 [[package]]
 name = "tessstep-math"

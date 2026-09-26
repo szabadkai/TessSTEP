@@ -1,5 +1,11 @@
 # Milestones
 
+**Integration update:** selected planar `FACETED_BREP` and straight-edge
+`MANIFOLD_SOLID_BREP` → validated geometry → owned
+solid mesh is now available in Rust/C/C++. See [STEP_IMPORT.md](STEP_IMPORT.md) for
+explicit units, reduced-profile scope and evidence. The milestone records below
+describe their delivery-time scope; general curved STEP adaptation remains pending.
+
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
 vertical slice, Milestone 2 EXPRESS frontend, Milestone 3 Rust bindings/reflection and
 Milestone 4 structural schema decoding, each with explicit conformance limits.

@@ -1,3 +1,107 @@
+# Edge-based planar STEP import — 2026-09-26
+
+Added selected-root `MANIFOLD_SOLID_BREP` import with `ADVANCED_FACE`, `PLANE`,
+`EDGE_LOOP`, `ORIENTED_EDGE`, straight `EDGE_CURVE` and `VERTEX_POINT` topology.
+The adapter preserves shared entity identity, trims the declared LINE geometry,
+composes edge/bound/face orientation and rejects contradictions without welding
+or healing. Explicit physical-profile metadata accepts only `*` in the two derived
+ORIENTED_EDGE endpoint slots; ordinary schema decoding remains strict.
+See [STEP_IMPORT.md](STEP_IMPORT.md) for scope and usage.
+
+Observed locally on macOS arm64:
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | 207 tests/doctests passed |
+| Import/C ABI release tests | 21 passed |
+| Workspace fmt, Clippy and rustdoc with warnings denied | passed |
+| Architecture, authored fixture provenance and generated conformance | passed; 19 packages, 61 fixtures |
+| Python verification tests | 37 passed |
+| Planar/faceted file-stage report | 19 reviewed outcomes passed, including the required external exporter case |
+| Installed C11/C++17 consumers with ASan/UBSan | passed; relocated Debug/Release and C-only packages |
+| ABI symbol/layout checks | 38 C symbols; planar options reuse the 80-byte options layout; existing layouts unchanged |
+
+The unmodified ST-DEVELOPER-exported `foxtrot/examples/cuboid.step`, selected at
+root #121 with metre units, produces 8 vertices and 12 outward-facing triangles.
+Its extents are 0.0508 × 0.0254 × 0.0762 m and its volume is 0.000098322384 m³.
+Rust and the installed C++ package both verify these values and source face IDs;
+retained mesh views survive document and mesh-owner destruction. The pinned
+external input hash is recorded in `corpus/geometry/external-planar.json`.
+The STEP file remains outside the repository and distributable package.
+
+Authored tests cover holes, nontrivial LINE parameter ranges, reversed edge/bound/
+face orientations, record ordering, finite budgets and 300 bounded byte mutations.
+Negative cases cover off-line endpoints, contradictory sense, invalid vector
+magnitudes, broken/shared topology, invalid derived-slot markers and unsupported
+curved geometry. Both reduced profiles reproduce their generated metadata.
+The CI corpus job now requires the exporter case and runs the installed C++ test.
+Hosted cross-platform/MSRV CI has not been observed here. Native sanitizers
+instrument the consumers, not Rust internals; mutation smoke tests are not an
+instrumented fuzz campaign.
+
+`python3 scripts/corpus.py --check` passed for run
+`2026-09-26T08-33-33-474917Z`: 6,438 paths / 3,227 unique inputs in 33.145 s,
+with 2,821 clean, 38 reference-error and 368 rejected outcomes. The per-file report
+and representative clean/rejected/reference-error entries were inspected: zero
+changes from the prior run or reviewed baseline. The baseline was not refreshed.
+The full corpus runner still reports schema/product `not_configured` and geometry/
+tessellation `not_integrated`; selected-root conversion evidence is in the separate
+[geometry report](../reports/geometry/index.html). Curved import, automatic root/
+unit/assembly interpretation and general AP validation remain outside this slice.
+
+The records below describe earlier validation snapshots.
+
+# First planar faceted STEP import — 2026-09-26
+
+Implemented selected-root `FACETED_BREP` import through a generated reduced
+structural profile, metre-normalized planar geometry, canonical shared topology,
+linear pcurves and the existing solid mesh pipeline. Rust, C and C++ expose the
+same conversion. See [STEP_IMPORT.md](STEP_IMPORT.md) for the exact support contract.
+This is not general curved STEP import, automatic assembly/unit interpretation or
+an AP conformance claim.
+
+Observed locally on macOS arm64:
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | 200 tests/doctests passed, zero failures in the shared workspace snapshot |
+| Import/C ABI release tests | 15 passed |
+| Workspace fmt, Clippy and rustdoc with warnings denied | passed |
+| Architecture, authored fixture provenance and generated conformance | passed; 19 packages, 53 fixtures |
+| Python verification tests | 37 passed |
+| Faceted file-stage report | 11 reviewed outcomes passed |
+| Installed C11/C++17 consumers with ASan/UBSan | passed; relocated Debug/Release and C-only packages |
+| ABI symbol/layout checks | 36 C symbols; two additive functions, 80-byte options and 32-byte error record; previous layouts unchanged |
+
+The authored box produces 8 vertices / 12 triangles, volume 0.000006 m³; the
+through-hole fixture produces 16 vertices / 32 triangles, volume 0.00000384 m³.
+Independent checks cover bounds, outward normals, hole exclusion, original STEP
+face IDs, shared vertex/edge identity, reversed bounds/faces, placement defaults,
+record-order invariance, strict invalid-input rejection and finite budgets.
+A 500-case deterministic byte-mutation smoke run completed without panics.
+The C/C++ consumers verify meshes and retained views outlive their source documents.
+Native ASan/UBSan instruments consumers, not Rust library internals. No new hosted
+cross-platform/MSRV run or instrumented import fuzz campaign is claimed.
+
+`python3 scripts/check_geometry.py` verifies that the checked-in profile exactly
+matches generated EXPRESS metadata. [Per-file results](../reports/geometry/index.html)
+and [JSON](../reports/geometry/latest.json) distinguish profile, geometry/topology
+and tessellation. Two authored solids are accepted; five authored cases are rejected
+or unsupported as expected. Four external adversarial faceted inputs also produce
+no mesh. These checks do not establish successful general CAD-exporter import.
+
+`python3 scripts/corpus.py --check` passed. Run
+`2026-09-25T21-33-35-171537Z` examined 6,438 paths / 3,227 unique contents in 35.725 s:
+2,821 clean, 38 reference-error, 368 structured rejections; no crashes, timeouts or
+runner errors. The per-file report and both comparison sets were inspected: zero
+changes from the previous run or reviewed baseline. Representative observations
+remain clean `Ctl019.stp`, reference-error `Pf037.stp`, and rejected `Ctl001.stp`.
+The baseline was not refreshed. The full external runner still reports schema and
+product as `not_configured`, geometry and tessellation as `not_integrated`; the
+separate selected-root geometry report must not be conflated with those stages.
+
+The records below describe earlier validation snapshots.
+
 # Milestone 5 product placement completion — 2026-09-25
 
 Completed the bounded local 3D product slice: evaluated item-defined and Cartesian

@@ -1,0 +1,21 @@
+[package]
+name = "tessstep-import"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+tessstep-trim.workspace = true
+tessstep-model.workspace = true
+tessstep-part21.workspace = true
+tessstep-schema.workspace = true
+tessstep-math.workspace = true
+tessstep-curves.workspace = true
+tessstep-surfaces.workspace = true
+tessstep-topology.workspace = true
+tessstep-tessellate.workspace = true
+tessstep-mesh.workspace = true
+
+[lints]
+workspace = true

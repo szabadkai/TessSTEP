@@ -67,6 +67,12 @@ pub struct Mesh {
     statistics: Statistics,
 }
 impl Mesh {
+    /// Transfer the owned buffers for application-level attribute processing.
+    /// Reconstruct with `Mesh::new` to validate any edits.
+    pub fn into_data(self) -> MeshData {
+        self.data
+    }
+
     pub fn data(&self) -> &MeshData {
         &self.data
     }

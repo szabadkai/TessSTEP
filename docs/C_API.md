@@ -5,7 +5,8 @@ compatibility, documentation and release-testing obligations as the public Rust
 API. This is a binding architectural requirement. The first implementation exports
 ABI 1 physical-document operations, a C++17 wrapper and a shared CMake package.
 Owned triangle-mesh import/read-only views, explicit assembly asset scenes and appearance layers are also implemented. Schema decoding,
-B-rep construction and tessellation entry points are not exposed through this interface yet.
+general B-rep construction and curved STEP tessellation are not exposed yet.
+The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
 
 ## Using the first slice
 

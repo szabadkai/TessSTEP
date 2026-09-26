@@ -30,6 +30,7 @@ typedef uint32_t ts_status;
 #define TS_INVALID_MESH 7u
 #define TS_INVALID_SCENE 8u
 #define TS_INVALID_APPEARANCE 9u
+#define TS_INVALID_GEOMETRY 10u
 
 typedef struct ts_document ts_document;
 typedef struct ts_diagnostics ts_diagnostics;
@@ -174,6 +175,56 @@ TS_API void TS_CALL ts_mesh_release(const ts_mesh *mesh);
 /* Concurrent immutable reads/retains are allowed while ownership remains alive.
  * Copying the view does not retain the mesh; retain explicitly for longer use. */
 TS_API ts_status TS_CALL ts_mesh_get_view(const ts_mesh *mesh, ts_mesh_view *out);
+
+/* Planar FACETED_BREP import. Explicit entity ID and source length scale in metres.
+ * Only the selected root's local reference closure is checked against a reduced
+ * structural profile; this does not validate FILE_SCHEMA or unrelated records.
+ * Requires planar FACE_SURFACE/ADVANCED_FACE and POLY_LOOP boundaries. No healing,
+ * assembly placement, unit inference, curved geometry or full AP conformance.
+ * Model/chord/UV distances are metres, angles radians. max_work is an independent
+ * per-stage budget, not a whole-call time/RSS cap. Zero budgets mean zero.
+ * Initialize options before edits; NULL options selects these same defaults.
+ * ABI 1 freezes this new 80-byte record, without changing any previous layout. */
+typedef struct ts_faceted_options {
+    uint32_t struct_size, abi_version;
+    double model_distance, model_angle, chord, normal_angle, uv_tolerance;
+    uint64_t max_work, max_records, max_vertices, max_triangles;
+} ts_faceted_options;
+#define TS_IMPORT_STAGE_NONE 0u
+#define TS_IMPORT_STAGE_PROFILE 1u
+#define TS_IMPORT_STAGE_GEOMETRY 2u
+#define TS_IMPORT_STAGE_TOPOLOGY 3u
+#define TS_IMPORT_STAGE_TESSELLATION 4u
+/* All-zero on success/invalid call arguments; entity/offsets zero if unavailable.
+ * Offsets are half-open bytes in the original document. No borrowed storage. */
+typedef struct ts_import_error {
+    uint32_t stage, reserved;
+    uint64_t entity_id, start_offset, end_offset;
+} ts_import_error;
+TS_API ts_status TS_CALL ts_faceted_options_init(ts_faceted_options *out);
+/* document/options borrowed during call. out is required, error optional; writable
+ * outputs must be aligned/disjoint from each other and all inputs. Both are cleared
+ * before validation. Failure returns no mesh. Success transfers one mesh acquisition
+ * independent of document lifetime; release with ts_mesh_release. Mesh positions are
+ * metres, triangle face_ids are original STEP face IDs. Concurrent immutable calls
+ * are allowed while the document stays alive. metres_per_unit must be finite > 0. */
+TS_API ts_status TS_CALL ts_document_tessellate_faceted(const ts_document *document,
+    uint64_t entity_id, double metres_per_unit, const ts_faceted_options *options,
+    ts_mesh **out, ts_import_error *error);
+
+/* Planar edge-based MANIFOLD_SOLID_BREP profile. Same units, ownership, output
+ * clearing, budgets and error contract as ts_document_tessellate_faceted.
+ * EDGE_LOOP/ORIENTED_EDGE/EDGE_CURVE/LINE and VERTEX_POINT are supported.
+ * Both derived ORIENTED_EDGE endpoint slots must be *. A single FACE_BOUND is
+ * accepted as the outer; multiple bounds require one explicit FACE_OUTER_BOUND.
+ * Shared identity follows STEP vertices/edges; no proximity welding or healing. */
+typedef ts_faceted_options ts_planar_options;
+TS_API ts_status TS_CALL ts_planar_options_init(ts_planar_options *out);
+TS_API ts_status TS_CALL ts_document_tessellate_planar(const ts_document *document,
+    uint64_t entity_id, double metres_per_unit, const ts_planar_options *options,
+    ts_mesh **out, ts_import_error *error);
+
+
 
 /* Immutable assembly scenes. Assets share retained mesh buffers; instances are an
  * explicitly supplied forest, not decoded STEP placements. IDs are scene-local

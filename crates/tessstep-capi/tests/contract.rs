@@ -579,3 +579,161 @@ fn c_abi_appearance_records_ownership_and_failure_outputs() {
         ts_appearance_release(ptr::null());
     }
 }
+
+#[test]
+fn c_abi_faceted_import_ownership_errors_and_limits() {
+    assert_eq!(size_of::<TsFacetedOptions>(), 80);
+    assert_eq!(std::mem::offset_of!(TsFacetedOptions, max_work), 48);
+    assert_eq!(size_of::<TsImportError>(), 32);
+    // SAFETY: live handles, complete disjoint records and balanced releases.
+    unsafe {
+        let input = include_bytes!("../../../corpus/geometry/box.step");
+        let mut doc = ptr::null();
+        let mut report = ptr::null_mut();
+        assert_eq!(
+            ts_document_parse(
+                input.as_ptr(),
+                input.len(),
+                ptr::null(),
+                &mut doc,
+                &mut report
+            ),
+            TS_OK
+        );
+        ts_diagnostics_release(report);
+        let mut mesh = ptr::null();
+        let mut error = TsImportError::default();
+        assert_eq!(
+            ts_document_tessellate_faceted(doc, 1000, 0.001, ptr::null(), &mut mesh, &mut error),
+            TS_OK
+        );
+        let mut failed = mesh;
+        for unit in [0., -1., f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                ts_document_tessellate_faceted(
+                    doc,
+                    1000,
+                    unit,
+                    ptr::null(),
+                    &mut failed,
+                    &mut error
+                ),
+                TS_INVALID_ARGUMENT
+            );
+            assert!(failed.is_null());
+            assert_eq!(error.stage, 0);
+        }
+        for options in [
+            TsFacetedOptions {
+                max_work: 0,
+                ..TsFacetedOptions::default()
+            },
+            TsFacetedOptions {
+                max_records: 0,
+                ..TsFacetedOptions::default()
+            },
+            TsFacetedOptions {
+                max_vertices: 0,
+                ..TsFacetedOptions::default()
+            },
+            TsFacetedOptions {
+                max_triangles: 0,
+                ..TsFacetedOptions::default()
+            },
+        ] {
+            assert_eq!(
+                ts_document_tessellate_faceted(doc, 1000, 0.001, &options, &mut failed, &mut error),
+                TS_RESOURCE_LIMIT
+            );
+            assert!(failed.is_null());
+            assert_ne!(error.stage, 0);
+        }
+        let bad = TsFacetedOptions {
+            abi_version: 2,
+            ..TsFacetedOptions::default()
+        };
+        assert_eq!(
+            ts_document_tessellate_faceted(doc, 1000, 0.001, &bad, &mut failed, &mut error),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(error.stage, 0);
+        assert_eq!(
+            ts_document_tessellate_faceted(doc, 99999, 0.001, ptr::null(), &mut failed, &mut error),
+            TS_NOT_FOUND
+        );
+        assert_eq!(error.entity_id, 99999);
+        ts_document_release(doc);
+        let mut view = TsMeshView::default();
+        assert_eq!(ts_mesh_get_view(mesh, &mut view), TS_OK);
+        assert_eq!(
+            (view.vertex_count, view.triangle_count, view.boundary_edges),
+            (8, 12, 0)
+        );
+        assert!((view.signed_volume - 6e-6).abs() < 1e-15);
+        assert_eq!(*view.face_ids, 106);
+        ts_mesh_release(mesh);
+    }
+}
+
+#[test]
+fn c_abi_planar_import_owns_mesh_and_preserves_error_contract() {
+    assert_eq!(size_of::<TsPlanarOptions>(), 80);
+    // SAFETY: complete disjoint records, live handles, balanced releases.
+    unsafe {
+        let bytes = include_bytes!("../../../corpus/geometry/planar-box.step");
+        let mut doc = ptr::null();
+        let mut report = ptr::null_mut();
+        assert_eq!(
+            ts_document_parse(
+                bytes.as_ptr(),
+                bytes.len(),
+                ptr::null(),
+                &mut doc,
+                &mut report
+            ),
+            TS_OK
+        );
+        ts_diagnostics_release(report);
+        let mut options = TsPlanarOptions::default();
+        assert_eq!(ts_planar_options_init(&mut options), TS_OK);
+        let mut mesh = ptr::null();
+        let mut error = TsImportError::default();
+        assert_eq!(
+            ts_document_tessellate_planar(doc, 1000, 0.001, &options, &mut mesh, &mut error),
+            TS_OK
+        );
+        let mut failed = mesh;
+        options.max_records = 0;
+        assert_eq!(
+            ts_document_tessellate_planar(doc, 1000, 0.001, &options, &mut failed, &mut error),
+            TS_RESOURCE_LIMIT
+        );
+        assert!(failed.is_null());
+        assert_ne!(error.stage, 0);
+        assert_eq!(
+            ts_document_tessellate_planar(doc, 1000, 0., ptr::null(), &mut failed, &mut error),
+            TS_INVALID_ARGUMENT
+        );
+        assert_eq!(error.stage, 0);
+        assert_eq!(
+            ts_document_tessellate_planar(
+                ptr::null(),
+                1000,
+                1.,
+                ptr::null(),
+                &mut failed,
+                &mut error
+            ),
+            TS_INVALID_ARGUMENT
+        );
+        ts_document_release(doc);
+        let mut view = TsMeshView::default();
+        assert_eq!(ts_mesh_get_view(mesh, &mut view), TS_OK);
+        assert_eq!(
+            (view.vertex_count, view.triangle_count, view.boundary_edges),
+            (8, 12, 0)
+        );
+        assert!((view.signed_volume - 6e-6).abs() < 1e-15);
+        ts_mesh_release(mesh);
+    }
+}

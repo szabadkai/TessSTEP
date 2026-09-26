@@ -49,14 +49,14 @@ class CorpusTests(unittest.TestCase):
             return corpus.inspect(Path("stepdump"), Path("file.step"), 1)
 
     def test_reference_errors_do_not_erase_parse_success(self):
-        result = self.inspect_payload({"format_version": 1, "scope": "physical-syntax", "diagnostics": [],
+        result = self.inspect_payload({"format_version": 1, "scope": "physical-syntax", "diagnostics": [{"severity":"error", "code":"TS1103"}],
                                        "document": {"entity_count": 1, "headers": {}, "unresolved_references": ["#2"]}}, 1)
         self.assertEqual(result["status"], "reference_errors")
         self.assertEqual(result["stages"]["physical_parse"], "accepted")
-        self.assertEqual(result["stages"]["tessellation"], "not_implemented")
+        self.assertEqual(result["stages"]["tessellation"], "not_integrated")
 
     def test_rejection_is_distinct_from_broken_protocol_or_crash(self):
-        self.assertEqual(self.inspect_payload({"format_version": 1, "scope": "physical-syntax", "diagnostics": [], "document": None}, 1)["status"], "rejected")
+        self.assertEqual(self.inspect_payload({"format_version": 1, "scope": "physical-syntax", "diagnostics": [{"severity":"error", "code":"TS1002"}], "document": None}, 1)["status"], "rejected")
         self.assertEqual(self.inspect_payload({}, 0)["status"], "runner_error")
         self.assertEqual(self.inspect_payload({}, 101)["status"], "crash")
         self.assertEqual(self.inspect_payload({}, -9)["status"], "crash")
