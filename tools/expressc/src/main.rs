@@ -204,11 +204,10 @@ fn json_output(c: &Compilation, success: bool) -> String {
         let exports = s.exports.iter().map(|(name,id)| format!("{}:{}", quote(name), id.0)).collect::<Vec<_>>().join(",");
         format!("{{\"name\":{},\"span\":{},\"dependencies\":{:?},\"symbols\":{{{symbols}}},\"exports\":{{{exports}}}}}", quote(&s.name), span(s.span), s.dependencies)
     }).collect::<Vec<_>>().join(",")).unwrap_or_default();
-    let declarations = c
-        .ir
-        .as_ref()
-        .map(|ir| {
-            ir.declarations
+    let declarations =
+        c.ir.as_ref()
+            .map(|ir| {
+                ir.declarations
                 .iter()
                 .enumerate()
                 .map(|(id, d)| {
@@ -242,8 +241,8 @@ fn json_output(c: &Compilation, success: bool) -> String {
                 })
                 .collect::<Vec<_>>()
                 .join(",")
-        })
-        .unwrap_or_default();
+            })
+            .unwrap_or_default();
     format!(
         "{{\"format_version\":1,\"success\":{success},\"structural_valid\":{},\"expression_semantics\":\"not_implemented\",\"sources\":[{}],\"schemas\":[{schemas}],\"declarations\":[{declarations}],\"diagnostics\":[{diagnostics}]}}\n",
         c.ir.is_some(),

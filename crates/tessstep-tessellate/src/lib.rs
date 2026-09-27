@@ -171,6 +171,26 @@ fn sample_edges_seeded<'a>(
                     return Err(ErrorKind::ResourceLimit);
                 }
             }
+            // Seeds within numerical noise of each other (a range starting at -5e-17
+            // beside the period break at 0) would span no length and never satisfy
+            // the chord direction; keep the range ends and drop their neighbours.
+            let [t0, t1] = edge.range;
+            let noise = 1e-9 * (t1 - t0).abs();
+            let mut cleaned: Vec<f64> = Vec::with_capacity(seeds.len());
+            for &s in &seeds {
+                let near_end = (s - t0).abs() <= noise || (t1 - s).abs() <= noise;
+                if s != t0 && s != t1 && near_end {
+                    continue;
+                }
+                if cleaned
+                    .last()
+                    .is_some_and(|&last| (s - last).abs() <= noise)
+                {
+                    continue;
+                }
+                cleaned.push(s);
+            }
+            seeds = cleaned;
             let evaluate = |u: f64,
                             side: KnotSide,
                             budget: &mut Budget|
@@ -190,8 +210,13 @@ fn sample_edges_seeded<'a>(
                         None
                     };
                     if let Some(k) = index {
+                        // A vertex may sit off its curve end by up to the model tolerance
+                        // (the B-rep accepted it); the end segments then deviate by that
+                        // much in addition to the chord.
                         let v = brep.data().vertices[edge.vertices[k].0].position;
-                        if v.distance(p).map_err(|_| ErrorKind::Geometry)? > chord {
+                        if v.distance(p).map_err(|_| ErrorKind::Geometry)?
+                            > brep.model_tolerance().max(chord)
+                        {
                             return Err(ErrorKind::EndpointTolerance);
                         }
                         Ok(v)
@@ -234,15 +259,11 @@ fn sample_edges_seeded<'a>(
                 {
                     return Err(ErrorKind::DiscontinuousCurve);
                 }
-                let span_start = out.last().expect("first sample").position;
                 let mut stack = vec![(w[0], w[1], a, b, 0)];
                 while let Some((u, v, a, b, depth)) = stack.pop() {
-                    let pa = if u == w[0] {
-                        span_start
-                    } else {
-                        endpoint(u, a.position)?
-                    };
-                    let pb = endpoint(v, b.position)?;
+                    // Chord and tangent criteria measure the curve itself; only the
+                    // stored end samples are moved onto their vertices.
+                    let (pa, pb) = (a.position, b.position);
                     let probes = [
                         evaluate(u + (v - u) * 0.25, KnotSide::Right, budget)?,
                         evaluate(u + (v - u) * 0.5, KnotSide::Right, budget)?,
@@ -286,7 +307,7 @@ fn sample_edges_seeded<'a>(
                             &mut out,
                             Sample {
                                 parameter: v,
-                                position: pb,
+                                position: endpoint(v, pb)?,
                             },
                         )?;
                     } else {

@@ -315,13 +315,23 @@ relies on implicit outer bounds (94 multi-bound faces, no `FACE_OUTER_BOUND`). E
 item needs authored fixtures, typed outcomes and corpus-stage evidence. Add a
 redistributable Onshape export with these features as a hash-pinned exporter file.
 
-- **Toroidal surfaces, ring and degenerate — ring tori delivered 2026-09-26.** Ring
-  `TOROIDAL_SURFACE`s import through the curved profile; degenerate tori remain.
-  `DEGENERATE_TOROIDAL_SURFACE` has a minor radius larger than its major radius (here
-  1 mm over 0.25 mm), and `select_outer` picks the outer (apple) or inner (lemon) part
-  of the self-intersecting torus. The surface crate evaluates only ring tori. Add
-  spindle tori with the selected part as the parameter domain and the two axis points
-  as explicit singularities.
+- **Toroidal surfaces, ring and degenerate — delivered 2026-09-27.** Ring
+  `TOROIDAL_SURFACE`s import through the curved profile, and
+  `DEGENERATE_TOROIDAL_SURFACE` (minor radius above the major radius, here 1 mm over
+  0.25 mm) imports as a spindle torus whose `select_outer` part is the closed v domain
+  with the two axis points as singular points. Evidence: `brep-spindle-apple.step`,
+  `brep-spindle-lemon.step`, `analytic_spindle_torus_parts_end_at_the_axis_points`.
+- **Remaining Onshape blocker — tessellation refinement, 2026-09-27.** With
+  degenerate tori, seam placement between holes and tangent edges, tolerance-consistent
+  sampling and trimming and sliver-face collapse, the whole 149-face B-rep now passes
+  profile, geometry and topology. Tessellation fails on a torus band (face #2168,
+  R = 2.035 mm, r = 0.3 mm) with `UnresolvedTolerance`: the seam is sampled in rows
+  0.098 rad apart for the 0.1 rad normal angle, longest-edge bisection of a facet
+  spanning two rows inserts a midpoint whose neighbour then spans two rows on the
+  other side, and Lawson flips in the length metric keep recreating such diagonals, so
+  a sliver walks along the band one vertex per round (4,682 vertices, then the round
+  limit). This needs curvature-anisotropic refinement (Milestone 22); after it, the
+  cylinder with 36 holes (face #2164) needs planar work budgets above the 10M default.
 - **Computed pcurves — delivered 2026-09-26.** Every coedge receives a pcurve computed
   from its 3D curve, exact or a verified fit, with the edge parameter as its parameter
   ([curved import](CURVED_IMPORT.md#computed-pcurves)). The export has no `PCURVE`,
@@ -496,8 +506,11 @@ entities), `data/ap203e2/ap203e2_mim_lf.exp` (1,006) and `data/ap203/ap203.exp` 
   - read supplied pcurves on `SURFACE_CURVE` / `SEAM_CURVE`, honouring
     `master_representation` and checking each pcurve against its 3D curve within
     model tolerance; compute pcurves only where none is supplied;
-  - `DEGENERATE_TOROIDAL_SURFACE` spindle tori, with the `select_outer` part as the
-    domain and the axis points as collapsed edges (this blocks the Onshape export);
+  - `DEGENERATE_TOROIDAL_SURFACE` spindle tori — delivered 2026-09-27 (see the
+    Onshape block above), together with seam placement that avoids holes and edges
+    tangent to the seam line, sampling and trimming tolerances expressed in metres
+    through the surface metric, and collapse of sliver faces thinner than the model
+    tolerance (a reported adaptation);
   - `UNIFORM_*` and `BEZIER_*` B-spline forms, and `HYPERBOLA` / `PARABOLA` edges;
   - named typed rejections for the rare entities listed above;
   - recorded scope decisions: `SHELL_BASED_SURFACE_MODEL` (proposed: import as
@@ -536,9 +549,12 @@ Deferred to Milestone 22 (industrial hardening), from the backlog above: default
 parse budgets; opt-in sewing and orientation repair (124 `OpenShell`, 38
 `BrokenWire` and 35 `InconsistentOrientation` roots in the latest run); tolerance
 handling for edges off their surface (70) and endpoints off their curves (22);
-tessellation budgets and anisotropic refinement (42 resource-limit roots); a
-document-level import session and scaling benchmark; extended fuzzing. Whether
-v1.0 needs evaluated EXPRESS rules is an open decision.
+tessellation budgets and anisotropic refinement (42 resource-limit roots, and the
+walking-sliver refinement failure on torus bands diagnosed on the Onshape export
+above: refinement must split along the direction of surface-normal turn and flips
+must respect it, which longest-edge bisection in a length metric with Lawson flips
+does not); a document-level import session and scaling benchmark; extended fuzzing.
+Whether v1.0 needs evaluated EXPRESS rules is an open decision.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

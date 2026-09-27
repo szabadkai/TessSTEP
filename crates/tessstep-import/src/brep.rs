@@ -32,6 +32,11 @@ pub struct Adaptations {
     /// end of an inserted seam from a loop that encloses the pole. They have no 3D
     /// extent; the pole vertex is inserted when no VERTEX_LOOP names it.
     pub collapsed_edges: usize,
+    /// Sliver faces removed: a face bounded by one loop of two edges that coincide
+    /// within the model tolerance (typically a B-spline written beside the arc it
+    /// approximates). Every use of the second edge is retargeted onto the first, so
+    /// the neighbouring faces share one edge and the shell stays closed.
+    pub collapsed_faces: usize,
 }
 
 /// Import one selected MANIFOLD_SOLID_BREP whose faces lie on planes, cylinders,
@@ -112,6 +117,7 @@ pub fn import_brep_solid(
         work: pcurve::Work {
             remaining: options.max_work,
         },
+        pass_work: options.max_work,
         adaptations: Adaptations::default(),
     };
     let solid = c.view(root)?;
@@ -217,6 +223,9 @@ struct Builder {
     edge_index: BTreeMap<EntityId, (usize, bool)>,
     faces: Vec<FaceRecord>,
     work: pcurve::Work,
+    /// The pcurve budget of one planning pass; every pass recomputes every face's
+    /// pcurves, and passes are capped, so the total stays bounded.
+    pass_work: usize,
     adaptations: Adaptations,
 }
 
@@ -494,13 +503,33 @@ impl Builder {
                     Chart::Sphere(f, r),
                     Surface::sphere(frame, c.checked(Length::metres(r))?).map_err(shape)?,
                 ))
+            } else if c.is(v, "DEGENERATE_TOROIDAL_SURFACE") {
+                let major = c.length(v, "MAJOR_RADIUS")?;
+                let minor = c.length(v, "MINOR_RADIUS")?;
+                if !(major > 0. && minor > major) {
+                    return Err(c.error(
+                        ErrorKind::InvalidGeometry,
+                        "DEGENERATE_TOROIDAL_SURFACE needs 0 < major radius < minor radius",
+                    ));
+                }
+                let outer = c.boolean(v, "SELECT_OUTER")?;
+                Ok((
+                    Chart::Spindle(f, major, minor, outer),
+                    Surface::degenerate_torus(
+                        frame,
+                        c.checked(Length::metres(major))?,
+                        c.checked(Length::metres(minor))?,
+                        outer,
+                    )
+                    .map_err(shape)?,
+                ))
             } else if c.is(v, "TOROIDAL_SURFACE") {
                 let major = c.length(v, "MAJOR_RADIUS")?;
                 let minor = c.length(v, "MINOR_RADIUS")?;
                 if major <= minor {
                     return Err(c.error(
                         ErrorKind::Unsupported,
-                        "horn and spindle tori (major radius <= minor radius) are not supported",
+                        "horn tori (major radius = minor radius) are not supported; a spindle torus needs DEGENERATE_TOROIDAL_SURFACE",
                     ));
                 }
                 Ok((
@@ -860,10 +889,14 @@ impl Builder {
     ) -> Result<ImportedSolid, Error> {
         let tolerance = c.tolerance.distance().as_metres();
         let mut faces = std::mem::take(&mut self.faces);
+        self.collapse_slivers(c, &mut faces, tolerance)?;
         // Plan every face; annular faces without aligned seam vertices request edge
         // splits, which are applied to all faces before planning again.
         let mut plans = Vec::new();
         for pass in 0.. {
+            // Each pass replans every face from scratch, so it gets the full budget;
+            // the pass cap bounds the total.
+            self.work.remaining = self.pass_work;
             let saved = self.snapshot(c);
             plans.clear();
             let mut splits = BTreeMap::new();
@@ -993,19 +1026,127 @@ enum SeamChoice {
     Seam(Box<EdgeRecord>, usize, usize, [f64; 2], bool),
     Split { edge: usize, parameter: f64 },
 }
-/// First interior edge parameter at which a pcurve crosses `value` modulo `period`
-/// along axis `k`, with the UV point there. Sampled brackets are refined by bisection.
-fn crossing(pcurve: &Pcurve, k: usize, value: f64, period: f64) -> Option<(f64, [f64; 2])> {
+/// Whether every sampled point of edge `a` lies within `tolerance` of edge `b`,
+/// measured against a dense polyline of `b`.
+fn edges_coincide(a: &EdgeRecord, b: &EdgeRecord, tolerance: f64) -> bool {
+    let points = |e: &EdgeRecord, n: usize| -> Option<Vec<V3>> {
+        (0..=n)
+            .map(|i| {
+                let t = e.range[0] + (e.range[1] - e.range[0]) * i as f64 / n as f64;
+                Some(e.curve.evaluate(t).ok()?.position.coordinates())
+            })
+            .collect()
+    };
+    let (Some(samples), Some(polyline)) = (points(a, 64), points(b, 256)) else {
+        return false;
+    };
+    samples.iter().all(|&p| {
+        polyline.windows(2).any(|w| {
+            let (s, t) = (w[0], w[1]);
+            let d = sub(t, s);
+            let len2 = dot(d, d);
+            let u = if len2 > 0. {
+                (dot(sub(p, s), d) / len2).clamp(0., 1.)
+            } else {
+                0.
+            };
+            norm(sub(p, add(s, scale(d, u)))) <= tolerance
+        })
+    })
+}
+/// Parameters at which a pcurve is scanned: 64 uniform samples plus geometrically
+/// spaced ones near both ends, where an edge that meets its vertex tangentially to
+/// an isoparametric line wobbles across the line within a fraction of a percent of
+/// its range.
+fn scan_parameters(range: [f64; 2]) -> Vec<f64> {
+    let [t0, t1] = range;
+    let n = 64;
+    let mut parameters: Vec<f64> = (1..=n)
+        .map(|i| t0 + (t1 - t0) * i as f64 / n as f64)
+        .collect();
+    for i in 1..=16 {
+        let fraction = 0.5f64.powi(i);
+        parameters.push(t0 + (t1 - t0) * fraction);
+        parameters.push(t1 - (t1 - t0) * fraction);
+    }
+    parameters.sort_by(f64::total_cmp);
+    parameters.dedup();
+    parameters
+}
+/// The distance at which a chart feature becomes significant: a thousandth of the
+/// model tolerance, the trimmer's polygon touch threshold, expressed in chart units
+/// along each axis at `uv` through the surface derivative there. Anything closer is
+/// numerical noise of a pcurve fit, not geometry.
+fn conflict_thresholds(surface: &SurfaceGeometry, uv: [f64; 2], tolerance: f64) -> [f64; 2] {
+    let fallback = [1e-7; 2];
+    let significant = (tolerance * 1e-3).max(1e-12);
+    let Ok(jet) = surface.evaluate(uv) else {
+        return fallback;
+    };
+    let scale = [jet.du, jet.dv].map(|d| d.norm().unwrap_or(0.));
+    [0, 1].map(|k| {
+        if scale[k] > 0. && scale[k].is_finite() {
+            significant / scale[k]
+        } else {
+            fallback[k]
+        }
+    })
+}
+/// The interior crossings of a pcurve with the line `k = value` (modulo
+/// `period`) on either side of which the pcurve moves at least `sig` away from the
+/// line before the next crossing or the edge end. A crossing without such an
+/// excursion is a fit wobble beside a vertex on the line; splitting there would only
+/// create a sliver and the next pass would find another wobble closer still.
+fn significant_crossings(
+    pcurve: &Pcurve,
+    k: usize,
+    value: f64,
+    period: f64,
+    sig: f64,
+) -> Vec<(f64, [f64; 2])> {
+    let found = crossings(pcurve, k, value, period);
+    let mut kept = Vec::new();
+    if found.is_empty() {
+        return kept;
+    }
+    let excursion = |lo: f64, hi: f64| -> f64 {
+        let n = 32;
+        (0..=n)
+            .filter_map(|i| {
+                let t = lo + (hi - lo) * i as f64 / n as f64;
+                let uv = pcurve.curve.evaluate(t).ok()?.position.coordinates();
+                let dk = uv[k] - value;
+                Some((dk - period * (dk / period).round()).abs())
+            })
+            .fold(0., f64::max)
+    };
+    let [t0, t1] = pcurve.range;
+    for (i, &(t, uv)) in found.iter().enumerate() {
+        let before = if i == 0 { t0 } else { found[i - 1].0 };
+        let after = found.get(i + 1).map_or(t1, |next| next.0);
+        if excursion(before, t) >= sig && excursion(t, after) >= sig {
+            kept.push((t, uv));
+        }
+    }
+    kept
+}
+/// Every interior crossing of a pcurve with the isoparametric line `k = value`
+/// (modulo `period`), in parameter order; empty when the pcurve cannot be evaluated.
+fn crossings(pcurve: &Pcurve, k: usize, value: f64, period: f64) -> Vec<(f64, [f64; 2])> {
     let [t0, t1] = pcurve.range;
     let at = |t: f64| -> Option<[f64; 2]> {
         Some(pcurve.curve.evaluate(t).ok()?.position.coordinates())
     };
     let margin = 1e-9 * (t1 - t0).abs();
-    let n = 64;
-    let mut previous = (t0, at(t0)?);
-    for i in 1..=n {
-        let t = t0 + (t1 - t0) * i as f64 / n as f64;
-        let uv = at(t)?;
+    let mut found = Vec::new();
+    let Some(start) = at(t0) else {
+        return found;
+    };
+    let mut previous = (t0, start);
+    for t in scan_parameters(pcurve.range) {
+        let Some(uv) = at(t) else {
+            return found;
+        };
         let (ta, ua) = previous;
         let (lo, hi) = (ua[k].min(uv[k]), ua[k].max(uv[k]));
         let first = ((lo - value) / period).ceil() as i64;
@@ -1015,15 +1156,18 @@ fn crossing(pcurve: &Pcurve, k: usize, value: f64, period: f64) -> Option<(f64, 
             let (mut a, mut b) = (ta, t);
             let (fa, fb) = (ua[k] - target, uv[k] - target);
             if fb == 0. && (t - t0).abs() > margin && (t1 - t).abs() > margin {
-                return Some((t, uv));
+                found.push((t, uv));
+                continue;
             }
             if fa == 0. || fb == 0. || fa.signum() == fb.signum() {
                 continue;
             }
             for _ in 0..80 {
                 let mid = 0.5 * (a + b);
-                let fm = at(mid)?[k] - target;
-                if fm.signum() == fa.signum() {
+                let Some(m) = at(mid) else {
+                    return found;
+                };
+                if (m[k] - target).signum() == fa.signum() {
                     a = mid;
                 } else {
                     b = mid;
@@ -1031,12 +1175,14 @@ fn crossing(pcurve: &Pcurve, k: usize, value: f64, period: f64) -> Option<(f64, 
             }
             let root = 0.5 * (a + b);
             if (root - t0).abs() > margin && (t1 - root).abs() > margin {
-                return Some((root, at(root)?));
+                if let Some(uv) = at(root) {
+                    found.push((root, uv));
+                }
             }
         }
         previous = (t, uv);
     }
-    None
+    found
 }
 struct Plan {
     /// A re-charted surface replacing the face's STEP parameterization.
@@ -1162,6 +1308,96 @@ impl Builder {
     }
 
     /// Planning state that failed attempts roll back: inserted edges and vertices.
+    /// Remove sliver faces: one loop of two open edges with the same vertices whose
+    /// curves coincide within the model tolerance. The analytic edge survives (a
+    /// B-spline is usually the approximation); every use and entity link of the other
+    /// edge is retargeted onto it, and the edge table is compacted.
+    fn collapse_slivers(
+        &mut self,
+        c: &mut Context<'_, '_>,
+        faces: &mut Vec<FaceRecord>,
+        tolerance: f64,
+    ) -> Result<(), Error> {
+        let mut removed_faces = Vec::new();
+        let mut merged: BTreeMap<usize, (usize, bool)> = BTreeMap::new();
+        for (index, face) in faces.iter().enumerate() {
+            let [u1, u2] = match face.loops.as_slice() {
+                [l] if l.uses.len() == 2 => [l.uses[0], l.uses[1]],
+                _ => continue,
+            };
+            c.charge(1)?;
+            if u1.edge == u2.edge || merged.contains_key(&u1.edge) || merged.contains_key(&u2.edge)
+            {
+                continue;
+            }
+            let (e1, e2) = (&self.edges[u1.edge], &self.edges[u2.edge]);
+            if e1.vertices[0] == e1.vertices[1] {
+                continue;
+            }
+            let opposite = if e1.vertices == e2.vertices {
+                false
+            } else if e1.vertices == [e2.vertices[1], e2.vertices[0]] {
+                true
+            } else {
+                continue;
+            };
+            if !(edges_coincide(e1, e2, tolerance) && edges_coincide(e2, e1, tolerance)) {
+                continue;
+            }
+            let (survivor, removed) = if matches!(e1.shape, CurveShape::Nurbs)
+                && !matches!(e2.shape, CurveShape::Nurbs)
+            {
+                (u2.edge, u1.edge)
+            } else {
+                (u1.edge, u2.edge)
+            };
+            c.current = face.entity;
+            c.record()?;
+            merged.insert(removed, (survivor, opposite));
+            removed_faces.push(index);
+            self.adaptations.collapsed_faces += 1;
+        }
+        if merged.is_empty() {
+            return Ok(());
+        }
+        let mut keep = 0;
+        faces.retain(|_| {
+            let retained = !removed_faces.contains(&keep);
+            keep += 1;
+            retained
+        });
+        // Retarget uses and entity links, then compact the edge table.
+        let mut remap: Vec<Option<usize>> = Vec::with_capacity(self.edges.len());
+        let mut compact = Vec::new();
+        for (index, edge) in self.edges.drain(..).enumerate() {
+            if merged.contains_key(&index) {
+                remap.push(None);
+            } else {
+                remap.push(Some(compact.len()));
+                compact.push(edge);
+            }
+        }
+        self.edges = compact;
+        let target = |edge: usize| -> (usize, bool) {
+            let (edge, flip) = merged.get(&edge).copied().unwrap_or((edge, false));
+            (remap[edge].expect("survivors are kept"), flip)
+        };
+        for face in faces.iter_mut() {
+            for l in &mut face.loops {
+                for u in &mut l.uses {
+                    let (edge, flip) = target(u.edge);
+                    u.edge = edge;
+                    u.forward ^= flip;
+                }
+            }
+        }
+        for (edge, forward) in self.edge_index.values_mut() {
+            let (index, flip) = target(*edge);
+            *edge = index;
+            *forward ^= flip;
+        }
+        Ok(())
+    }
     fn snapshot(&self, c: &Context<'_, '_>) -> (usize, usize, Adaptations) {
         (self.edges.len(), c.raw.vertices.len(), self.adaptations)
     }
@@ -1884,10 +2120,14 @@ impl Builder {
         }))
     }
 
-    /// An isoparametric seam from a vertex of loop `a` (winding +1 along axis `k`) to an
-    /// aligned vertex of loop `b`, on the side where the face lies (left of `a`).
-    /// Without such a pair, it requests a split of the loop `b` edge that the
-    /// isoparametric line through a vertex of `a` crosses.
+    /// An isoparametric seam joining loop `a` (winding +1 along axis `k`) to loop `b`
+    /// across the face. Candidate lines pass through loop-a vertices, through the
+    /// widest gap between the holes' ranges, and a quarter, half and three quarters
+    /// of the period from each vertex. On each line every significant crossing of a
+    /// loop or hole edge is collected and ordered along the line; a loop-a hit whose
+    /// next hit on the side where the face lies is a loop-b hit bounds a seam that no
+    /// edge crosses or touches. When a hit is not a vertex the edge is split there,
+    /// and the next planning pass finds the aligned pair.
     #[allow(clippy::too_many_arguments)]
     fn seam(
         &mut self,
@@ -1901,8 +2141,12 @@ impl Builder {
         tolerance: f64,
     ) -> Result<SeamChoice, Error> {
         let j = 1 - k;
-        let direction = if k == 0 { 1. } else { -1. };
         let period = face.chart.periods()[k].expect("wrapping axis is periodic");
+        let j_period = if j_periodic {
+            face.chart.periods()[j]
+        } else {
+            None
+        };
         let vertex = |l: usize, i: usize| {
             let u = face.loops[l].uses[i];
             let e = &self.edges[u.edge];
@@ -1912,78 +2156,180 @@ impl Builder {
                 e.vertices[1]
             }
         };
-        let target_j = |ua: [f64; 2], uj: f64| {
-            if j_periodic {
-                let period = face.chart.periods()[j].expect("periodic j axis");
-                ua[j] + direction * (direction * (uj - ua[j])).rem_euclid(period)
-            } else {
-                uj
+        // The side of the face at a crossing: left of the use's direction, along j.
+        let side_of = |d: [f64; 2], forward: bool| -> f64 {
+            let s = if forward { 1. } else { -1. };
+            let component = if k == 0 { d[0] } else { -d[1] };
+            (s * component).signum() * f64::from(component != 0.)
+        };
+        struct Hit {
+            l: usize,
+            i: usize,
+            cj: f64,
+            t: Option<f64>,
+            side: f64,
+        }
+        let mut values: Vec<f64> = charts[a].starts.iter().map(|s| s[k]).collect();
+        // The widest gap between the holes' k ranges, when holes leave one.
+        let mut spans = Vec::new();
+        for &h in holes {
+            let hk: Vec<f64> = charts[h].polygon.iter().map(|p| p[k]).collect();
+            let (kmin, kmax) = minmax(&hk);
+            if kmax - kmin >= period {
+                spans.clear();
+                break;
             }
-        };
-        let blocked = |ua: [f64; 2], bj: f64| {
-            direction * (bj - ua[j]) <= 0.
-                || holes.iter().any(|&h| {
-                    let hk: Vec<f64> = charts[h].polygon.iter().map(|p| p[k]).collect();
-                    let hj: Vec<f64> = charts[h].polygon.iter().map(|p| p[j]).collect();
-                    let (kmin, kmax) = minmax(&hk);
-                    let (jmin, jmax) = minmax(&hj);
-                    let seam_k = nearest(ua[k], 0.5 * (kmin + kmax), period);
-                    let (lo, hi) = (ua[j].min(bj), ua[j].max(bj));
-                    seam_k >= kmin && seam_k <= kmax && hi >= jmin && lo <= jmax
-                })
-        };
-        for (ia, ua) in charts[a].starts.iter().enumerate() {
-            for (ib, ub) in charts[b].starts.iter().enumerate() {
-                c.charge(1)?;
-                let bj = target_j(*ua, ub[j]);
-                if blocked(*ua, bj) {
-                    continue;
-                }
-                let Some((curve, shape)) = seam_curve(&face.chart, &face.surface, k, ua[k]) else {
-                    continue;
-                };
-                let (va, vb) = (vertex(a, ia), vertex(b, ib));
-                let at = |t: f64| curve.evaluate(t).map(|e| e.position.coordinates());
-                let (Ok(pa), Ok(pb)) = (at(ua[j]), at(bj)) else {
-                    continue;
-                };
-                let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
-                if norm(sub(pa, position(va))) > tolerance
-                    || norm(sub(pb, position(vb))) > tolerance
-                {
-                    continue;
-                }
-                let forward = direction > 0.;
-                let range = [ua[j].min(bj), ua[j].max(bj)];
-                c.record()?;
-                return Ok(SeamChoice::Seam(
-                    Box::new(EdgeRecord {
-                        entity: None,
-                        curve,
-                        shape,
-                        range,
-                        vertices: if forward { [va, vb] } else { [vb, va] },
-                    }),
-                    ia,
-                    ib,
-                    range,
-                    forward,
-                ));
+            let lo = kmin.rem_euclid(period);
+            let hi = lo + (kmax - kmin);
+            if hi > period {
+                spans.push((lo, period));
+                spans.push((0., hi - period));
+            } else {
+                spans.push((lo, hi));
             }
         }
-        // No aligned pair: split the loop-b edge crossed by the isoparametric line
-        // through a loop-a vertex, choosing the first crossing whose seam avoids holes.
-        for ua in &charts[a].starts {
-            for u in &face.loops[b].uses {
-                c.charge(1)?;
-                let Some((parameter, uv)) = crossing(&pcurves[&u.edge], k, ua[k], period) else {
+        spans.sort_by(|x, y| x.partial_cmp(y).expect("finite chart coordinates"));
+        let mut best: Option<(f64, f64)> = None;
+        let mut covered = 0.;
+        for &(lo, hi) in &spans {
+            if lo > covered && best.is_none_or(|(width, _)| lo - covered > width) {
+                best = Some((lo - covered, 0.5 * (covered + lo)));
+            }
+            covered = covered.max(hi);
+        }
+        if !spans.is_empty() && period > covered && best.is_none_or(|(w, _)| period - covered > w) {
+            best = Some((period - covered, 0.5 * (covered + period)));
+        }
+        if let Some((_, free)) = best {
+            values.push(free);
+        }
+        for s in &charts[a].starts {
+            for fraction in [0.25, 0.5, 0.75] {
+                values.push(s[k] + fraction * period);
+            }
+        }
+        let sig = charts[a].starts.first().map_or([1e-7; 2], |s| {
+            conflict_thresholds(&face.surface, *s, tolerance)
+        });
+        for value in values {
+            c.charge(1)?;
+            let mut hits: Vec<Hit> = Vec::new();
+            for l in [a, b].into_iter().chain(holes.iter().copied()) {
+                for (i, u) in face.loops[l].uses.iter().enumerate() {
+                    c.charge(1)?;
+                    let pc = &pcurves[&u.edge];
+                    let start = charts[l].starts[i];
+                    let dk = start[k] - value;
+                    if (dk - period * (dk / period).round()).abs() <= sig[k] {
+                        let t0 = if u.forward { pc.range[0] } else { pc.range[1] };
+                        if let Ok(e) = pc.curve.evaluate(t0) {
+                            hits.push(Hit {
+                                l,
+                                i,
+                                cj: start[j],
+                                t: None,
+                                side: side_of(e.first.components(), u.forward),
+                            });
+                        }
+                    }
+                    for (t, uv) in significant_crossings(pc, k, value, period, sig[k]) {
+                        c.charge(1)?;
+                        if let Ok(e) = pc.curve.evaluate(t) {
+                            hits.push(Hit {
+                                l,
+                                i,
+                                cj: uv[j],
+                                t: Some(t),
+                                side: side_of(e.first.components(), u.forward),
+                            });
+                        }
+                    }
+                }
+            }
+            if let Some(p) = j_period {
+                for h in &mut hits {
+                    h.cj = h.cj.rem_euclid(p);
+                }
+            }
+            hits.sort_by(|x, y| x.cj.total_cmp(&y.cj));
+            let n = hits.len();
+            for (index, p) in hits.iter().enumerate() {
+                if p.l != a || p.side == 0. {
+                    continue;
+                }
+                let next = if p.side > 0. {
+                    (index + 1 < n)
+                        .then_some(index + 1)
+                        .or_else(|| (j_period.is_some() && n > 1).then_some(0))
+                } else {
+                    (index > 0)
+                        .then(|| index - 1)
+                        .or_else(|| (j_period.is_some() && n > 1).then_some(n - 1))
+                };
+                let Some(q) = next.map(|i| &hits[i]) else {
                     continue;
                 };
-                if !blocked(*ua, target_j(*ua, uv[j])) {
-                    return Ok(SeamChoice::Split {
-                        edge: u.edge,
-                        parameter,
-                    });
+                if q.l != b {
+                    continue;
+                }
+                // The seam's j extent, unwrapped from p in the face's direction.
+                let qj = match j_period {
+                    Some(pp) => p.cj + p.side * (p.side * (q.cj - p.cj)).rem_euclid(pp),
+                    None => q.cj,
+                };
+                if p.side * (qj - p.cj) <= sig[j] {
+                    continue;
+                }
+                match (p.t, q.t) {
+                    (Some(t), _) => {
+                        return Ok(SeamChoice::Split {
+                            edge: face.loops[a].uses[p.i].edge,
+                            parameter: t,
+                        });
+                    }
+                    (None, Some(t)) => {
+                        return Ok(SeamChoice::Split {
+                            edge: face.loops[b].uses[q.i].edge,
+                            parameter: t,
+                        });
+                    }
+                    (None, None) => {
+                        // Both ends are vertices: the seam runs along the line through
+                        // the loop-a vertex, in that use's chart.
+                        let ua = charts[a].starts[p.i];
+                        let bj = ua[j] + p.side * (p.side * (qj - p.cj));
+                        let Some((curve, shape)) = seam_curve(&face.chart, &face.surface, k, ua[k])
+                        else {
+                            continue;
+                        };
+                        let (va, vb) = (vertex(a, p.i), vertex(b, q.i));
+                        let at = |t: f64| curve.evaluate(t).map(|e| e.position.coordinates());
+                        let (Ok(pa), Ok(pb)) = (at(ua[j]), at(bj)) else {
+                            continue;
+                        };
+                        let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
+                        if norm(sub(pa, position(va))) > tolerance
+                            || norm(sub(pb, position(vb))) > tolerance
+                        {
+                            continue;
+                        }
+                        let forward = p.side > 0.;
+                        let range = [ua[j].min(bj), ua[j].max(bj)];
+                        c.record()?;
+                        return Ok(SeamChoice::Seam(
+                            Box::new(EdgeRecord {
+                                entity: None,
+                                curve,
+                                shape,
+                                range,
+                                vertices: if forward { [va, vb] } else { [vb, va] },
+                            }),
+                            p.i,
+                            q.i,
+                            range,
+                            forward,
+                        ));
+                    }
                 }
             }
         }
@@ -1992,7 +2338,6 @@ impl Builder {
             "annular face on a periodic surface has no seam between its loops that avoids its holes",
         ))
     }
-
     /// Split an edge at an interior curve parameter. Both halves keep the curve; every
     /// use in every face is replaced by the two halves in traversal order.
     fn split(
@@ -2185,6 +2530,12 @@ fn seam_curve(
             circle(f.o, radial, f.z, *r)
         }
         (Chart::Torus(f, major, minor), 0) => {
+            let radial = add(scale(f.x, value.cos()), scale(f.y, value.sin()));
+            circle(add(f.o, scale(radial, *major)), radial, f.z, *minor)
+        }
+        // A spindle meridian at chart azimuth u is the tube circle centred at major
+        // radius along u for both parts; the lemon traces its far side.
+        (Chart::Spindle(f, major, minor, _), 0) => {
             let radial = add(scale(f.x, value.cos()), scale(f.y, value.sin()));
             circle(add(f.o, scale(radial, *major)), radial, f.z, *minor)
         }

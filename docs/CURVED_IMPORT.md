@@ -32,8 +32,12 @@ parameter direction. Closed edges on conics span one period; closed B-spline edg
 must start and end at the curve's domain ends.
 
 `CONICAL_SURFACE` is moved to its apex, which the kernel cone requires; a semi-angle
-outside (0°, 90°) in the supplied angle unit is rejected. Horn and spindle tori are
-unsupported. A B-spline axis flagged closed in STEP receives a **periodic chart** when
+outside (0°, 90°) in the supplied angle unit is rejected. `DEGENERATE_TOROIDAL_SURFACE`
+(major radius below the minor radius) becomes a spindle torus whose `select_outer`
+part is the chart's closed v domain, with the two axis points as singular points
+handled like sphere poles; a `TOROIDAL_SURFACE` with major radius at or below the
+minor radius (a horn torus, or a spindle without the degenerate entity) is rejected.
+A B-spline axis flagged closed in STEP receives a **periodic chart** when
 its two boundary curves agree within the model tolerance; the flag alone is advisory.
 Periodic NURBS axes wrap evaluation (see [NURBS](NURBS.md)) so seams, chart shifts and
 annular faces behave as on analytic surfaces.
@@ -102,6 +106,24 @@ Each loop is classified by its winding in the periodic surface axes.
   the isoparametric curve of a NURBS chart (repeated over neighbouring periods when
   the other axis is periodic).
   The two loops and both seam uses become one outer loop; geometry is unchanged.
+* **Seam placement.** Candidate isoparametric lines pass through each loop-a vertex,
+  through the widest gap between the holes' ranges around the period, and a quarter,
+  half and three quarters of the period from each vertex. On each line every
+  significant crossing of a loop or hole edge is collected (a crossing counts only
+  when the edge moves at least a thousandth of the model tolerance away from the line
+  on both sides, so the sub-nanometre wobble of a pcurve fit beside a vertex on the
+  line is ignored) together with the vertices on the line, and ordered along it. A
+  loop-a hit whose next hit, on the side where the face lies, is a loop-b hit bounds
+  a seam that no edge crosses or touches; a hit that is not a vertex splits its edge
+  there, and the next planning pass finds the aligned pair. Wavy annuli whose
+  vertex-aligned lines cross other edges, holes all around a cylinder, and edges that
+  meet their vertex tangentially to the line all resolve this way.
+* **Sliver faces.** A face bounded by one loop of two open edges with the same
+  vertices whose curves coincide within the model tolerance (typically a B-spline
+  written beside the arc it approximates, 0.1 µm apart under a 20 µm uncertainty) is
+  removed before planning; every use and entity link of the second edge is retargeted
+  onto the first (an analytic edge survives a B-spline), so neighbours share one edge
+  and the shell stays closed. The removal is reported as `collapsed_faces`.
 * **Edge splits.** When no aligned vertex pair exists (for example two closed circles
   whose vertices sit at different angles), the loop edge that the isoparametric line
   through a vertex of the other loop crosses is split there. Both halves keep the

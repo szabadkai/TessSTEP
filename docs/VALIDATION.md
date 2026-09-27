@@ -1,3 +1,36 @@
+# Curved import: spindle tori, seam placement, tolerance-consistent meshing — 2026-09-27 (in progress)
+
+`DEGENERATE_TOROIDAL_SURFACE` imports as a spindle torus (apple or lemon part as a
+closed v domain ending at the axis points); seams are placed by ray casting along
+candidate isoparametric lines; a two-edge face whose edges coincide within the model
+tolerance is collapsed (`collapsed_faces`); the edge sampler accepts vertices within
+the model tolerance of their curve end and drops seed parameters within numerical
+noise; the trimmer decides joins, closure and polygon validity in metres through the
+largest surface derivative per chart axis, accepting joins that coincide in space;
+and the pcurve work budget applies per planning pass (passes stay capped at 8). See
+[SURFACES.md](SURFACES.md), [CURVED_IMPORT.md](CURVED_IMPORT.md#face-charts),
+[TESSELLATION.md](TESSELLATION.md) and [TRIMMING.md](TRIMMING.md).
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace` | passed, including `analytic_spindle_torus_parts_end_at_the_axis_points`, `brep_rejections_are_typed_and_located` (horn torus and invalid degenerate torus) and the reworked `shared_edge_collapsed_curves_and_endpoint_snaps_are_diagnosed` |
+| Workspace fmt and Clippy (`-D warnings`, all targets) | passed |
+| `check_geometry.py` | 61 reviewed outcomes passed (new: spindle apple and lemon zones with closed-form volumes) |
+| Onshape export (`~/Downloads/Core__2_.step`, not redistributable) | passes profile, geometry and topology for all 149 faces; tessellation stops at the 36-hole cylinder (default 10M planar work budget) and, with larger budgets, at torus band #2168 (`UnresolvedTolerance`, see ROADMAP) |
+
+**Open before this slice can be merged:** `python3 scripts/corpus.py --check` reports
+555 meshed roots against the baseline's 557 (713 pass geometry, up from 711).
+Movements: `bug31685_1.stp` unsupported → typed rejection; two OpenCASCADE inputs
+move from tessellation rejection to resource limit (they now reach refinement);
+`trj4_s1-ai-214.stp` gains two meshed roots; but `bug32239.STEP` and the
+`trj3/4/5_s1-ug-214.stp` trio each lose one meshed root to a planar
+`Polygon(InvalidPolygon(SelfIntersection))` after the new seam placement (the earlier
+hugging/free-position seam variant meshed 562 roots with those files improved). The
+baseline was not refreshed; the regressed roots must be diagnosed first. The
+refinement experiments for the torus-band failure (turning-edge splits, a flip guard,
+transitive splitting, thin-facet acceptance) were reverted: each either diverged on
+`solid_torus_welds_both_periodic_seams` or broke `pole_and_apex_charts_close_with_collapsed_edges`.
+
 # Milestone 21: AP schema compilation, corpus schema stage and coverage matrix — 2026-09-27
 
 The EXPRESS frontend now compiles the AP242 (WG12 N11521 MIM long form, 2,407

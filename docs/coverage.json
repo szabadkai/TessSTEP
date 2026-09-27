@@ -171,8 +171,8 @@
       "note": "rare; named rejection"
     },
     "DEGENERATE_TOROIDAL_SURFACE": {
-      "status": "unsupported",
-      "note": "spindle tori: roadmap curved-import item"
+      "status": "adapted",
+      "note": "spindle torus; the selected part is the closed v domain, axis points are singular"
     },
     "DIRECTION": {
       "status": "adapted",

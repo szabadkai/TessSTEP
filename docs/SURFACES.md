@@ -18,8 +18,11 @@ azimuth in radians, with period 2 pi. Constructors provide these surfaces:
 | Cone | O + v sin(a) E(u) + v cos(a) Z | Nonnegative slant distance; a is semi-angle in (0, pi/2) |
 | Sphere | O + r cos(v) E(u) + r sin(v) Z | Latitude in closed [-pi/2, pi/2] |
 | Ring torus | O + (R + r cos(v)) E(u) + r sin(v) Z | Unwrapped angle, period 2 pi; R > r > 0 |
+| Spindle torus | same formula with 0 < R < r | Closed: the apple part covers [-v*, v*] and the lemon part [v*, 2 pi - v*], v* = acos(-R/r); both end at the two axis points, where du vanishes like at a sphere pole |
 
-Radii must be positive and finite. Spindle/horn tori and degenerate cone angles are
+Radii must be positive and finite. `degenerate_torus(frame, R, r, outer)` selects the
+apple (`outer`) or lemon part of a spindle torus; du x dv points away from the axis on
+the apple and towards it on the lemon. Horn tori (R = r) and degenerate cone angles are
 explicitly unsupported. A cone's frame origin is its vertex, not a STEP reference-radius
 placement. A future adapter must convert schema parameter conventions explicitly.
 No axes or modeling tolerances are defaulted by the geometry evaluator.

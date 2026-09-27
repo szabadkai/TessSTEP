@@ -303,6 +303,24 @@
       "limitations": "plane/cylinder/cone/sphere/ring torus; explicit frame/domain conventions; no STEP surface adapter"
     },
     {
+      "feature": "Spindle (degenerate) torus parts",
+      "status": "implemented",
+      "test": "analytic_spindle_torus_parts_end_at_the_axis_points",
+      "limitations": "apple or lemon part as a closed v domain ending at the two axis points; horn tori unsupported; imported from DEGENERATE_TOROIDAL_SURFACE (brep-spindle-apple/lemon fixtures)"
+    },
+    {
+      "feature": "Seam placement around holes and tangent edges, sliver-face collapse",
+      "status": "implemented",
+      "test": "brep_rejections_are_typed_and_located",
+      "limitations": "seams are placed by ray casting: a loop-a hit whose next significant hit along the line is a loop-b hit, on the face's side; crossings below a thousandth of the model tolerance are ignored; two-edge faces coincident within the model tolerance are removed as a counted adaptation; wider slivers are not detected"
+    },
+    {
+      "feature": "Tolerance-consistent edge sampling and trimming",
+      "status": "implemented",
+      "test": "shared_edge_collapsed_curves_and_endpoint_snaps_are_diagnosed",
+      "limitations": "vertices within the model tolerance of their curve end are accepted; UV joins and polygon validity are decided in metres through the largest surface derivative per chart axis; pcurve refinement stays in chart units"
+    },
+    {
       "feature": "Bounded positive-weight NURBS curves",
       "status": "implemented",
       "test": "nurbs_curve_rational_circle_and_derivatives",
