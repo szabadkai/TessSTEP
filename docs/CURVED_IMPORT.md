@@ -112,7 +112,11 @@ Each loop is classified by its winding in the periodic surface axes.
   significant crossing of a loop or hole edge is collected (a crossing counts only
   when the edge moves at least a thousandth of the model tolerance away from the line
   on both sides, so the sub-nanometre wobble of a pcurve fit beside a vertex on the
-  line is ignored) together with the vertices on the line, and ordered along it. A
+  line is ignored) together with the vertices on the line (a vertex within the model
+  tolerance of the line is on it, since vertices may sit that far off their curves and
+  a split vertex sits off the line by its refitted pcurve's error), and ordered along
+  it. A crossing beside a vertex hit of the same loop is that vertex, not a new split,
+  so no sliver edge shorter than the model tolerance is created. A
   loop-a hit whose next hit, on the side where the face lies, is a loop-b hit bounds
   a seam that no edge crosses or touches; a hit that is not a vertex splits its edge
   there, and the next planning pass finds the aligned pair. Wavy annuli whose

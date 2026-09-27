@@ -523,8 +523,8 @@
       "note": "rare; named rejection"
     },
     "REPOSITIONED_TESSELLATED_ITEM": {
-      "status": "unsupported",
-      "note": "tessellated item with its own placement: Milestone 20 follow-up"
+      "status": "adapted",
+      "note": "presentation tessellations: placement composed by import_presentation"
     },
     "REPRESENTATIVE_TRIANGLE": {
       "status": "out_of_scope",
@@ -614,9 +614,25 @@
       "status": "unsupported",
       "note": "tessellated B-rep hybrid container; existing tessellations import through TESSELLATED_SHAPE_REPRESENTATION"
     },
+    "TESSELLATED_CONNECTING_EDGE": {
+      "status": "adapted",
+      "note": "joins declared coordinate identities between faces"
+    },
     "TESSELLATED_CONSTRUCTIVE_GEOMETRY_REPRESENTATION": {
       "status": "out_of_scope",
       "note": "tessellated CSG"
+    },
+    "TESSELLATED_CURVE_SET": {
+      "status": "adapted",
+      "note": "presentation polylines"
+    },
+    "TESSELLATED_EDGE": {
+      "status": "adapted",
+      "note": "polyline with mesh-vertex correspondence"
+    },
+    "TESSELLATED_GEOMETRIC_SET": {
+      "status": "adapted",
+      "note": "presentation tessellation root"
     },
     "TESSELLATED_MANIFOLD_SUBSURFACE_SHAPE_REPRESENTATION": {
       "status": "unsupported",
@@ -625,6 +641,10 @@
     "TESSELLATED_MANIFOLD_SURFACE_SHAPE_REPRESENTATION": {
       "status": "unsupported",
       "note": "container not searched for roots; tessellated shells import through TESSELLATED_SHAPE_REPRESENTATION"
+    },
+    "TESSELLATED_POINT_SET": {
+      "status": "adapted",
+      "note": "presentation points"
     },
     "TESSELLATED_SHAPE_REPRESENTATION": {
       "status": "adapted",
@@ -641,6 +661,14 @@
     "TESSELLATED_SOLID": {
       "status": "adapted",
       "note": "existing tessellations"
+    },
+    "TESSELLATED_STRUCTURED_ITEM": {
+      "status": "supertype",
+      "note": "profile supertype of tessellated faces, edges and vertices"
+    },
+    "TESSELLATED_VERTEX": {
+      "status": "adapted",
+      "note": "point with mesh-vertex correspondence"
     },
     "THICKENED_FACE_SOLID": {
       "status": "out_of_scope",

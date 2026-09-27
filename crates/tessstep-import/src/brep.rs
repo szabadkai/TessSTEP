@@ -2212,6 +2212,10 @@ impl Builder {
         let sig = charts[a].starts.first().map_or([1e-7; 2], |s| {
             conflict_thresholds(&face.surface, *s, tolerance)
         });
+        // Vertices may sit up to the model tolerance off their curves, and a split
+        // vertex off the line by a refitted pcurve's error, so a vertex within the
+        // model tolerance of the line is on it.
+        let on_line = sig.map(|x| x * 1e3);
         for value in values {
             c.charge(1)?;
             let mut hits: Vec<Hit> = Vec::new();
@@ -2221,7 +2225,7 @@ impl Builder {
                     let pc = &pcurves[&u.edge];
                     let start = charts[l].starts[i];
                     let dk = start[k] - value;
-                    if (dk - period * (dk / period).round()).abs() <= sig[k] {
+                    if (dk - period * (dk / period).round()).abs() <= on_line[k] {
                         let t0 = if u.forward { pc.range[0] } else { pc.range[1] };
                         if let Ok(e) = pc.curve.evaluate(t0) {
                             hits.push(Hit {
@@ -2252,6 +2256,21 @@ impl Builder {
                     h.cj = h.cj.rem_euclid(p);
                 }
             }
+            // A crossing beside a vertex hit of the same loop is that vertex: splitting
+            // there would leave a sliver edge shorter than the model tolerance.
+            let vertices: Vec<(usize, f64)> = hits
+                .iter()
+                .filter(|h| h.t.is_none())
+                .map(|h| (h.l, h.cj))
+                .collect();
+            hits.retain(|h| {
+                h.t.is_none()
+                    || !vertices.iter().any(|&(l, cj)| {
+                        let d = (h.cj - cj).abs();
+                        let d = j_period.map_or(d, |p| d.min(p - d));
+                        l == h.l && d <= on_line[j]
+                    })
+            });
             hits.sort_by(|x, y| x.cj.total_cmp(&y.cj));
             let n = hits.len();
             for (index, p) in hits.iter().enumerate() {

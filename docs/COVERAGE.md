@@ -6,10 +6,10 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 
 | Status | Entities |
 | --- | ---: |
-| adapted | 52 |
-| supertype | 13 |
+| adapted | 60 |
+| supertype | 14 |
 | product | 2 |
-| unsupported | 123 |
+| unsupported | 114 |
 | out_of_scope | 311 |
 
 | Entity | Status | Roots | Profiles | Note |
@@ -37,7 +37,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `AUXILIARY_LEADER_LINE` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `AXIS1_PLACEMENT` | adapted | geometric | brep |  |
 | `AXIS2_PLACEMENT_2D` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
-| `AXIS2_PLACEMENT_3D` | adapted | geometric | brep, faceted, planar |  |
+| `AXIS2_PLACEMENT_3D` | adapted | geometric | brep, faceted, planar, tessellated |  |
 | `BEVELED_SHEET_REPRESENTATION` | unsupported | shape |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `BEZIER_CURVE` | unsupported | geometric |  | implicit knots: roadmap item |
 | `BEZIER_SURFACE` | unsupported | geometric |  | implicit knots: roadmap item |
@@ -68,7 +68,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `CAMERA_MODEL_D3_WITH_HLHSR` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `CAMERA_MODEL_WITH_LIGHT_SOURCES` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `CARTESIAN_11` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
-| `CARTESIAN_POINT` | adapted | geometric | brep, faceted, planar |  |
+| `CARTESIAN_POINT` | adapted | geometric | brep, faceted, planar, tessellated |  |
 | `CARTESIAN_TRANSFORMATION_OPERATOR` | product | geometric |  | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
 | `CARTESIAN_TRANSFORMATION_OPERATOR_2D` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `CARTESIAN_TRANSFORMATION_OPERATOR_3D` | product | geometric |  | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
@@ -133,12 +133,12 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `DEFINED_CHARACTER_GLYPH` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `DEFINED_SYMBOL` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `DEGENERATE_PCURVE` | unsupported | geometric |  | rare; named rejection |
-| `DEGENERATE_TOROIDAL_SURFACE` | unsupported | geometric |  | spindle tori: roadmap curved-import item |
+| `DEGENERATE_TOROIDAL_SURFACE` | adapted | geometric | brep | spindle torus; the selected part is the closed v domain, axis points are singular |
 | `DIAMETER_DIMENSION` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `DIMENSION_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `DIMENSION_CURVE_DIRECTED_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `DIMENSION_TEXT_ASSOCIATIVITY` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
-| `DIRECTION` | adapted | geometric | brep, faceted, planar |  |
+| `DIRECTION` | adapted | geometric | brep, faceted, planar, tessellated |  |
 | `DIRECTION_SHAPE_REPRESENTATION` | unsupported | shape |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `DOUBLE_OFFSET_SHELLED_SOLID` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
 | `DRAUGHTING_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
@@ -195,7 +195,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `GEOMETRICAL_TOLERANCE_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `GEOMETRIC_CURVE_SET` | unsupported | geometric |  | loose geometry sets are not solid roots; a set as edge/face geometry is rejected naming the entity |
 | `GEOMETRIC_MODEL_ELEMENT_RELATIONSHIP` | unsupported | geometric |  | hybrid B-rep/tessellation assignments are not read |
-| `GEOMETRIC_REPRESENTATION_ITEM` | supertype | geometric | brep |  |
+| `GEOMETRIC_REPRESENTATION_ITEM` | supertype | geometric | brep, tessellated |  |
 | `GEOMETRIC_SET` | unsupported | geometric |  | loose geometry sets are not solid roots; a set as edge/face geometry is rejected naming the entity |
 | `HALF_SPACE_2D` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `HALF_SPACE_SOLID` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
@@ -348,7 +348,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `RECTANGULAR_PYRAMID` | out_of_scope | geometric |  | solids by construction: only B-rep and tessellated solids are imported |
 | `RECTANGULAR_TRIMMED_SURFACE` | unsupported | geometric |  | rare; named rejection |
 | `REPOSITIONED_NEUTRAL_SKETCH` | out_of_scope | geometric |  | explicit geometric and assembly constraints: design-intent data with no mesh |
-| `REPOSITIONED_TESSELLATED_ITEM` | unsupported | geometric |  | tessellated item with its own placement: Milestone 20 follow-up |
+| `REPOSITIONED_TESSELLATED_ITEM` | adapted | geometric | tessellated | presentation tessellations: placement composed by import_presentation |
 | `REPRESENTATIVE_SHAPE_REPRESENTATION` | unsupported | shape |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `REPRESENTATIVE_TRIANGLE` | out_of_scope | geometric |  | scan data and point clouds |
 | `REVOLUTE_PAIR` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
@@ -460,23 +460,23 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `TANGENT_GEOMETRIC_CONSTRAINT` | out_of_scope | geometric |  | explicit geometric and assembly constraints: design-intent data with no mesh |
 | `TESSELLATED_BREP_SHAPE_REPRESENTATION` | unsupported | shape |  | tessellated B-rep hybrid container; existing tessellations import through TESSELLATED_SHAPE_REPRESENTATION |
 | `TESSELLATED_CLOSED_SHELL` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
-| `TESSELLATED_CONNECTING_EDGE` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
+| `TESSELLATED_CONNECTING_EDGE` | adapted | geometric | tessellated | joins declared coordinate identities between faces |
 | `TESSELLATED_CONSTRUCTIVE_GEOMETRY_REPRESENTATION` | out_of_scope | shape |  | tessellated CSG |
-| `TESSELLATED_CURVE_SET` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
-| `TESSELLATED_EDGE` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
+| `TESSELLATED_CURVE_SET` | adapted | geometric | tessellated | presentation polylines |
+| `TESSELLATED_EDGE` | adapted | geometric | tessellated | polyline with mesh-vertex correspondence |
 | `TESSELLATED_EDGE_CURVE` | unsupported | geometric, topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `TESSELLATED_FACE_SURFACE` | unsupported | geometric, topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
-| `TESSELLATED_GEOMETRIC_SET` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
+| `TESSELLATED_GEOMETRIC_SET` | adapted | geometric | tessellated | presentation tessellation root |
 | `TESSELLATED_MANIFOLD_SUBSURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | subsurface tessellations |
 | `TESSELLATED_MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | container not searched for roots; tessellated shells import through TESSELLATED_SHAPE_REPRESENTATION |
 | `TESSELLATED_OPEN_SHELL` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
-| `TESSELLATED_POINT_SET` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
+| `TESSELLATED_POINT_SET` | adapted | geometric | tessellated | presentation points |
 | `TESSELLATED_SHAPE_REPRESENTATION` | adapted | shape | context | existing tessellation container |
 | `TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS` | unsupported | shape |  | accuracy parameters are not read |
 | `TESSELLATED_SHELL` | adapted | geometric | tessellated | existing tessellations |
 | `TESSELLATED_SOLID` | adapted | geometric | tessellated | existing tessellations |
-| `TESSELLATED_STRUCTURED_ITEM` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
-| `TESSELLATED_VERTEX` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
+| `TESSELLATED_STRUCTURED_ITEM` | supertype | geometric | tessellated | profile supertype of tessellated faces, edges and vertices |
+| `TESSELLATED_VERTEX` | adapted | geometric | tessellated | point with mesh-vertex correspondence |
 | `TESSELLATED_VERTEX_POINT` | unsupported | geometric, topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `TESSELLATED_WIRE` | unsupported | geometric |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `TETRAHEDRON` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
