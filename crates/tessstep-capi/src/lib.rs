@@ -6,6 +6,8 @@ mod import;
 pub use import::*;
 mod appearance;
 pub use appearance::*;
+mod assembly;
+pub use assembly::*;
 mod mesh;
 mod scene;
 mod tessellated;
@@ -120,7 +122,7 @@ impl Default for TsStringView {
     }
 }
 impl TsStringView {
-    fn new(text: &str) -> Self {
+    pub(crate) fn new(text: &str) -> Self {
         Self {
             data: text.as_ptr().cast(),
             size: text.len(),

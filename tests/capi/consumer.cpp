@@ -1,4 +1,5 @@
 #include <tessstep/tessstep.hpp>
+#include <algorithm>
 #include <cassert>
 #include <future>
 #include <cmath>
@@ -221,7 +222,46 @@ static void tessellated_contract() {
     PresentationView moved = std::move(graphics);
     assert(moved.data().polyline_count == 3 && !graphics.data().positions);
 }
+static void assembly_contract() {
+    auto [assembly, scene] = [] {
+        auto parsed = Document::parse(read_file("assembly.step")); assert(parsed);
+        auto schema = parsed.value().schema(); assert(schema);
+        assert(schema.value().protocol == Protocol::ap214 && schema.value().schema_count == 1);
+        assert(schema.value().declared.rfind("AUTOMOTIVE_DESIGN", 0) == 0);
+        auto options = default_assembly_options();
+        options.chord_m = -1;
+        assert(parsed.value().import_assembly(&options).error().code == ErrorCode::invalid_argument);
+        auto imported = parsed.value().import_assembly(); assert(imported);
+        auto scene = imported.value().scene(); assert(scene);
+        return std::pair{std::move(imported).value(), std::move(scene).value()};
+    }(); // The document is gone; the assembly and scene are independent.
+    auto info = assembly.info().value();
+    assert(info.node_count == 11 && info.product_count == 3 && info.occurrence_count == 4 && info.complete == 1);
+    auto root = assembly.root_at(0).value();
+    assert(root.kind == RootKind::faceted_brep && root.selected && root.status == TS_OK);
+    assert(assembly.root_at(1).error().code == ErrorCode::not_found);
+    std::vector<std::string> names;
+    for (size_t i = 0; i < info.product_count; ++i) names.push_back(assembly.product_at(i).value().name);
+    std::sort(names.begin(), names.end());
+    assert((names == std::vector<std::string>{"block", "pair", "rig"}));
+    size_t leaves = 0;
+    for (size_t i = 0; i < info.node_count; ++i) leaves += assembly.node_at(i).value().root_id != 0;
+    assert(leaves == 4 && scene.info().value().instance_count == 11);
+    {
+        auto parsed = Document::parse(read_file("styled.step")); assert(parsed);
+        auto styled = parsed.value().import_assembly(); assert(styled);
+        auto style = styled.value().style_info().value();
+        assert(style.asset_styles == 1 && style.face_styles == 1 && style.no_surface_colour == 1);
+        auto appearance = styled.value().appearance(); assert(appearance);
+        assert(appearance.value().info().value().material_count == 2);
+    }
+    auto parsed = Document::parse(read_file("missing-placement.step")); assert(parsed);
+    auto missing = parsed.value().import_assembly();
+    assert(!missing && missing.error().code == ErrorCode::invalid_geometry);
+    assert(missing.error().import_failure.stage == ImportStage::product);
+}
 int main(int argc, char** argv) {
+    assembly_contract();
     tessellated_contract();
     planar_contract("planar.step",1000,0.001,6e-6,0.01,0.02,0.03);
     {

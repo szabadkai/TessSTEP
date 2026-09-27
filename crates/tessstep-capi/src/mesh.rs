@@ -41,6 +41,12 @@ pub struct TsMesh {
 }
 impl From<Mesh> for TsMesh {
     fn from(mesh: Mesh) -> Self {
+        Self::shared(Arc::new(mesh))
+    }
+}
+impl TsMesh {
+    /// C scalar storage for a kernel mesh that other owners (a scene) also share.
+    pub(crate) fn shared(mesh: Arc<Mesh>) -> Self {
         let d = mesh.data();
         Self {
             positions: d.positions.iter().flatten().copied().collect(),
@@ -49,7 +55,7 @@ impl From<Mesh> for TsMesh {
             uvs: d.uvs.iter().flatten().flatten().copied().collect(),
             faces: d.face_ids.clone(),
             statistics: mesh.statistics(),
-            kernel: Arc::new(mesh),
+            kernel: mesh,
         }
     }
 }

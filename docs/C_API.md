@@ -5,8 +5,9 @@ compatibility, documentation and release-testing obligations as the public Rust
 API. This is a binding architectural requirement. The first implementation exports
 ABI 1 physical-document operations, a C++17 wrapper and a shared CMake package.
 Owned triangle-mesh import/read-only views, explicit assembly asset scenes and appearance layers are also implemented, as are
-existing-tessellation and presentation-graphics import from STEP documents (Milestone 20). Schema decoding,
-general B-rep construction, curved STEP tessellation and root discovery are not exposed yet.
+existing-tessellation and presentation-graphics import from STEP documents (Milestone 20),
+and schema selection, assembly import and imported appearance (Milestone 21). Schema
+decoding, single-root curved B-rep import and root discovery are not exposed yet.
 The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
 The planar profile's conformance policy is a separate 16-byte `ts_import_policy`
 record with a flags word (`TS_IMPORT_STRICT`), passed to
@@ -308,6 +309,64 @@ Ten new functions bring the library to 50 C exports; the other new frozen layout
 the 80-byte tessellated info, 64-byte presentation info, 24-byte item and 104-byte
 view records on supported 64-bit targets. Existing ABI-1 records, symbols and statuses
 keep their contract. Discovery and representation selection remain Rust-only.
+
+## Schema selection, assembly import and imported appearance (Milestone 21)
+
+`ts_document_get_schema` reports the first FILE_SCHEMA entry, borrowed from the
+document, the number of entries, and the protocol the name selects from an exact
+table: `CONFIG_CONTROL_DESIGN` (`TS_PROTOCOL_AP203`), the AP203 edition 2 MIM long
+form (`TS_PROTOCOL_AP203E2`), `AUTOMOTIVE_DESIGN` (`TS_PROTOCOL_AP214`) and the AP242
+MIM long form (`TS_PROTOCOL_AP242`). Every other name, including the
+`AUTOMOTIVE_DESIGN_CC*` conformance-class schemas, is `TS_PROTOCOL_UNKNOWN`; a header
+without a schema is `TS_NOT_FOUND`. Selection is not validation. No ISO schema is
+bundled, whole-file AP validation is a corpus-runner stage built from separately
+fetched schemas ([corpus-testing.md](corpus-testing.md#ap-schema-stage-milestone-21)),
+and the library reports its own bounded-profile outcomes instead.
+
+`ts_document_import_assembly` runs `tessstep_import::import_assembly` and
+`import_appearance`: it imports every selected shape root in its context units,
+links the meshes to products, definitions and next assembly usage occurrences placed
+by context dependent shape representations, and adapts surface colours. Success
+transfers one `ts_assembly` acquisition, independent of the document:
+
+- `ts_assembly_get_info` counts nodes, products, occurrences, attempted and imported
+  roots, unplaced and unimported roots and excluded records, and `complete` is 0 when
+  an occurrence or placement record was excluded.
+- `ts_assembly_node_at` maps each scene instance to its definition, occurrence and
+  representation; an asset leaf carries its root, whose ID is also its asset ID.
+- `ts_assembly_product_at` returns `PRODUCT.id` and `.name` views borrowed from the
+  assembly; `ts_assembly_root_at` returns each root's kind, selection and status with
+  its located `ts_import_error`; `ts_assembly_excluded_at` returns product and style
+  records outside the bundled profiles with their status and located error;
+  `ts_assembly_unplaced_at` lists imported roots no product shape holds.
+- `ts_assembly_get_style_info` counts styled items by use.
+- `ts_assembly_get_scene` and `ts_assembly_get_appearance` return independent scene
+  and appearance acquisitions (the appearance shares the scene), so the existing
+  scene, mesh-view and triangle-resolution queries apply unchanged.
+
+A missing or ambiguous occurrence placement fails with `TS_INVALID_GEOMETRY` at
+`TS_IMPORT_STAGE_PRODUCT` (new stage values 5, product, and 6, presentation); failed
+roots are reported, not placed. The 72-byte `ts_assembly_options` holds work, record,
+instance and depth budgets, the chord and angle tolerance, the minimum model tolerance
+and `flags` (`TS_IMPORT_STRICT`); zero or non-finite tolerances, unknown flags and
+nonzero reserved fields return `TS_INVALID_ARGUMENT` after clearing outputs.
+
+```cpp
+auto parsed = tessstep::Document::parse(bytes);
+if (!parsed) return 1;
+auto schema = parsed.value().schema(); // schema.value().protocol, owned declared name
+auto assembly = parsed.value().import_assembly();
+if (!assembly) return 1; // import_failure.stage == ImportStage::product for placements
+auto scene = assembly.value().scene();          // placed occurrences, shared meshes
+auto appearance = assembly.value().appearance(); // imported colours over that scene
+auto first = assembly.value().product_at(0);     // owned id and name strings
+```
+
+Fourteen new functions bring the library to 64 C exports; the new frozen layouts are
+the 32-byte schema info, 72-byte assembly options and info, 40-byte node, 48-byte
+product, 56-byte root, 48-byte exclusion and 96-byte style info records on supported
+64-bit targets. Existing ABI-1 records, symbols and statuses keep their contract.
+Curved B-rep import of a single root remains Rust-only (curved-import follow-up).
 
 ## Errors and panic containment
 

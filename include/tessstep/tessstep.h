@@ -479,6 +479,122 @@ TS_API ts_status TS_CALL ts_appearance_resolve_triangle(const ts_appearance *app
  * Its asset mesh acquisitions and zero-copy views may outlive this appearance. */
 TS_API ts_status TS_CALL ts_appearance_get_scene(const ts_appearance *appearance, ts_scene **out);
 
+/* Schema selection (Milestone 21). The first FILE_SCHEMA entry, borrowed from the
+ * document (valid until its last release), and the protocol its name (object
+ * identifier removed, compared in upper case) selects from an exact table:
+ * CONFIG_CONTROL_DESIGN, the AP203 edition 2 MIM long form, AUTOMOTIVE_DESIGN and
+ * the AP242 MIM long form. Every other name, including AUTOMOTIVE_DESIGN_CC*, is
+ * TS_PROTOCOL_UNKNOWN. Selection is not validation: no ISO schema is bundled and
+ * imports use bounded original profiles. A header without a schema entry is
+ * TS_NOT_FOUND. Additive ABI 1 record: 32 bytes. */
+#define TS_PROTOCOL_UNKNOWN 0u
+#define TS_PROTOCOL_AP203 1u
+#define TS_PROTOCOL_AP203E2 2u
+#define TS_PROTOCOL_AP214 3u
+#define TS_PROTOCOL_AP242 4u
+typedef struct ts_schema_info {
+    uint32_t protocol, reserved;
+    uint64_t schema_count;
+    ts_string_view declared;
+} ts_schema_info;
+TS_API ts_status TS_CALL ts_document_get_schema(const ts_document *document, ts_schema_info *out);
+
+/* Assembly import (Milestone 21). Discovers every solid and shape tessellation
+ * root, selects exact B-reps over paired tessellations, imports each selected root
+ * in its representation context's units (a root whose context declares no units is
+ * not imported; an alternative is tried only after its selection fails), links the
+ * meshes to products, definitions and next assembly usage occurrences placed by
+ * context dependent shape representations, and adapts surface colours of styled
+ * solids, outer shells, faces and shape representations. Each B-rep root's model
+ * tolerance is its context's length uncertainty, never below
+ * minimum_model_tolerance_m; chord_m and angle_rad bound tessellation. A missing
+ * or ambiguous occurrence placement fails with TS_INVALID_GEOMETRY at stage
+ * TS_IMPORT_STAGE_PRODUCT; placement is never defaulted. Failed roots and product
+ * or style records outside the bundled profiles are reported, not placed; complete
+ * is 0 when an occurrence or placement record was excluded. flags accepts
+ * TS_IMPORT_STRICT. Additive ABI 1 records: 72-byte options, 72-byte info, 40-byte
+ * node, 48-byte product, 56-byte root, 48-byte exclusion, 96-byte style info. */
+typedef struct ts_assembly ts_assembly;
+typedef struct ts_assembly_options {
+    uint32_t struct_size, abi_version;
+    uint64_t max_work, max_records, max_instances, max_depth;
+    double chord_m, angle_rad, minimum_model_tolerance_m;
+    uint32_t flags, reserved;
+} ts_assembly_options;
+typedef struct ts_assembly_info {
+    uint64_t node_count, product_count, occurrence_count, root_count, imported_root_count;
+    uint64_t unplaced_count, unimported_count, excluded_count;
+    uint32_t complete, reserved;
+} ts_assembly_info;
+/* One scene instance: a definition node (root_id zero; occurrence_id zero for a root
+ * definition) or an asset leaf (root_id nonzero; its scene asset ID is root_id and
+ * it is an identity child of the definition node). All IDs are STEP instance IDs
+ * except instance_id, the scene instance ID. */
+typedef struct ts_assembly_node {
+    uint64_t instance_id, definition_id, occurrence_id, representation_id, root_id;
+} ts_assembly_node;
+/* PRODUCT.id and PRODUCT.name as written, borrowed until the last assembly release. */
+typedef struct ts_assembly_product {
+    uint64_t definition_id, product_id;
+    ts_string_view id, name;
+} ts_assembly_product;
+#define TS_ROOT_MANIFOLD_SOLID_BREP 1u
+#define TS_ROOT_BREP_WITH_VOIDS 2u
+#define TS_ROOT_FACETED_BREP 3u
+#define TS_ROOT_TESSELLATED_SOLID 4u
+#define TS_ROOT_TESSELLATED_SHELL 5u
+#define TS_ROOT_TESSELLATED_SURFACE_SET 6u
+/* status is TS_OK for an imported root, else its failure status and located error. */
+typedef struct ts_assembly_root {
+    uint64_t root_id;
+    uint32_t kind, selected, status, reserved;
+    ts_import_error error;
+} ts_assembly_root;
+/* A product or style record left out, its status and located error; structural is
+ * 1 for an occurrence or placement record. */
+typedef struct ts_assembly_exclusion {
+    uint64_t record_id;
+    uint32_t structural, status;
+    ts_import_error error;
+} ts_assembly_exclusion;
+/* Styled items by use. Curve, point and context-dependent styles, layers and
+ * invisibility are counted, never applied. */
+typedef struct ts_style_info {
+    uint64_t styled_items, asset_styles, face_styles, unimported, unsupported_targets;
+    uint64_t no_surface_colour, context_styles, conflicts, complex_items, layers;
+    uint64_t invisibility, excluded;
+} ts_style_info;
+TS_API ts_status TS_CALL ts_assembly_options_init(ts_assembly_options *out);
+/* Success transfers one assembly acquisition, independent of the document, released
+ * with ts_assembly_release. Output/error contract of ts_document_import_tessellated. */
+TS_API ts_status TS_CALL ts_document_import_assembly(const ts_document *document,
+    const ts_assembly_options *options, ts_assembly **out, ts_import_error *error);
+TS_API ts_status TS_CALL ts_assembly_retain(const ts_assembly *assembly);
+TS_API void TS_CALL ts_assembly_release(const ts_assembly *assembly);
+/* Scalar copies; outputs are cleared on failure; out-of-range is TS_NOT_FOUND.
+ * Concurrent immutable queries are allowed while an acquisition stays alive. */
+TS_API ts_status TS_CALL ts_assembly_get_info(const ts_assembly *assembly, ts_assembly_info *out);
+TS_API ts_status TS_CALL ts_assembly_node_at(const ts_assembly *assembly, size_t index,
+    ts_assembly_node *out);
+TS_API ts_status TS_CALL ts_assembly_product_at(const ts_assembly *assembly, size_t index,
+    ts_assembly_product *out);
+TS_API ts_status TS_CALL ts_assembly_root_at(const ts_assembly *assembly, size_t index,
+    ts_assembly_root *out);
+TS_API ts_status TS_CALL ts_assembly_excluded_at(const ts_assembly *assembly, size_t index,
+    ts_assembly_exclusion *out);
+/* Imported roots that no product definition's shape representation holds. */
+TS_API ts_status TS_CALL ts_assembly_unplaced_at(const ts_assembly *assembly, size_t index,
+    uint64_t *out);
+TS_API ts_status TS_CALL ts_assembly_get_style_info(const ts_assembly *assembly,
+    ts_style_info *out);
+/* Independent acquisitions of the assembly's scene and of the imported appearance
+ * over the same scene, released with ts_scene_release and ts_appearance_release.
+ * Materials are the distinct colours in order of first use; RGB was read as
+ * sRGB-encoded and converted to linear light, opacity is one minus transparency. */
+TS_API ts_status TS_CALL ts_assembly_get_scene(const ts_assembly *assembly, ts_scene **out);
+TS_API ts_status TS_CALL ts_assembly_get_appearance(const ts_assembly *assembly,
+    ts_appearance **out);
+
 #ifdef __cplusplus
 }
 #endif

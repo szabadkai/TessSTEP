@@ -79,6 +79,17 @@ pub struct TsScene {
     // Retain the original C scalar storage too, so acquiring an asset never copies buffers.
     assets: BTreeMap<AssetId, Arc<TsMesh>>,
 }
+impl TsScene {
+    /// A C scene over a kernel scene built by an importer; assets share its meshes.
+    pub(crate) fn imported(scene: Arc<Scene>) -> Self {
+        let assets = scene
+            .assets()
+            .iter()
+            .map(|a| (a.id, Arc::new(TsMesh::shared(a.mesh.clone()))))
+            .collect();
+        Self { scene, assets }
+    }
+}
 fn status(error: scene::Error) -> u32 {
     match error {
         scene::Error::ResourceLimit => TS_RESOURCE_LIMIT,

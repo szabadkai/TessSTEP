@@ -295,6 +295,71 @@ static void tessellated_contract(void) {
     assert(view.face_ids[0] == 100);
     ts_mesh_release(mesh);
 }
+static void assembly_contract(void) {
+    _Static_assert(sizeof(ts_schema_info) == 32, "schema info layout");
+    _Static_assert(sizeof(ts_assembly_options) == 72, "assembly options layout");
+    _Static_assert(offsetof(ts_assembly_options, flags) == 64, "assembly flags offset");
+    _Static_assert(sizeof(ts_assembly_info) == 72, "assembly info layout");
+    _Static_assert(sizeof(ts_assembly_node) == 40, "assembly node layout");
+    _Static_assert(sizeof(ts_assembly_product) == 48, "assembly product layout");
+    _Static_assert(sizeof(ts_assembly_root) == 56, "assembly root layout");
+    _Static_assert(offsetof(ts_assembly_root, error) == 24, "assembly root error offset");
+    _Static_assert(sizeof(ts_assembly_exclusion) == 48, "assembly exclusion layout");
+    _Static_assert(sizeof(ts_style_info) == 96, "style info layout");
+    ts_document *doc = load("assembly.step");
+    ts_schema_info schema;
+    assert(ts_document_get_schema(doc,&schema) == TS_OK && schema.protocol == TS_PROTOCOL_AP214);
+    assert(schema.schema_count == 1 && schema.declared.size > 17);
+    ts_assembly_options options;
+    assert(ts_assembly_options_init(&options) == TS_OK && options.struct_size == sizeof(options));
+    ts_assembly *assembly = NULL, *failed = NULL;
+    ts_import_error error;
+    assert(ts_document_import_assembly(doc,&options,&assembly,&error) == TS_OK);
+    options.chord_m = 0;
+    assert(ts_document_import_assembly(doc,&options,&failed,&error) == TS_INVALID_ARGUMENT && !failed);
+    ts_document_release(doc);
+    ts_assembly_info info;
+    assert(ts_assembly_get_info(assembly,&info) == TS_OK);
+    assert(info.node_count == 11 && info.product_count == 3 && info.occurrence_count == 4);
+    assert(info.root_count == 1 && info.imported_root_count == 1 && info.complete == 1);
+    ts_assembly_root root;
+    assert(ts_assembly_root_at(assembly,0,&root) == TS_OK && root.kind == TS_ROOT_FACETED_BREP && root.status == TS_OK);
+    assert(ts_assembly_root_at(assembly,1,&root) == TS_NOT_FOUND && root.root_id == 0);
+    ts_assembly_product product;
+    assert(ts_assembly_product_at(assembly,0,&product) == TS_OK && product.name.size > 0);
+    size_t leaves = 0;
+    for (size_t i = 0; i < info.node_count; ++i) {
+        ts_assembly_node node;
+        assert(ts_assembly_node_at(assembly,i,&node) == TS_OK);
+        leaves += node.root_id != 0;
+    }
+    assert(leaves == 4);
+    ts_scene *scene = NULL;
+    assert(ts_assembly_get_scene(assembly,&scene) == TS_OK);
+    ts_assembly_release(assembly);
+    ts_scene_info scene_info;
+    assert(ts_scene_get_info(scene,&scene_info) == TS_OK && scene_info.asset_count == 1 && scene_info.instance_count == 11);
+    ts_scene_release(scene);
+
+    doc = load("styled.step");
+    assert(ts_document_import_assembly(doc,NULL,&assembly,NULL) == TS_OK);
+    ts_document_release(doc);
+    ts_style_info style;
+    assert(ts_assembly_get_style_info(assembly,&style) == TS_OK);
+    assert(style.styled_items == 3 && style.asset_styles == 1 && style.face_styles == 1 && style.layers == 1);
+    ts_appearance *appearance = NULL;
+    assert(ts_assembly_get_appearance(assembly,&appearance) == TS_OK);
+    ts_assembly_release(assembly);
+    ts_appearance_info appearance_info;
+    assert(ts_appearance_get_info(appearance,&appearance_info) == TS_OK);
+    assert(appearance_info.material_count == 2 && appearance_info.binding_count == 2);
+    ts_appearance_release(appearance);
+
+    doc = load("missing-placement.step");
+    assert(ts_document_import_assembly(doc,NULL,&failed,&error) == TS_INVALID_GEOMETRY && !failed);
+    assert(error.stage == TS_IMPORT_STAGE_PRODUCT && error.entity_id != 0);
+    ts_document_release(doc);
+}
 static void presentation_contract(void) {
     _Static_assert(sizeof(ts_presentation_options) == 64, "presentation options layout");
     _Static_assert(sizeof(ts_presentation_info) == 64, "presentation info layout");
@@ -338,6 +403,7 @@ static void presentation_contract(void) {
     ts_presentation_release(NULL);
 }
 int main(void) {
+    assembly_contract();
     tessellated_contract();
     presentation_contract();
     solid_import_contract(0);

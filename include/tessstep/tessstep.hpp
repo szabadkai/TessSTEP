@@ -27,7 +27,8 @@ struct Diagnostic {
 enum class ImportStage : uint32_t {
     none = TS_IMPORT_STAGE_NONE, profile = TS_IMPORT_STAGE_PROFILE,
     geometry = TS_IMPORT_STAGE_GEOMETRY, topology = TS_IMPORT_STAGE_TOPOLOGY,
-    tessellation = TS_IMPORT_STAGE_TESSELLATION
+    tessellation = TS_IMPORT_STAGE_TESSELLATION, product = TS_IMPORT_STAGE_PRODUCT,
+    presentation = TS_IMPORT_STAGE_PRESENTATION
 };
 struct ImportFailure {
     ImportStage stage = ImportStage::none;
@@ -127,9 +128,25 @@ inline Error import_error(ts_status status, const ts_import_error& failure) {
     return e;
 }
 }
+enum class Protocol : uint32_t {
+    unknown = TS_PROTOCOL_UNKNOWN, ap203 = TS_PROTOCOL_AP203, ap203e2 = TS_PROTOCOL_AP203E2,
+    ap214 = TS_PROTOCOL_AP214, ap242 = TS_PROTOCOL_AP242
+};
+// The first FILE_SCHEMA entry (owned copy) and the protocol it selects; selection is
+// not validation against the schema.
+struct SchemaInfo {
+    Protocol protocol = Protocol::unknown;
+    uint64_t schema_count = 0;
+    std::string declared;
+};
+using AssemblyOptions = ts_assembly_options;
+inline AssemblyOptions default_assembly_options() noexcept {
+    AssemblyOptions options{}; ts_assembly_options_init(&options); return options;
+}
 class Mesh;
 struct TessellatedImport;
 class Presentation;
+class Assembly;
 class Document {
     std::unique_ptr<ts_document, detail::DocumentDeleter> handle_;
     explicit Document(ts_document* handle) noexcept : handle_(handle) {}
@@ -169,6 +186,16 @@ public:
         const TessellatedOptions* options = nullptr) const;
     Result<Presentation> import_presentation(uint64_t entity_id, double metres_per_unit,
         const PresentationOptions* options = nullptr) const;
+    // Every shape root imported in its context units, linked to the product
+    // structure and coloured by its surface styles. The result survives this document.
+    Result<Assembly> import_assembly(const AssemblyOptions* options = nullptr) const;
+    Result<SchemaInfo> schema() const {
+        ts_schema_info info{};
+        const auto status = ts_document_get_schema(handle_.get(), &info);
+        if (status != TS_OK) return detail::error(status);
+        return SchemaInfo{static_cast<Protocol>(info.protocol), info.schema_count,
+            detail::copy(info.declared)};
+    }
     // A moved-from Document is safe to destroy, reassign or query. Queries return
     // invalid_argument. Concurrent const queries require the wrapper to stay alive.
     Result<DocumentInfo> info() const {
@@ -395,6 +422,7 @@ struct SceneDeleter { void operator()(ts_scene* p) const noexcept { ts_scene_rel
 }
 class Scene {
     friend class Appearance;
+    friend class Assembly;
     std::unique_ptr<ts_scene, detail::SceneDeleter> handle_;
     explicit Scene(ts_scene* raw) noexcept : handle_(raw) {}
 public:
@@ -458,6 +486,7 @@ namespace detail {
 struct AppearanceDeleter { void operator()(ts_appearance* p) const noexcept { ts_appearance_release(p); } };
 }
 class Appearance {
+    friend class Assembly;
     std::unique_ptr<ts_appearance,detail::AppearanceDeleter> handle_;
     explicit Appearance(ts_appearance* raw) noexcept : handle_(raw) {}
 public:
@@ -504,6 +533,110 @@ public:
         return scene;
     }
 };
+
+using AssemblyInfo = ts_assembly_info;
+using AssemblyNode = ts_assembly_node; // root_id != 0 marks an asset leaf.
+using StyleInfo = ts_style_info;
+enum class RootKind : uint32_t {
+    manifold_solid_brep = TS_ROOT_MANIFOLD_SOLID_BREP, brep_with_voids = TS_ROOT_BREP_WITH_VOIDS,
+    faceted_brep = TS_ROOT_FACETED_BREP, tessellated_solid = TS_ROOT_TESSELLATED_SOLID,
+    tessellated_shell = TS_ROOT_TESSELLATED_SHELL, tessellated_surface_set = TS_ROOT_TESSELLATED_SURFACE_SET
+};
+struct AssemblyProduct {
+    uint64_t definition_id = 0, product_id = 0;
+    std::string id, name; // owned copies
+};
+// status is TS_OK (0) for an imported root, else its failure and located error.
+struct AssemblyRoot {
+    uint64_t root_id = 0;
+    RootKind kind = RootKind::manifold_solid_brep;
+    bool selected = false;
+    ts_status status = TS_OK;
+    ImportFailure failure{};
+};
+struct AssemblyExclusion {
+    uint64_t record_id = 0;
+    bool structural = false; // an occurrence or placement record
+    ErrorCode code = ErrorCode::unsupported;
+    ImportFailure failure{};
+};
+namespace detail {
+struct AssemblyDeleter { void operator()(ts_assembly* p) const noexcept { ts_assembly_release(p); } };
+inline ImportFailure failure(const ts_import_error& e) noexcept {
+    return {static_cast<ImportStage>(e.stage), e.entity_id, e.start_offset, e.end_offset};
+}
+}
+// A linked product structure: its scene, imported appearance and typed outcomes.
+class Assembly {
+    friend class Document;
+    std::unique_ptr<ts_assembly, detail::AssemblyDeleter> handle_;
+    explicit Assembly(ts_assembly* raw) noexcept : handle_(raw) {}
+public:
+    Assembly(const Assembly&) = delete;
+    Assembly& operator=(const Assembly&) = delete;
+    Assembly(Assembly&&) noexcept = default;
+    Assembly& operator=(Assembly&&) noexcept = default;
+    ~Assembly() noexcept = default;
+    Result<AssemblyInfo> info() const {
+        AssemblyInfo info{}; auto status = ts_assembly_get_info(handle_.get(), &info);
+        if (status != TS_OK) return detail::error(status);
+        return info;
+    }
+    Result<AssemblyNode> node_at(size_t index) const {
+        AssemblyNode node{}; auto status = ts_assembly_node_at(handle_.get(), index, &node);
+        if (status != TS_OK) return detail::error(status);
+        return node;
+    }
+    Result<AssemblyProduct> product_at(size_t index) const {
+        ts_assembly_product p{}; auto status = ts_assembly_product_at(handle_.get(), index, &p);
+        if (status != TS_OK) return detail::error(status);
+        return AssemblyProduct{p.definition_id, p.product_id, detail::copy(p.id), detail::copy(p.name)};
+    }
+    Result<AssemblyRoot> root_at(size_t index) const {
+        ts_assembly_root r{}; auto status = ts_assembly_root_at(handle_.get(), index, &r);
+        if (status != TS_OK) return detail::error(status);
+        return AssemblyRoot{r.root_id, static_cast<RootKind>(r.kind), r.selected != 0, r.status,
+            detail::failure(r.error)};
+    }
+    Result<AssemblyExclusion> excluded_at(size_t index) const {
+        ts_assembly_exclusion x{}; auto status = ts_assembly_excluded_at(handle_.get(), index, &x);
+        if (status != TS_OK) return detail::error(status);
+        return AssemblyExclusion{x.record_id, x.structural != 0, static_cast<ErrorCode>(x.status),
+            detail::failure(x.error)};
+    }
+    Result<uint64_t> unplaced_at(size_t index) const {
+        uint64_t root = 0; auto status = ts_assembly_unplaced_at(handle_.get(), index, &root);
+        if (status != TS_OK) return detail::error(status);
+        return root;
+    }
+    Result<StyleInfo> style_info() const {
+        StyleInfo info{}; auto status = ts_assembly_get_style_info(handle_.get(), &info);
+        if (status != TS_OK) return detail::error(status);
+        return info;
+    }
+    // Independent acquisitions that outlive this assembly.
+    Result<Scene> scene() const {
+        ts_scene* raw = nullptr; auto status = ts_assembly_get_scene(handle_.get(), &raw);
+        Scene scene(raw);
+        if (status != TS_OK) return detail::error(status);
+        return scene;
+    }
+    Result<Appearance> appearance() const {
+        ts_appearance* raw = nullptr; auto status = ts_assembly_get_appearance(handle_.get(), &raw);
+        Appearance appearance(raw);
+        if (status != TS_OK) return detail::error(status);
+        return appearance;
+    }
+};
+
+inline Result<Assembly> Document::import_assembly(const AssemblyOptions* options) const {
+    ts_assembly* raw = nullptr;
+    ts_import_error failure{};
+    const auto status = ts_document_import_assembly(handle_.get(), options, &raw, &failure);
+    Assembly assembly(raw);
+    if (status != TS_OK) return detail::import_error(status, failure);
+    return assembly;
+}
 
 }
 #endif

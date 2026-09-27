@@ -305,6 +305,39 @@ unsafe fn tessellate_import(
     })
 }
 
+/// A located import error as its C status and error record.
+pub(crate) fn error_record(
+    document: &tessstep_model::Document,
+    e: &tessstep_import::Error,
+) -> (u32, TsImportError) {
+    let span = e.source.or_else(|| {
+        e.entity
+            .and_then(|id| document.entities().get(id).map(|e| e.source))
+    });
+    let record = TsImportError {
+        stage: match e.stage {
+            Stage::Profile => 1,
+            Stage::Geometry => 2,
+            Stage::Topology => 3,
+            Stage::Tessellation => 4,
+            Stage::Product => 5,
+            Stage::Presentation => 6,
+        },
+        reserved: 0,
+        entity_id: e.entity.map_or(0, EntityId::get),
+        start_offset: span.map_or(0, |s| s.start.offset),
+        end_offset: span.map_or(0, |s| s.end.offset),
+    };
+    let status = match e.kind {
+        ErrorKind::InvalidOptions => TS_INVALID_ARGUMENT,
+        ErrorKind::MissingEntity => TS_NOT_FOUND,
+        ErrorKind::Unsupported => TS_UNSUPPORTED,
+        ErrorKind::ResourceLimit => TS_RESOURCE_LIMIT,
+        ErrorKind::InvalidGeometry => TS_INVALID_GEOMETRY,
+    };
+    (status, record)
+}
+
 /// Map a located import error to its status, filling the optional C error record.
 ///
 /// # Safety
@@ -314,33 +347,10 @@ pub(crate) unsafe fn report(
     e: &tessstep_import::Error,
     error: *mut TsImportError,
 ) -> u32 {
+    let (status, record) = error_record(document, e);
     if !error.is_null() {
-        let span = e.source.or_else(|| {
-            e.entity
-                .and_then(|id| document.entities().get(id).map(|e| e.source))
-        });
-        let record = TsImportError {
-            stage: match e.stage {
-                Stage::Profile => 1,
-                Stage::Geometry => 2,
-                Stage::Topology => 3,
-                Stage::Tessellation => 4,
-                Stage::Product => 5,
-                Stage::Presentation => 6,
-            },
-            reserved: 0,
-            entity_id: e.entity.map_or(0, EntityId::get),
-            start_offset: span.map_or(0, |s| s.start.offset),
-            end_offset: span.map_or(0, |s| s.end.offset),
-        };
         // SAFETY: optional error record is valid writable storage when non-NULL.
         unsafe { error.write(record) };
     }
-    match e.kind {
-        ErrorKind::InvalidOptions => TS_INVALID_ARGUMENT,
-        ErrorKind::MissingEntity => TS_NOT_FOUND,
-        ErrorKind::Unsupported => TS_UNSUPPORTED,
-        ErrorKind::ResourceLimit => TS_RESOURCE_LIMIT,
-        ErrorKind::InvalidGeometry => TS_INVALID_GEOMETRY,
-    }
+    status
 }

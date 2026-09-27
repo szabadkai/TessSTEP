@@ -108,6 +108,12 @@ pub struct TsAppearance {
     appearance: Appearance,
     scene: Arc<TsScene>,
 }
+impl TsAppearance {
+    /// A C appearance over an imported appearance and the C scene of the same scene.
+    pub(crate) fn imported(appearance: Appearance, scene: Arc<TsScene>) -> Self {
+        Self { appearance, scene }
+    }
+}
 /// # Safety
 /// Follow tessstep.h writable output contract.
 #[unsafe(no_mangle)]

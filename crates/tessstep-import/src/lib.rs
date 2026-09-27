@@ -30,6 +30,7 @@ mod brep;
 mod discovery;
 mod pcurve;
 mod planar;
+mod schema;
 mod style;
 mod tessellated;
 pub use assembly::{
@@ -44,6 +45,7 @@ pub use discovery::{
     discover_tessellations, select_representations,
 };
 pub use planar::import_planar_solid;
+pub use schema::{DeclaredSchema, Protocol, declared_schema};
 pub use style::{ImportedAppearance, StyleCounts, StyleOptions, import_appearance};
 pub use tessellated::{
     EdgeConnection, ImportedPresentation, ImportedTessellation, PresentationItem,

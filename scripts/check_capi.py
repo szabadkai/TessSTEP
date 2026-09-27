@@ -30,6 +30,10 @@ SYMBOLS = {
     "ts_document_record_name", "ts_document_diagnostics", "ts_diagnostics_release",
     "ts_diagnostics_count", "ts_diagnostics_get",
     "ts_mesh_options_init", "ts_mesh_create", "ts_mesh_retain", "ts_mesh_release", "ts_mesh_get_view",
+    "ts_document_get_schema", "ts_assembly_options_init", "ts_document_import_assembly",
+    "ts_assembly_retain", "ts_assembly_release", "ts_assembly_get_info", "ts_assembly_node_at",
+    "ts_assembly_product_at", "ts_assembly_root_at", "ts_assembly_excluded_at", "ts_assembly_unplaced_at",
+    "ts_assembly_get_style_info", "ts_assembly_get_scene", "ts_assembly_get_appearance",
 }
 
 
@@ -85,6 +89,9 @@ def verify_installed(package, *, sanitizers=False):
         shutil.copy2(ROOT / "corpus/geometry/planar-placeholder.step", source / "placeholder.step")
         shutil.copy2(ROOT / "corpus/geometry/tessellated-connected.step", source / "tessellated.step")
         shutil.copy2(ROOT / "corpus/geometry/presentation.step", source / "presentation.step")
+        shutil.copy2(ROOT / "corpus/geometry/assembly-nested.step", source / "assembly.step")
+        shutil.copy2(ROOT / "corpus/geometry/assembly-styled.step", source / "styled.step")
+        shutil.copy2(ROOT / "corpus/geometry/assembly-missing-placement.step", source / "missing-placement.step")
         external = Path(os.environ.get("TESSSTEP_CORPUS", str(Path.home() / "step-corpus"))) / "vendor/foxtrot/examples/cuboid.step"
         if external.is_file():
             expected = json.loads((ROOT / "corpus/geometry/external-planar.json").read_text())
