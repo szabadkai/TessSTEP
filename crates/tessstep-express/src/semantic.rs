@@ -56,6 +56,8 @@ pub struct IrAttribute {
     pub ty: IrType,
     pub optional: bool,
     pub kind: AttributeKind,
+    /// The ancestor entity whose same-named attribute this one redeclares.
+    pub redeclares: Option<DeclarationId>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IrType {
@@ -379,6 +381,10 @@ impl Validator<'_> {
                             if let AttributeKind::Derived(expr) = &attr.kind {
                                 self.opaque(expr, "DERIVE");
                             }
+                            let redeclares = match &attr.redeclares {
+                                Some(name) => self.resolve(s, name, true)?,
+                                None => None,
+                            };
                             let ty = self.ty(s, &attr.ty)?;
                             attributes.push(IrAttribute {
                                 name: attr.name.text.clone(),
@@ -386,6 +392,7 @@ impl Validator<'_> {
                                 ty,
                                 optional: attr.optional,
                                 kind: attr.kind.clone(),
+                                redeclares,
                             });
                         }
                         self.rules(&e.unique, "UNIQUE")?;
@@ -660,20 +667,63 @@ impl Validator<'_> {
             let IrKind::Entity { attributes, .. } = &decl.kind else {
                 continue;
             };
+            // Same-named attributes inherited from different supertypes stay distinct,
+            // qualified by their declaring entity. A local attribute may not repeat an
+            // inherited name without redeclaring it, and a redeclaration must name a
+            // proper ancestor that declares the attribute.
             let hierarchy = self.hierarchy(ir, DeclarationId(i))?;
-            let mut names = BTreeSet::new();
+            let mut inherited = BTreeSet::new();
             for id in &hierarchy {
+                if *id == DeclarationId(i) {
+                    continue;
+                }
                 if let IrKind::Entity { attributes, .. } = &ir.declarations[id.0].kind {
                     for a in attributes {
                         self.charge(a.span)?;
-                        if !names.insert(&a.name) {
-                            self.error(
-                                "EX2008",
-                                decl.span,
-                                format!("inherited attribute conflict: {}", a.name),
-                            );
+                        if a.redeclares.is_none() {
+                            inherited.insert(&a.name);
                         }
                     }
+                }
+            }
+            for a in attributes {
+                let Some(ancestor) = a.redeclares else {
+                    self.charge(a.span)?;
+                    if inherited.contains(&a.name) {
+                        self.error(
+                            "EX2008",
+                            a.span,
+                            format!(
+                                "attribute {} is already inherited; redeclare it with SELF\\",
+                                a.name
+                            ),
+                        );
+                    }
+                    continue;
+                };
+                self.charge(a.span)?;
+                let declared = ancestor != DeclarationId(i)
+                    && hierarchy.contains(&ancestor)
+                    && matches!(
+                        &ir.declarations[ancestor.0].kind,
+                        // The qualifier may name an ancestor that itself redeclares the attribute.
+                        IrKind::Entity { attributes, .. }
+                            if attributes.iter().any(|inherited| inherited.name == a.name)
+                    );
+                if declared {
+                    self.diagnostics.push(Diagnostic::unsupported(
+                        a.span,
+                        "attribute redeclaration retained; domain compatibility not validated",
+                    ));
+                } else {
+                    self.error(
+                        "EX2008",
+                        a.span,
+                        format!(
+                            "redeclared attribute {} is not declared by supertype {}",
+                            a.name, ir.declarations[ancestor.0].name
+                        ),
+                    );
                 }
             }
             for a in attributes {
@@ -709,8 +759,10 @@ impl Validator<'_> {
                     if let IrKind::Entity { attributes, .. } = &ir.declarations[id.0].kind {
                         for forward in attributes {
                             self.charge(forward.span)?;
+                            // A redeclaration is the same attribute, not a second match.
                             if forward.name == attribute.text
                                 && forward.kind == AttributeKind::Explicit
+                                && forward.redeclares.is_none()
                             {
                                 matches.push(forward);
                             }
@@ -744,11 +796,12 @@ fn single_symbols(symbols: &Symbols) -> BTreeMap<String, DeclarationId> {
         })
         .collect()
 }
+/// Direct defined-type dependencies. A reference through an aggregate is not a
+/// cycle edge: every aggregate value is finite, so `LIST OF` self-reference is valid.
 fn type_refs(ty: &IrType, refs: &mut Vec<DeclarationId>) {
     match ty {
         IrType::Named(id) => refs.push(*id),
-        IrType::Aggregate { element, .. } => type_refs(element, refs),
         IrType::Select(ids) => refs.extend(ids),
-        _ => {}
+        IrType::Aggregate { .. } | IrType::Builtin { .. } | IrType::Enumeration(_) => {}
     }
 }

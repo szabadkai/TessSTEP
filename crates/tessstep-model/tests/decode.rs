@@ -26,6 +26,7 @@ const fn attr(name: &'static str, domain: Domain, optional: bool) -> Attribute {
         domain,
         optional,
         kind: AttributeKind::Explicit,
+        redeclares: None,
     }
 }
 const fn entity(
@@ -789,16 +790,22 @@ fn schema_decode_select_uniqueness_preserves_numeric_and_enum_semantics() {
             )],
         ),
     ]);
-    for values in ["A(1.),B(1)", "COLOR(.RED.),COLOR(.RED.)", "#2,#2"] {
+    for values in [
+        "A(1.),A(1.)",
+        "B(1),B(1)",
+        "COLOR(.RED.),COLOR(.RED.)",
+        "#2,#2",
+    ] {
         assert_decode(
             &s,
             &format!("#1=HOLDER(({values}));#2=ROOT();"),
             Some(ErrorKind::DuplicateValue),
         );
     }
+    // Different type tags are distinct members even over compatible numeric values.
     assert_decode(
         &s,
-        "#1=HOLDER((COLOR(.RED.),OTHER_COLOR(.RED.),A(9007199254740992.),B(9007199254740993)));",
+        "#1=HOLDER((COLOR(.RED.),OTHER_COLOR(.RED.),A(1.),B(1),A(9007199254740992.),B(9007199254740993)));",
         None,
     );
 }
@@ -840,9 +847,11 @@ fn schema_decode_boolean_logical_select_values_share_equality() {
     ]);
     assert_decode(
         &s,
-        "#1=HOLDER((BOOL(.T.),LOGIC(.T.)));",
+        "#1=HOLDER((LOGIC(.T.),LOGIC(.T.)));",
         Some(ErrorKind::DuplicateValue),
     );
+    // Distinct type tags are distinct members; equal values share one tag's equality.
+    assert_decode(&s, "#1=HOLDER((BOOL(.T.),LOGIC(.T.)));", None);
     assert_decode(&s, "#1=HOLDER((BOOL(.T.),LOGIC(.U.)));", None);
 }
 
@@ -1122,4 +1131,294 @@ fn physical_profile_aggregate_links_retain_every_reference_without_expanding() {
     ] {
         assert_eq!(decode_links(source).unwrap_err().kind, kind, "{source}");
     }
+}
+#[test]
+fn schema_decode_retains_unevaluated_semantics_only_by_policy() {
+    use decode::{Policy, decode_policy};
+    const RULE: Rule = Rule {
+        label: Some("WR1"),
+        expression: expr("SELF.a > 0"),
+    };
+    const BASE_ENTITY: Declaration = Declaration {
+        name: "BASE",
+        schema: 0,
+        span: SPAN,
+        kind: DeclarationKind::Entity {
+            abstract_entity: false,
+            supertype_constraint: None,
+            supertypes: &[],
+            attributes: &[
+                attr("a", INT, false),
+                attr("b", INT, false),
+                Attribute {
+                    kind: AttributeKind::Derived(expr("a + b")),
+                    ..attr("sum", INT, false)
+                },
+                Attribute {
+                    kind: AttributeKind::Inverse {
+                        entity: None,
+                        attribute: "a",
+                    },
+                    ..attr("back", INT, false)
+                },
+            ],
+            unique: &[],
+            where_rules: &[RULE],
+        },
+    };
+    // SUB retypes `a` and derives `b`: neither adds a slot, and `b` must be `*`.
+    const SUB_ENTITY: Declaration = Declaration {
+        name: "SUB",
+        schema: 0,
+        span: SPAN,
+        kind: DeclarationKind::Entity {
+            abstract_entity: false,
+            supertype_constraint: None,
+            supertypes: &[DeclarationId(0)],
+            attributes: &[
+                Attribute {
+                    redeclares: Some(DeclarationId(0)),
+                    ..attr("a", INT, false)
+                },
+                Attribute {
+                    kind: AttributeKind::Derived(expr("a")),
+                    redeclares: Some(DeclarationId(0)),
+                    ..attr("b", INT, false)
+                },
+                attr("c", INT, false),
+            ],
+            unique: &[RULE],
+            where_rules: &[],
+        },
+    };
+    let mut s = schema(vec![BASE_ENTITY, SUB_ENTITY]);
+    s.unsupported = &[UnsupportedDiagnostic {
+        code: "EX2001",
+        span: SPAN,
+        message: "WHERE retained; expression semantics not validated",
+    }];
+    let retain = Policy {
+        retain_unevaluated: true,
+        ..Policy::default()
+    };
+    let strict = Policy::default();
+    // The default policy rejects the schema set before looking at any instance.
+    assert_eq!(
+        decode_policy(
+            &parse("#1=SUB(1,*,3);"),
+            &s,
+            "TEST",
+            None,
+            strict,
+            Limits::default()
+        )
+        .unwrap_err()
+        .kind,
+        ErrorKind::Unsupported
+    );
+    let doc = parse("#1=SUB(1,*,3);\n#2=BASE(4,5);");
+    let decoded = decode_policy(&doc, &s, "TEST", None, retain, Limits::default()).unwrap();
+    let sub_view = decoded.get(EntityId::new(1).unwrap()).unwrap();
+    assert_eq!(
+        sub_view
+            .attributes
+            .iter()
+            .map(|a| (a.owner, a.declaration.name))
+            .collect::<Vec<_>>(),
+        vec![
+            (DeclarationId(0), "a"),
+            (DeclarationId(0), "b"),
+            (DeclarationId(1), "c")
+        ]
+    );
+    // One diagnostic; BASE's WHERE applies to both instances and SUB's UNIQUE once;
+    // BASE's DERIVE applies twice and SUB's redeclared DERIVE once.
+    assert_eq!(
+        decoded.retained(),
+        decode::Retained {
+            diagnostics: 1,
+            rules: 3,
+            derived: 3,
+            ..decode::Retained::default()
+        }
+    );
+    for (body, kind) in [
+        ("#1=SUB(1,2,3);", ErrorKind::TypeMismatch),
+        ("#1=SUB(1,$,3);", ErrorKind::TypeMismatch),
+        ("#1=SUB(1,*);", ErrorKind::AttributeCount),
+        ("#1=BASE(1,*);", ErrorKind::TypeMismatch),
+    ] {
+        assert_eq!(
+            decode_policy(&parse(body), &s, "TEST", None, retain, Limits::default())
+                .unwrap_err()
+                .kind,
+            kind,
+            "{body}"
+        );
+    }
+    // A defined type's WHERE rule is counted per value under the policy.
+    let mut t = schema(vec![
+        Declaration {
+            name: "POSITIVE",
+            schema: 0,
+            span: SPAN,
+            kind: DeclarationKind::Type {
+                domain: INT,
+                where_rules: &[RULE],
+            },
+        },
+        entity_dynamic(
+            "ITEM",
+            &[],
+            &[attr("n", Domain::Named(DeclarationId(0)), false)],
+        ),
+    ]);
+    t.unsupported = &[];
+    assert_eq!(
+        decode::decode(&parse("#1=ITEM(1);"), &t, "TEST", Limits::default())
+            .unwrap_err()
+            .kind,
+        ErrorKind::Unsupported
+    );
+    let items = parse("#1=ITEM(1);\n#2=ITEM(2);");
+    let decoded = decode_policy(&items, &t, "TEST", None, retain, Limits::default()).unwrap();
+    assert_eq!(decoded.retained().rules, 2);
+    assert_eq!(
+        decode_policy(
+            &parse("#1=ITEM('x');"),
+            &t,
+            "TEST",
+            None,
+            retain,
+            Limits::default()
+        )
+        .unwrap_err()
+        .kind,
+        ErrorKind::TypeMismatch
+    );
+}
+#[test]
+fn schema_decode_tolerances_are_explicit_and_counted() {
+    use decode::{Policy, decode_policy};
+    // BASE.b is derived in SUB, so SUB's second slot must be `*`; `$` needs a policy.
+    const BASE_ENTITY: Declaration =
+        entity("BASE", &[], &[attr("a", INT, false), attr("b", INT, false)]);
+    const SUB_ENTITY: Declaration = Declaration {
+        name: "SUB",
+        schema: 0,
+        span: SPAN,
+        kind: DeclarationKind::Entity {
+            abstract_entity: false,
+            supertype_constraint: None,
+            supertypes: &[DeclarationId(0)],
+            attributes: &[Attribute {
+                kind: AttributeKind::Derived(expr("a")),
+                redeclares: Some(DeclarationId(0)),
+                ..attr("b", INT, false)
+            }],
+            unique: &[],
+            where_rules: &[],
+        },
+    };
+    let s = schema(vec![BASE_ENTITY, SUB_ENTITY]);
+    let retain = Policy {
+        retain_unevaluated: true,
+        ..Policy::default()
+    };
+    let tolerant = Policy {
+        accept_unset_derived: true,
+        ..retain
+    };
+    let unset = parse("#1=SUB(1,$);\n#2=SUB(2,*);");
+    assert_eq!(
+        decode_policy(&unset, &s, "TEST", None, retain, Limits::default())
+            .unwrap_err()
+            .kind,
+        ErrorKind::TypeMismatch
+    );
+    let decoded = decode_policy(&unset, &s, "TEST", None, tolerant, Limits::default()).unwrap();
+    assert_eq!(decoded.retained().unset_derived, 1);
+    assert_eq!(
+        decode_policy(
+            &parse("#1=SUB(1,2);"),
+            &s,
+            "TEST",
+            None,
+            tolerant,
+            Limits::default()
+        )
+        .unwrap_err()
+        .kind,
+        ErrorKind::TypeMismatch
+    );
+    // Unordered external complex components are tolerated only by policy.
+    let t = schema(vec![
+        entity_dynamic("A", &[], &[attr("a", INT, false)]),
+        entity_dynamic("B", &[DeclarationId(0)], &[attr("b", INT, false)]),
+        entity_dynamic("C", &[DeclarationId(0)], &[attr("c", INT, false)]),
+    ]);
+    let unordered = parse("#1=(A(1)C(3)B(2));\n#2=(A(1)B(2)C(3));");
+    assert_eq!(
+        decode_policy(
+            &unordered,
+            &t,
+            "TEST",
+            None,
+            Policy::default(),
+            Limits::default()
+        )
+        .unwrap_err()
+        .kind,
+        ErrorKind::ComplexMapping
+    );
+    let decoded = decode_policy(
+        &unordered,
+        &t,
+        "TEST",
+        None,
+        Policy {
+            accept_unordered_complex: true,
+            ..Policy::default()
+        },
+        Limits::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded.retained().unordered_complex, 1);
+    assert_eq!(
+        decoded
+            .get(EntityId::new(1).unwrap())
+            .unwrap()
+            .attributes
+            .iter()
+            .map(|a| a.declaration.name)
+            .collect::<Vec<_>>(),
+        vec!["a", "c", "b"]
+    );
+    // Distinct tags that alias one underlying type stay distinct SET members.
+    let u = schema(vec![
+        defined("ANGLE", INT),
+        defined("SLANT", Domain::Named(DeclarationId(0))),
+        defined("ROTATE", Domain::Named(DeclarationId(0))),
+        entity_dynamic(
+            "HOLDER",
+            &[],
+            &[attr(
+                "values",
+                Domain::Aggregate {
+                    kind: AggregateKind::Set,
+                    bounds: None,
+                    optional: false,
+                    unique: false,
+                    element: &Domain::Select(&[DeclarationId(1), DeclarationId(2)]),
+                },
+                false,
+            )],
+        ),
+    ]);
+    assert_decode(&u, "#1=HOLDER((SLANT(0),ROTATE(0)));", None);
+    assert_decode(
+        &u,
+        "#1=HOLDER((SLANT(0),SLANT(0)));",
+        Some(ErrorKind::DuplicateValue),
+    );
 }

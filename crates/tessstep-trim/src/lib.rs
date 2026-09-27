@@ -325,6 +325,15 @@ fn build_loop(
     let mut uses = Vec::new();
     let mut polygon = Vec::new();
     let mut previous: Option<[f64; 2]> = None;
+    // Chart axes have unrelated units (radians on a millimetre tube, metres along a
+    // cylinder), so joins and polygon validity are decided in metres: chart offsets
+    // are scaled by the largest sampled surface derivative along each axis.
+    let scale = std::cell::Cell::new([0.0f64; 2]);
+    let metric = |a: [f64; 2], b: [f64; 2]| -> f64 {
+        let s = scale.get();
+        ((a[0] - b[0]) * s[0]).hypot((a[1] - b[1]) * s[1])
+    };
+    let model = brep.model_tolerance();
     for &cid in &raw.wires[wire.0].coedges {
         let c = &raw.coedges[cid.0];
         let build = |budget: &mut Budget| -> Result<Vec<UvSample>, Error> {
@@ -349,6 +358,13 @@ fn build_loop(
                     .surface
                     .evaluate(uv)
                     .map_err(|_| err(ErrorKind::Geometry))?;
+                let mut sc = scale.get();
+                for (k, d) in [surface.du, surface.dv].into_iter().enumerate() {
+                    if let Ok(n) = d.norm() {
+                        sc[k] = sc[k].max(n);
+                    }
+                }
+                scale.set(sc);
                 // Collapsed edges and their vertices lie on singular chart lines.
                 let singular = collapsed
                     || (s == 0. && brep.is_singular_vertex(e.vertices[0]))
@@ -380,7 +396,8 @@ fn build_loop(
             for w in fractions.windows(2) {
                 let a = eval(w[0], KnotSide::Right, budget)?;
                 let b = eval(w[1], KnotSide::Left, budget)?;
-                if polygon::distance(a.uv, out.last().expect("first sample").uv)? > o.uv_tolerance {
+                let last = out.last().expect("first sample").uv;
+                if polygon::distance(a.uv, last)? > o.uv_tolerance && metric(a.uv, last) > model {
                     return Err(err(ErrorKind::DiscontinuousPcurve));
                 }
                 let mut stack = vec![(a, b, 0)];
@@ -439,7 +456,10 @@ fn build_loop(
                     return Err(err(ErrorKind::Geometry));
                 }
             }
-            if polygon::distance(last, samples[0].uv)? > o.uv_tolerance {
+            if polygon::distance(last, samples[0].uv)? > o.uv_tolerance
+                && metric(last, samples[0].uv) > model
+                && !joins_in_space(brep, &f.surface, last, samples[0].uv, budget)?
+            {
                 return Err(Error {
                     kind: ErrorKind::OpenLoop,
                     coedge: Some(cid),
@@ -455,22 +475,67 @@ fn build_loop(
             period_shift: shift,
         });
     }
-    if polygon::distance(previous.expect("nonempty validated wire"), polygon[0])? > o.uv_tolerance {
-        let periodic = domains
-            .iter()
-            .any(|d| matches!(d, AxisDomain::Periodic { .. }));
-        return Err(err(if periodic {
-            ErrorKind::NonContractibleLoop
-        } else {
-            ErrorKind::OpenLoop
-        }));
+    let last = previous.expect("nonempty validated wire");
+    if polygon::distance(last, polygon[0])? > o.uv_tolerance && metric(last, polygon[0]) > model {
+        // A gap near a whole period is a loop that winds the chart; a small gap whose
+        // ends coincide in space is a join within the model tolerance.
+        let winds = (0..2).any(|k| match domains[k] {
+            AxisDomain::Periodic { period } => (last[k] - polygon[0][k]).abs() > 0.25 * period,
+            _ => false,
+        });
+        if winds || !joins_in_space(brep, &f.surface, last, polygon[0], budget)? {
+            let periodic = domains
+                .iter()
+                .any(|d| matches!(d, AxisDomain::Periodic { .. }));
+            return Err(err(if periodic {
+                ErrorKind::NonContractibleLoop
+            } else {
+                ErrorKind::OpenLoop
+            }));
+        }
     }
-    let signed_area = polygon::validate(&polygon, o.uv_tolerance, budget)?;
+    // Validate in metres when the surface gave a scale, so that a corner of a few
+    // nanometres in one axis is not a backtrack; the area keeps its chart units.
+    let s = scale.get();
+    let signed_area = if s.iter().all(|x| *x > 0. && x.is_finite()) {
+        budget.work(polygon.len())?;
+        let scaled: Vec<[f64; 2]> = polygon.iter().map(|p| [p[0] * s[0], p[1] * s[1]]).collect();
+        polygon::validate(&scaled, (model * 1e-3).max(1e-12), budget)? / (s[0] * s[1])
+    } else {
+        polygon::validate(&polygon, o.uv_tolerance, budget)?
+    };
     Ok(TrimLoop {
         uses,
         polygon,
         signed_area,
     })
+}
+/// Whether two chart points that miss each other in UV still coincide on the surface
+/// within the model tolerance. Vertices may sit up to that far from their curves, so
+/// computed pcurves meet a seam or each other with a matching UV gap. Singular
+/// points map every chart coordinate to one position and never qualify.
+fn joins_in_space(
+    brep: &NormalizedBrep,
+    surface: &tessstep_topology::SurfaceGeometry,
+    a: [f64; 2],
+    b: [f64; 2],
+    budget: &mut Budget,
+) -> Result<bool, Error> {
+    budget.work(2)?;
+    let mut points = Vec::new();
+    for uv in [a, b] {
+        let Ok(jet) = surface.evaluate(uv) else {
+            return Ok(false);
+        };
+        if jet.normal(NumericalTolerance::default()).is_err() {
+            return Ok(false);
+        }
+        points.push(jet.position);
+    }
+    Ok(points[0]
+        .distance(points[1])
+        .map_err(|_| err(ErrorKind::Geometry))?
+        <= brep.model_tolerance())
 }
 fn parameter(range: [f64; 2], s: f64) -> f64 {
     if s == 0. {

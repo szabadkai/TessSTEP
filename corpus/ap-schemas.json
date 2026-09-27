@@ -1,0 +1,37 @@
+{
+  "format_version": 1,
+  "description": "EXPRESS long forms fetched for the corpus schema stage. Not redistributed with TessSTEP; see schemas/README.md.",
+  "repository": "https://github.com/stepcode/stepcode",
+  "revision": "ed686ee1d9cb8bf763ab8d61ef6d417c3b45c146",
+  "license": "stepcode data directory (BSD-3-Clause collective work); the schemas are ISO 10303 EXPRESS long forms published by ISO TC184/SC4 for implementation use",
+  "schemas": [
+    {
+      "file": "ap242.exp",
+      "path": "data/ap242/242_mim_lf.exp",
+      "sha256": "e7e93cf97880fd87d634e4b9ee58400da0a1be6c06a1de76ec13807ecdc15ccb",
+      "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+      "edition": "ISO/TS 10303-442 (WG12 N11521) MIM long form"
+    },
+    {
+      "file": "ap214.exp",
+      "path": "data/ap214e3/AP214E3_2010.exp",
+      "sha256": "71ab140fe7f774321beee6a31e6fee2afc3973fd60350ae2018c74c211fb4295",
+      "schema": "AUTOMOTIVE_DESIGN",
+      "edition": "ISO 10303-214:2010 (edition 3)"
+    },
+    {
+      "file": "ap203e2.exp",
+      "path": "data/ap203e2/ap203e2_mim_lf.exp",
+      "sha256": "c68dd02200e2f4213e311553a4f6295effd168209de1fdc4e8003ce4c9ddd088",
+      "schema": "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF",
+      "edition": "ISO 10303-203:2011 (edition 2) MIM long form"
+    },
+    {
+      "file": "ap203.exp",
+      "path": "data/ap203/ap203.exp",
+      "sha256": "020b4d25dbd0b6ee7d15099b978e3448f6699a72cb862d381e416e32187562f1",
+      "schema": "CONFIG_CONTROL_DESIGN",
+      "edition": "ISO 10303-203:1994 (edition 1)"
+    }
+  ]
+}

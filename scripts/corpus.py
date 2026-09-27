@@ -106,7 +106,29 @@ def inspect(binary, path, timeout):
     return result
 
 
-def inspect_schema(binary, schema_name, path, timeout, result, *, stage="schema"):
+def declared_schema(result):
+    """The first FILE_SCHEMA name in upper case without its object identifier, or None."""
+    schemas = result.get("schemas") or []
+    while isinstance(schemas, list):
+        if not schemas:
+            return None
+        schemas = schemas[0]
+    return re.split(r"[\s{]", str(schemas).strip(), 1)[0].upper() or None
+
+
+def map_schema(result, schema_map):
+    """Select the validator schema for an input from its declared FILE_SCHEMA name."""
+    declared = declared_schema(result)
+    if result["stages"]["physical_parse"] != "accepted":
+        return None
+    selected = schema_map["schemas"].get(declared) if declared else None
+    if selected is None:
+        result["stages"]["schema"] = "not_configured"
+        result["schema_result"] = {"format_version": 1, "scope": "schema-structure", "status": "not_configured", "declared": declared}
+    return selected
+
+
+def inspect_schema(binary, schema_name, path, timeout, result, *, stage="schema", arguments=()):
     """Run an explicit stage validator or product checker after its prerequisite."""
     prerequisite = "schema" if stage == "product" else "physical_parse"
     scope = "product-structure" if stage == "product" else "schema-structure"
@@ -116,7 +138,7 @@ def inspect_schema(binary, schema_name, path, timeout, result, *, stage="schema"
     started = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
-            process = subprocess.run([str(binary), schema_name, str(path)], stdout=stdout, stderr=stderr, timeout=timeout)
+            process = subprocess.run([str(binary), *arguments, schema_name, str(path)], stdout=stdout, stderr=stderr, timeout=timeout)
             stderr.seek(0)
             result[stage + "_stderr"] = stderr.read(4096).decode("utf-8", errors="replace")
             if process.returncode not in (0, 1):
@@ -396,19 +418,27 @@ def main():
     parser.add_argument("--check", action="store_true", help="Exit 1 for compatibility regressions, removed inputs, or runner failures")
     parser.add_argument("--timeout", type=float, default=30, help="Seconds per unique input (default: 30)")
     parser.add_argument("--schema-validator", type=Path, help="Compiled expressc --validator executable")
-    parser.add_argument("--schema-name", help="Explicit schema for the configured validator")
+    parser.add_argument("--schema-name", help="Explicit schema for the configured validator (every input)")
+    parser.add_argument("--schema-map", type=Path, help="JSON table selecting each input's validator schema from its declared FILE_SCHEMA name, with validator arguments")
     parser.add_argument("--product-validator", type=Path, help="Product checker; requires the schema validator and uses its schema name")
     parser.add_argument("--geometry-metres-per-unit", type=float, default=0.001,
                         help="Fallback source length unit for roots without discovered context units (default 0.001: millimetres)")
     args = parser.parse_args()
     if not (math.isfinite(args.geometry_metres_per_unit) and args.geometry_metres_per_unit > 0):
         parser.error("--geometry-metres-per-unit must be finite and positive")
-    if args.product_validator and (not args.schema_validator or not args.product_validator.is_file()):
-        parser.error("--product-validator requires an existing checker and a schema validator")
-    if bool(args.schema_validator) != bool(args.schema_name):
-        parser.error("--schema-validator and --schema-name must be supplied together")
+    if args.product_validator and (not args.schema_name or not args.product_validator.is_file()):
+        parser.error("--product-validator requires an existing checker and a schema validator with --schema-name")
+    if bool(args.schema_validator) != bool(args.schema_name or args.schema_map) or (args.schema_name and args.schema_map):
+        parser.error("--schema-validator must be supplied with exactly one of --schema-name or --schema-map")
     if args.schema_validator and not args.schema_validator.is_file():
         parser.error("schema validator must be an existing executable")
+    schema_map = None
+    if args.schema_map:
+        schema_map = json.loads(args.schema_map.read_text(encoding="utf-8"))
+        if schema_map.get("format_version") != 1 or not isinstance(schema_map.get("schemas"), dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in schema_map["schemas"].items()):
+            parser.error("schema map must be a format_version 1 object with a schemas name table")
+        if not all(isinstance(a, str) for a in schema_map.get("arguments", [])):
+            parser.error("schema map arguments must be strings")
     root = args.corpus.expanduser().resolve()
     if not 1 <= args.repeat <= 5:
         parser.error("--repeat must be between 1 and 5")
@@ -454,6 +484,9 @@ def main():
             schema_snapshot = Path(directory) / ("schema-validator.exe" if os.name == "nt" else "schema-validator")
             shutil.copy2(args.schema_validator, schema_snapshot)
             schema_config = {"schema": args.schema_name, "binary_sha256": digest(schema_snapshot)}
+            if schema_map:
+                schema_config.update({"schema": "declared FILE_SCHEMA through the map", "map_sha256": digest(args.schema_map),
+                                      "schemas": schema_map["schemas"], "arguments": schema_map.get("arguments", []), "policy": schema_map.get("policy")})
         survey_snapshot = Path(directory) / survey.name
         shutil.copy2(survey, survey_snapshot)
         geometry_config = {"scope": "every solid and shape tessellation root and tessellated annotation occurrence; selected-root profiles; exact representations preferred", "policy": "tolerant default",
@@ -468,7 +501,11 @@ def main():
             path = root / case["paths"][0]
             case.update(inspect(snapshot, path, args.timeout))
             repeat_inspection(snapshot, path, args.timeout, case, args.repeat)
-            if schema_snapshot:
+            if schema_snapshot and schema_map:
+                selected = map_schema(case, schema_map)
+                if selected:
+                    inspect_schema(schema_snapshot, selected, path, args.timeout, case, arguments=schema_map.get("arguments", []))
+            elif schema_snapshot:
                 inspect_schema(schema_snapshot, args.schema_name, path, args.timeout, case)
             if product_snapshot:
                 inspect_schema(product_snapshot, args.schema_name, path, args.timeout, case, stage="product")

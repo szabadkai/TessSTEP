@@ -222,6 +222,25 @@ def fixtures():
     ]
     s.write("brep-sphere-zone.step", faces)
 
+    # Spindle torus a=5, b=12: the tube crosses the axis at z=±sqrt(119). The apple
+    # (select_outer) zone and the lemon zone between z=-6 and z=6 have parallel radii
+    # 5+sqrt(108) and sqrt(108)-5; the lemon's du x dv points at the axis, so its
+    # face is reversed.
+    for outer, name in ((True, "apple"), (False, "lemon")):
+        radius = 5 + 108 ** 0.5 if outer else 108 ** 0.5 - 5
+        s = Step(f"Original spindle torus {name} zone a=5 b=12 mm between z=-6 and z=6 with planar caps")
+        v0 = s.vertex((radius, 0, -6))
+        v1 = s.vertex((radius, 0, 6))
+        bottom = s.edge(v0, v0, s.circle((0, 0, -6), (0, 0, 1), (1, 0, 0), radius))
+        top = s.edge(v1, v1, s.circle((0, 0, 6), (0, 0, 1), (1, 0, 0), radius))
+        spindle = s.add(f"DEGENERATE_TOROIDAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},5.,12.,.{'T' if outer else 'F'}.)")
+        faces = [
+            s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], spindle, same=outer),
+            s.face([s.bound([(bottom, False)])], s.plane((0, 0, -6), (0, 0, 1)), same=False),
+            s.face([s.bound([(top, True)])], s.plane((0, 0, 6), (0, 0, 1))),
+        ]
+        s.write(f"brep-spindle-{name}.step", faces)
+
     # Washer: outer r=20, inner r=10, thickness 5; planar faces carry two plain bounds.
     s = Step("Original washer R=20 r=10 t=5 mm; planar faces without FACE_OUTER_BOUND")
     vo0, vo1 = s.vertex((20, 0, 0)), s.vertex((20, 0, 5))

@@ -1,0 +1,32 @@
+(* Original TessSTEP fixture. MIT OR Apache-2.0. Not an ISO/AP schema.
+   Attribute redeclaration, qualified inherited names, aggregate-recursive
+   defined types and identifiers that begin with END_. *)
+SCHEMA redeclare;
+TYPE label = STRING;
+END_TYPE;
+TYPE short_label = STRING(8);
+END_TYPE;
+TYPE tuple = LIST [0:?] OF item_value;
+END_TYPE;
+TYPE item_value = SELECT (tuple, label);
+END_TYPE;
+ENTITY named;
+  name : label;
+  description : OPTIONAL label;
+END_ENTITY;
+ENTITY dated;
+  name : label;
+  stamp : INTEGER;
+END_ENTITY;
+ENTITY tagged SUBTYPE OF (named);
+  SELF\named.name : short_label;
+  end_marker : BOOLEAN;
+DERIVE
+  SELF\named.description : label := name;
+WHERE
+  WR1 : NOT end_marker OR (LENGTH(name) > 0);
+END_ENTITY;
+ENTITY both SUBTYPE OF (named, dated);
+  end_count : INTEGER;
+END_ENTITY;
+END_SCHEMA;

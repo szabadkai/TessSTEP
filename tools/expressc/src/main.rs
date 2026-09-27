@@ -6,7 +6,9 @@ use std::{
     io::{self, Read, Write},
     process::ExitCode,
 };
-use tessstep_express::{Compilation, IrKind, Limits, Severity, Source, Span, compile};
+use tessstep_express::{
+    Compilation, DeclarationKind, IrKind, Limits, Severity, Source, Span, compile,
+};
 
 fn main() -> ExitCode {
     match run() {
@@ -206,24 +208,39 @@ fn json_output(c: &Compilation, success: bool) -> String {
         c.ir.as_ref()
             .map(|ir| {
                 ir.declarations
-                    .iter()
-                    .enumerate()
-                    .map(|(id, d)| {
-                        format!(
-                            "{{\"id\":{id},\"schema\":{},\"name\":{},\"span\":{},\"kind\":{}}}",
-                            d.schema,
-                            quote(&d.name),
-                            span(d.span),
-                            quote(match d.kind {
-                                IrKind::Entity { .. } => "entity",
-                                IrKind::Type(_) => "type",
-                                IrKind::Constant(_) => "constant",
-                                IrKind::Unsupported => "unsupported",
-                            })
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",")
+                .iter()
+                .enumerate()
+                .map(|(id, d)| {
+                    // Entities also list their direct supertypes and abstractness so
+                    // external tools can enumerate instantiable subtypes.
+                    let entity = match &d.kind {
+                        IrKind::Entity { supertypes, .. } => {
+                            let abstract_entity = matches!(
+                                &c.schemas[d.schema].declarations[d.ast_declaration].kind,
+                                DeclarationKind::Entity(e) if e.abstract_entity
+                            );
+                            format!(
+                                ",\"abstract\":{abstract_entity},\"supertypes\":{:?}",
+                                supertypes.iter().map(|s| s.0).collect::<Vec<_>>()
+                            )
+                        }
+                        _ => String::new(),
+                    };
+                    format!(
+                        "{{\"id\":{id},\"schema\":{},\"name\":{},\"span\":{},\"kind\":{}{entity}}}",
+                        d.schema,
+                        quote(&d.name),
+                        span(d.span),
+                        quote(match d.kind {
+                            IrKind::Entity { .. } => "entity",
+                            IrKind::Type(_) => "type",
+                            IrKind::Constant(_) => "constant",
+                            IrKind::Unsupported => "unsupported",
+                        })
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",")
             })
             .unwrap_or_default();
     format!(

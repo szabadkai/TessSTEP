@@ -132,6 +132,10 @@ pub struct Attribute {
     pub domain: Domain,
     pub optional: bool,
     pub kind: AttributeKind,
+    /// The ancestor entity whose same-named attribute this one redeclares. A
+    /// redeclared attribute adds no physical slot; a DERIVE redeclaration of an
+    /// explicit attribute leaves the ancestor's slot as `*`.
+    pub redeclares: Option<DeclarationId>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DeclarationKind {

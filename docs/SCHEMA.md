@@ -74,8 +74,11 @@ Entity records flatten explicit inherited fields in depth-first parent declarati
 order, followed by local fields; diamonds visit each ancestor once. This is an owned
 record layout, **not** a claim about Part 21 complex-entity parameter order. Inherited
 anonymous domains retain their original Rust type. DERIVE and INVERSE fields remain
-metadata, with no computed accessor. No implicit field override or redeclaration is
-supported by the frontend.
+metadata, with no computed accessor. A redeclared attribute (`SELF\supertype.name`)
+keeps its ancestor's field and the ancestor's wider Rust type; the redeclaration is
+recorded in metadata as `Attribute::redeclares`. When an entity inherits same-named
+attributes from different supertypes, every such field is qualified as
+`attr_<owner>__<name>`; otherwise fields are `attr_<name>`.
 
 `EntityBinding::DECLARATION` connects each entity record to its metadata. `EntityRef<T>`
 contains only a nonzero `u64` occurrence number and a type marker. It is `Copy` without

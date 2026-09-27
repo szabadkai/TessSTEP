@@ -191,8 +191,14 @@ fn express_semantic_checks_and_graph_cycles() {
         "EX2005",
     );
     fail(
-        "SCHEMA a; TYPE x=y; END_TYPE; TYPE y=LIST OF x; END_TYPE; END_SCHEMA;",
+        "SCHEMA a; TYPE x=y; END_TYPE; TYPE y=x; END_TYPE; END_SCHEMA;",
         "EX2007",
+    );
+    // Recursion through an aggregate is finite and valid.
+    assert!(
+        c("SCHEMA a; TYPE x=y; END_TYPE; TYPE y=LIST OF x; END_TYPE; END_SCHEMA;")
+            .ir
+            .is_some()
     );
     fail(
         "SCHEMA a; TYPE x=SELECT (x); END_TYPE; END_SCHEMA;",
@@ -214,10 +220,71 @@ fn express_semantic_checks_and_graph_cycles() {
         "SCHEMA a; ENTITY x; a:REAL; END_ENTITY; ENTITY y SUBTYPE OF(x); END_ENTITY; ENTITY z SUBTYPE OF(x); END_ENTITY; ENTITY w SUBTYPE OF(y,z); END_ENTITY; END_SCHEMA;",
     );
     assert!(diamond.ir.is_some(), "{:?}", diamond.diagnostics);
+    // Same-named attributes from different supertypes are distinct, qualified attributes.
+    let qualified = c(
+        "SCHEMA a; ENTITY x; a:REAL; END_ENTITY; ENTITY y; a:INTEGER; END_ENTITY; ENTITY w SUBTYPE OF(x,y); END_ENTITY; END_SCHEMA;",
+    );
+    assert!(qualified.ir.is_some(), "{:?}", qualified.diagnostics);
     assert!(
         c("SCHEMA a; ENTITY x; children:LIST OF x; END_ENTITY; END_SCHEMA;")
             .ir
             .is_some()
+    );
+}
+#[test]
+fn express_redeclarations_qualified_names_and_end_identifiers() {
+    let source = include_str!("../../../corpus/express/valid/redeclare.exp");
+    let result = c(source);
+    let ir = result
+        .ir
+        .as_ref()
+        .unwrap_or_else(|| panic!("{:?}", result.diagnostics));
+    let tagged = ir.schemas[0].symbols["TAGGED"];
+    let named = ir.schemas[0].symbols["NAMED"];
+    let IrKind::Entity { attributes, .. } = &ir.declarations[tagged.0].kind else {
+        panic!()
+    };
+    assert_eq!(attributes[0].name, "NAME");
+    assert_eq!(attributes[0].redeclares, Some(named));
+    assert_eq!(attributes[1].name, "END_MARKER");
+    assert_eq!(attributes[1].redeclares, None);
+    assert_eq!(attributes[2].redeclares, Some(named));
+    assert!(matches!(attributes[2].kind, AttributeKind::Derived(_)));
+    let DeclarationKind::Entity(ast) = &result.schemas[0].declarations[tagged.0].kind else {
+        panic!()
+    };
+    assert_eq!(ast.attributes[0].redeclares.as_ref().unwrap().text, "NAMED");
+    assert_eq!(
+        ast.where_rules[0].expression.text,
+        "NOT end_marker OR (LENGTH(name) > 0)"
+    );
+    // Both redeclarations are retained without domain compatibility validation.
+    assert_eq!(
+        result
+            .diagnostics
+            .iter()
+            .filter(|d| d.message.starts_with("attribute redeclaration retained"))
+            .count(),
+        2
+    );
+    assert!(
+        result
+            .diagnostics
+            .iter()
+            .all(|d| d.severity == Severity::Unsupported)
+    );
+    for text in [
+        // The qualifier must be a proper ancestor that declares the attribute.
+        "SCHEMA a; ENTITY x; a:REAL; END_ENTITY; ENTITY y SUBTYPE OF(x); SELF\\y.a:REAL; END_ENTITY; END_SCHEMA;",
+        "SCHEMA a; ENTITY x; a:REAL; END_ENTITY; ENTITY z; END_ENTITY; ENTITY y SUBTYPE OF(x); SELF\\z.a:REAL; END_ENTITY; END_SCHEMA;",
+        "SCHEMA a; ENTITY x; a:REAL; END_ENTITY; ENTITY y SUBTYPE OF(x); SELF\\x.b:REAL; END_ENTITY; END_SCHEMA;",
+        "SCHEMA a; ENTITY x; a:REAL; END_ENTITY; ENTITY y SUBTYPE OF(x); a:REAL; END_ENTITY; END_SCHEMA;",
+    ] {
+        fail(text, "EX2008");
+    }
+    fail(
+        "SCHEMA a; ENTITY x; SELF\\parent.x:REAL; END_ENTITY; END_SCHEMA;",
+        "EX2005",
     );
 }
 #[test]
@@ -271,7 +338,9 @@ fn express_malformed_input_is_rejected() {
         "SCHEMA a; FUNCTION x; END_SCHEMA;",
         "SCHEMA a; TYPE x=EXTENSIBLE SELECT (foo); END_TYPE; END_SCHEMA;",
         "SCHEMA a; USE FROM b (); END_SCHEMA;",
-        "SCHEMA a; ENTITY x; SELF\\parent.x:REAL; END_ENTITY; END_SCHEMA;",
+        "SCHEMA a; ENTITY x; SELF\\x:REAL; END_ENTITY; END_SCHEMA;",
+        "SCHEMA a; ENTITY x; SELF\\x.a, b:REAL; END_ENTITY; END_SCHEMA;",
+        "SCHEMA a; ENTITY x; INVERSE SELF\\x.a:SET OF x FOR b; END_ENTITY; END_SCHEMA;",
     ] {
         fail(text, "EX1003");
     }

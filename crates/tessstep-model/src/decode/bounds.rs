@@ -7,6 +7,12 @@ impl Context<'_> {
         if self.schemas.unsupported.is_empty() {
             return Ok(());
         }
+        // Under the retaining policy every diagnostic is counted, not rejected;
+        // bound and width expressions are still checked where values use them.
+        if self.policy.retain_unevaluated {
+            self.retained.diagnostics = self.schemas.unsupported.len();
+            return Ok(());
+        }
         let mut supported = BTreeSet::new();
         for declaration in self.schemas.declarations {
             self.tick()?;

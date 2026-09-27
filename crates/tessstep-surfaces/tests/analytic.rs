@@ -180,3 +180,59 @@ fn analytic_surface_periods_loci_and_invalid_shapes() {
         1e-13,
     );
 }
+#[test]
+fn analytic_spindle_torus_parts_end_at_the_axis_points() {
+    use std::f64::consts::{PI, TAU};
+    // a = 3, b = 5: the tube crosses the axis at height ±4 where cos v = -3/5.
+    let apple = Surface::degenerate_torus(frame(), l(3.), l(5.), true).unwrap();
+    let lemon = Surface::degenerate_torus(frame(), l(3.), l(5.), false).unwrap();
+    assert_eq!(apple.kind(), SurfaceKind::SpindleTorus);
+    let star = (-3.0f64 / 5.).acos();
+    assert_eq!(
+        apple.domain()[1],
+        AxisDomain::Closed {
+            min: -star,
+            max: star
+        }
+    );
+    assert_eq!(
+        lemon.domain()[1],
+        AxisDomain::Closed {
+            min: star,
+            max: TAU - star
+        }
+    );
+    // The outer equator and the lemon's waist.
+    near(
+        apple.evaluate(0., 0.).unwrap().position.coordinates(),
+        [8., 0., 0.],
+        1e-14,
+    );
+    near(
+        lemon.evaluate(0., PI).unwrap().position.coordinates(),
+        [-2., 0., 0.],
+        1e-14,
+    );
+    // Both parts share the axis points, where du vanishes exactly. du x dv points
+    // away from the axis on the apple and towards it on the lemon.
+    for (surface, ends, heights, sign) in [
+        (apple, [-star, star], [-4., 4.], 1.),
+        (lemon, [star, TAU - star], [4., -4.], -1.),
+    ] {
+        for (v, z) in ends.into_iter().zip(heights) {
+            let e = surface.evaluate(1., v).unwrap();
+            near(e.position.coordinates(), [0., 0., z], 1e-14);
+            assert_eq!(e.du.components(), [0., 0., 0.]);
+            assert!(e.normal(Default::default()).is_err());
+        }
+        let mid = 0.5 * (ends[0] + ends[1]);
+        let e = surface.evaluate(0.3, mid).unwrap();
+        let n = e.normal(Default::default()).unwrap().vector().components();
+        let p = e.position.coordinates();
+        assert!(sign * (n[0] * p[0] + n[1] * p[1]) > 0., "{n:?} at {p:?}");
+        assert!(surface.evaluate(0., ends[0] - 1e-3).is_err());
+        assert!(surface.evaluate(0., ends[1] + 1e-3).is_err());
+    }
+    assert!(Surface::degenerate_torus(frame(), l(5.), l(3.), true).is_err());
+    assert!(Surface::degenerate_torus(frame(), l(5.), l(5.), true).is_err());
+}

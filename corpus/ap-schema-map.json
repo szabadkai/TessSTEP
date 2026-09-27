@@ -1,0 +1,12 @@
+{
+  "format_version": 1,
+  "description": "Declared FILE_SCHEMA name (upper case, object identifier removed) to the validator schema it is checked against. Names absent here stay not_configured; no fuzzy matching.",
+  "arguments": ["--retain-unevaluated", "--accept-unset-derived", "--accept-unordered-complex", "--max-work", "400000000"],
+  "policy": "structural validation with retained (unevaluated) rules; `$` in DERIVE-redeclared slots and unordered complex components are tolerated and counted",
+  "schemas": {
+    "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+    "AUTOMOTIVE_DESIGN": "AUTOMOTIVE_DESIGN",
+    "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF": "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF",
+    "CONFIG_CONTROL_DESIGN": "CONFIG_CONTROL_DESIGN"
+  }
+}

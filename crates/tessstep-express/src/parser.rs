@@ -336,8 +336,17 @@ impl Parser<'_> {
     }
     fn attributes(&mut self, section: u8) -> Result<Vec<Attribute>, Diagnostic> {
         let start = self.span();
+        // `SELF\supertype.name` redeclares an inherited explicit or derived attribute.
+        let redeclares = if section < 2 && self.eat("SELF") {
+            self.expect("\\")?;
+            let supertype = self.name()?;
+            self.expect(".")?;
+            Some(supertype)
+        } else {
+            None
+        };
         let mut names = vec![self.name()?];
-        if section == 0 {
+        if section == 0 && redeclares.is_none() {
             while self.eat(",") {
                 names.push(self.name()?);
             }
@@ -381,6 +390,7 @@ impl Parser<'_> {
                 ty: ty.clone(),
                 optional,
                 kind: kind.clone(),
+                redeclares: redeclares.clone(),
                 span,
             })
             .collect())
@@ -483,12 +493,32 @@ impl Parser<'_> {
                 break;
             }
             let token = &self.tokens[self.pos];
+            // Only section and declaration keywords end an expression. Identifiers such
+            // as `end_exit_faces` are ordinary words even though they begin with `END_`.
             if token.kind == TokenKind::Word
-                && (token.text.starts_with("END_")
-                    || matches!(
-                        token.text.as_str(),
-                        "SCHEMA" | "ENTITY" | "TYPE" | "DERIVE" | "INVERSE" | "UNIQUE" | "WHERE"
-                    ))
+                && matches!(
+                    token.text.as_str(),
+                    "SCHEMA"
+                        | "ENTITY"
+                        | "TYPE"
+                        | "CONSTANT"
+                        | "FUNCTION"
+                        | "PROCEDURE"
+                        | "RULE"
+                        | "SUBTYPE_CONSTRAINT"
+                        | "DERIVE"
+                        | "INVERSE"
+                        | "UNIQUE"
+                        | "WHERE"
+                        | "END_SCHEMA"
+                        | "END_ENTITY"
+                        | "END_TYPE"
+                        | "END_CONSTANT"
+                        | "END_FUNCTION"
+                        | "END_PROCEDURE"
+                        | "END_RULE"
+                        | "END_SUBTYPE_CONSTRAINT"
+                )
             {
                 return Err(
                     self.error("unterminated expression before declaration/section boundary")

@@ -102,6 +102,33 @@ class CorpusTests(unittest.TestCase):
             corpus.inspect_schema(Path("validator"), "TEST", Path("file.step"), 1, result)
         self.assertEqual(result["status"], "timeout")
 
+    def test_schema_map_selects_declared_schema_and_passes_arguments(self):
+        schema_map = {"format_version": 1, "arguments": ["--retain-unevaluated"], "schemas": {"AUTOMOTIVE_DESIGN": "AP214"}}
+        result = case()
+        result.update(seconds=0, entity_count=2, schemas=[[["automotive_design { 1 0 10303 214 3 1 1 }"]]])
+        self.assertEqual(corpus.declared_schema(result), "AUTOMOTIVE_DESIGN")
+        self.assertEqual(corpus.map_schema(result, schema_map), "AP214")
+        payload = {"format_version": 1, "scope": "schema-structure", "status": "accepted", "entity_count": 2}
+        seen = []
+        def run(command, **kwargs):
+            seen.append(command)
+            kwargs["stdout"].write(json.dumps(payload).encode())
+            return subprocess.CompletedProcess(command, 0)
+        with patch.object(corpus.subprocess, "run", side_effect=run):
+            corpus.inspect_schema(Path("validator"), "AP214", Path("file.step"), 1, result, arguments=schema_map["arguments"])
+        self.assertEqual(seen[0][1:3], ["--retain-unevaluated", "AP214"])
+        self.assertEqual(result["stages"]["schema"], "accepted")
+        # Unmapped and undeclared names stay not_configured and keep the declared name.
+        other = case()
+        other.update(schemas=[[["AP238_STEP_NC_MIM"]]])
+        self.assertIsNone(corpus.map_schema(other, schema_map))
+        self.assertEqual(other["stages"]["schema"], "not_configured")
+        self.assertEqual(other["schema_result"]["declared"], "AP238_STEP_NC_MIM")
+        undeclared = case()
+        self.assertIsNone(corpus.declared_schema(undeclared))
+        self.assertIsNone(corpus.map_schema(undeclared, schema_map))
+        self.assertIsNone(corpus.map_schema(case("rejected"), schema_map))
+
     def test_schema_regression_does_not_require_physical_regression(self):
         old = case()
         old["stages"]["schema"] = "accepted"

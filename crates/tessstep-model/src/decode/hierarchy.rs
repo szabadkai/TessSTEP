@@ -39,6 +39,8 @@ impl<'a> Context<'a> {
         }
         Ok(result)
     }
+    /// An entity's local attributes, validated against the policy. Only
+    /// [`Self::is_slot`] attributes occupy physical parameters.
     pub(super) fn local_attributes(&mut self, id: DeclarationId) -> Result<&'a [Attribute], Error> {
         let DeclarationKind::Entity {
             attributes,
@@ -50,6 +52,9 @@ impl<'a> Context<'a> {
         else {
             return Err(self.error(ErrorKind::InvalidMetadata, "expected an entity declaration"));
         };
+        if self.policy.retain_unevaluated {
+            return Ok(attributes);
+        }
         if !unique.is_empty() || !where_rules.is_empty() || supertype_constraint.is_some() {
             return Err(self.error(
                 ErrorKind::Unsupported,
@@ -63,6 +68,11 @@ impl<'a> Context<'a> {
             }
         }
         Ok(attributes)
+    }
+    /// Whether an attribute occupies a physical parameter: explicit and not a
+    /// redeclaration, which reuses its ancestor's slot.
+    pub(super) fn is_slot(attribute: &Attribute) -> bool {
+        matches!(attribute.kind, AttributeKind::Explicit) && attribute.redeclares.is_none()
     }
     /// A record's declaration and explicit attributes in physical parameter order:
     /// the full inherited list for internal mapping, local attributes for external.
@@ -84,7 +94,9 @@ impl<'a> Context<'a> {
         for owner in owners {
             for attribute in self.local_attributes(owner)? {
                 self.tick()?;
-                attributes.push((owner, attribute));
+                if Self::is_slot(attribute) {
+                    attributes.push((owner, attribute));
+                }
             }
         }
         Ok((id, attributes))
@@ -113,6 +125,7 @@ impl<'a> Context<'a> {
         let mut included = BTreeSet::new();
         let mut inherited = BTreeSet::new();
         let mut previous: Option<&str> = None;
+        let mut unordered = false;
         for record in kind.records() {
             self.source = Some(record.source);
             let id = self
@@ -133,10 +146,16 @@ impl<'a> Context<'a> {
                         .cmp(name.bytes().map(|c| c.to_ascii_uppercase()))
                         .is_ge()
                 }) {
-                    return Err(self.error(
-                        ErrorKind::ComplexMapping,
-                        "complex components must follow canonical entity name order",
-                    ));
+                    if !self.policy.accept_unordered_complex {
+                        return Err(self.error(
+                            ErrorKind::ComplexMapping,
+                            "complex components must follow canonical entity name order",
+                        ));
+                    }
+                    if !unordered {
+                        self.retained.unordered_complex += 1;
+                        unordered = true;
+                    }
                 }
                 previous = Some(name);
             }

@@ -26,9 +26,21 @@ def markdown(report):
     lines += [f"| {status} | {count} |" for status,count in stats["verdicts"].items()]
     lines += ["", "| Stage | Executed / total | Outcomes |", "| --- | ---: | --- |"]
     lines += [f'| {stage} | {s["tested"]} / {s["total"]} | ' + ', '.join(f'{k}: {v}' for k,v in s['statuses'].items()) + ' |' for stage,s in stats['stages'].items()]
+    cell = lambda text: html.escape(str(text)).replace("|", "&#124;").replace("\n", " ")
+    sch = stats.get("schema", {})
+    if sch.get("files_declared"):
+        lines += ["", f'**Schema stage:** {sch["files_declared"]:,} physically accepted inputs by declared FILE_SCHEMA; '
+                  "structural validation with retained rules, not AP conformance.", "",
+                  "| Declared schema | Outcomes |", "| --- | --- |"]
+        lines += [f'| {cell(name)} | ' + ', '.join(f'{k}: {v:,}' for k, v in row.items()) + ' |' for name, row in sch["declared"].items()]
+        if sch["categories"]:
+            lines += ["", "| Top schema rejections | Inputs |", "| --- | ---: |"]
+            lines += [f"| {cell(k)} | {v:,} |" for k, v in list(sch["categories"].items())[:10]]
+        if sch["unevaluated"] or sch["tolerated"]:
+            lines += ["", "Accepted inputs: unevaluated " + ", ".join(f"{k} {v:,}" for k, v in sorted(sch["unevaluated"].items()))
+                      + "; tolerated " + ", ".join(f"{k} {v:,}" for k, v in sorted(sch["tolerated"].items())) + "."]
     g = stats["geometry"]
     if g["files_surveyed"]:
-        cell = lambda text: html.escape(str(text)).replace("|", "&#124;").replace("\n", " ")
         shown = g["presentation"]
         lines += ["", f'**Shape import:** {g["root_count"]:,} roots in {g["files_with_roots"]:,} files; '
                   f'{g["geometry_roots"]:,} passed geometry/topology; {g["accepted_roots"]:,} produced meshes; '

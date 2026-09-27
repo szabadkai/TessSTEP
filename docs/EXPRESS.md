@@ -36,6 +36,9 @@ Even warning-free IR proves only the structural checks below, not full schema co
   with multiple named parents.
 - Explicit attributes, grouped attribute names and OPTIONAL; DERIVE expressions;
   INVERSE with FOR attribute or entity.attribute; UNIQUE and WHERE rules/labels.
+- Attribute redeclaration `SELF\supertype.name : domain` in explicit and DERIVE
+  sections. The AST and IR record the qualifying supertype; a redeclaration is the
+  inherited attribute, not a new one.
 - Named domains, BOOLEAN/LOGICAL/INTEGER/NUMBER/REAL/STRING/BINARY; width/precision
   expressions and FIXED on sized strings/binary.
 - ARRAY/BAG/LIST/SET, optional bounds (required for ARRAY), ARRAY element OPTIONAL,
@@ -63,10 +66,16 @@ Tokens preserve literal spelling. Resource limits apply before token allocation.
   constants/algorithms; an explicit USE of one is an error. Imported declarations keep
   their original defining-schema identity and resolve their own domains there.
 - Cyclic schema import graphs resolve by a bounded fixed point. Inheritance and defined
-  type cycles (including aggregate/SELECT paths) are errors. Recursive entity attributes
-  are allowed. Dependencies on a cycle also receive a diagnostic.
-- Inherited attribute conflicts; diamond inheritance counts an ancestor once. Attribute
-  redeclaration/renaming syntax is not implemented, so no implicit overrides are assumed.
+  type cycles through named types and SELECT paths are errors. A defined type that
+  refers to itself through an aggregate (`TYPE t = LIST OF s; TYPE s = SELECT (t, ...)`)
+  is finite and valid, as are recursive entity attributes. Dependencies on a cycle also
+  receive a diagnostic.
+- A local attribute may not repeat an inherited name without redeclaring it; diamond
+  inheritance counts an ancestor once. Same-named attributes inherited from different
+  supertypes are distinct attributes, qualified by their declaring entity, and are not
+  a conflict. A redeclaration must name a proper ancestor that declares (or itself
+  redeclares) the attribute; its domain compatibility is explicitly diagnosed as
+  unsupported, not checked.
 - Direct signed integer-literal bound ordering and negative non-ARRAY lower bounds when
   both bounds parse as integers. General bound expressions are not evaluated.
 - INVERSE domain resolves to an entity or one SET/BAG of entities, including through
@@ -80,10 +89,15 @@ an unsupported diagnostic: expression grammar, names, operators, types and evalu
 not validated. An invalid expression can therefore survive structural compilation; this
 is intentional preservation, not expression acceptance. No constraints are executed.
 
+Only section and declaration keywords end an opaque expression; an identifier such as
+`end_exit_faces` is an ordinary name even though it begins with `END_`.
+
 Unrecognized declaration syntax, EXTENSIBLE/BASED_ON types, generic parameter domains,
-redeclared SELF-qualified attributes, schema version identifiers and other unimplemented
-constructs fail with a structured syntax diagnostic. Unknown declaration bodies are not
-silently discarded. No legally supplied ISO/AP schemas are bundled or hand transcribed.
+INVERSE redeclarations, schema version identifiers and other unimplemented constructs
+fail with a structured syntax diagnostic. Unknown declaration bodies are not silently
+discarded. No ISO/AP schema is bundled or hand transcribed; the AP242, AP214 and AP203
+long forms distributed with stepcode compile structurally (see
+[VALIDATION.md](VALIDATION.md)).
 
 ## Limits and diagnostics
 
@@ -118,7 +132,7 @@ bounded nested type structures are the only recursive compiler traversal.
 | EX2005 | Unresolved name or wrong declaration kind |
 | EX2006 | Invalid checked literal bounds |
 | EX2007 | Inheritance/defined-type cycle or dependent declaration |
-| EX2008 | Inherited attribute conflict |
+| EX2008 | Local attribute repeats an inherited name, or invalid redeclaration qualifier |
 | EX2009 | Invalid inverse target/domain |
 
 ## CLI

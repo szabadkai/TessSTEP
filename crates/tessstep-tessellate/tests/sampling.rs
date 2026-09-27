@@ -243,18 +243,19 @@ fn shared_edge_collapsed_curves_and_endpoint_snaps_are_diagnosed() {
             .kind,
         ErrorKind::SingularTangent
     );
+    // A vertex within the model tolerance of its curve end is accepted even when the
+    // chord is finer: the criteria measure the curve, and the end sample sits on the
+    // vertex. (A larger offset never reaches sampling; validation rejects it.)
     let mut r = square();
     r.vertices[0].position = Point::new([1e-9, 0., 0.]).unwrap();
     let n = r
         .validate(tolerance(), ValidationLimits::default())
         .unwrap()
         .normalize();
-    assert_eq!(
-        sample_edges(&n, tol(1e-10, 0.1), SamplingLimits::default())
-            .unwrap_err()
-            .kind,
-        ErrorKind::EndpointTolerance
-    );
+    let edges = sample_edges(&n, tol(1e-10, 0.1), SamplingLimits::default()).unwrap();
+    let samples = edges.edge(EdgeId(0)).unwrap().samples();
+    assert_eq!(samples[0].position, n.data().vertices[0].position);
+    assert!(samples.len() >= 2);
 }
 #[test]
 fn shared_edge_rational_arc_has_dense_independent_error_and_determinism_checks() {

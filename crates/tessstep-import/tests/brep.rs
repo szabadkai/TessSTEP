@@ -464,7 +464,15 @@ fn brep_rejections_are_typed_and_located() {
         (
             TORUS.replace("20.,5.)", "5.,20.)"),
             ErrorKind::Unsupported,
-            "horn and spindle tori",
+            "horn tori",
+        ),
+        (
+            // A degenerate torus must have its minor radius above its major radius.
+            TORUS
+                .replace("TOROIDAL_SURFACE('',", "DEGENERATE_TOROIDAL_SURFACE('',")
+                .replace("20.,5.)", "20.,5.,.T.)"),
+            ErrorKind::InvalidGeometry,
+            "DEGENERATE_TOROIDAL_SURFACE needs",
         ),
         (
             // 30 read as radians is not a cone semi-angle.

@@ -85,6 +85,10 @@ pub(crate) enum Chart {
     Cone(Frame, f64),
     Sphere(Frame, f64),
     Torus(Frame, f64, f64),
+    /// Spindle torus: major radius, larger minor radius and the selected part
+    /// (`true`: apple, v around 0; `false`: lemon, v around pi). v is closed at the
+    /// two axis points.
+    Spindle(Frame, f64, f64, bool),
     /// Periods of the axes declared periodic on the kernel surface, and the domain
     /// sides that collapse to a point.
     Nurbs([Option<f64>; 2], Vec<Singular>),
@@ -94,7 +98,9 @@ impl Chart {
         match self {
             Self::Plane(_) => [None, None],
             Self::Nurbs(periods, _) => *periods,
-            Self::Cylinder(..) | Self::Cone(..) | Self::Sphere(..) => [Some(TAU), None],
+            Self::Cylinder(..) | Self::Cone(..) | Self::Sphere(..) | Self::Spindle(..) => {
+                [Some(TAU), None]
+            }
             Self::Torus(..) => [Some(TAU), Some(TAU)],
         }
     }
@@ -102,6 +108,32 @@ impl Chart {
     pub(crate) fn singular(&self) -> Vec<Singular> {
         use std::f64::consts::FRAC_PI_2;
         match *self {
+            Self::Spindle(f, a, b, outer) => {
+                // The axis points lie at height ±sqrt(b² − a²); the domain end with
+                // the smaller v is the lower point for the apple, the upper for the lemon.
+                let star = (-a / b).acos();
+                let height = (b * b - a * a).sqrt();
+                let (low, high) = if outer {
+                    (-star, star)
+                } else {
+                    (star, TAU - star)
+                };
+                let sign = if outer { -1. } else { 1. };
+                vec![
+                    Singular {
+                        k: 0,
+                        value: low,
+                        point: add(f.o, scale(f.z, sign * height)),
+                        side: 1.,
+                    },
+                    Singular {
+                        k: 0,
+                        value: high,
+                        point: add(f.o, scale(f.z, -sign * height)),
+                        side: -1.,
+                    },
+                ]
+            }
             Self::Sphere(f, r) => vec![
                 Singular {
                     k: 0,
@@ -132,7 +164,8 @@ impl Chart {
             | Self::Cylinder(f, _)
             | Self::Cone(f, _)
             | Self::Sphere(f, _)
-            | Self::Torus(f, ..) => Some(f),
+            | Self::Torus(f, ..)
+            | Self::Spindle(f, ..) => Some(f),
             Self::Nurbs(..) => None,
         }
     }
@@ -266,6 +299,13 @@ fn invert_elementary(chart: &Chart, p: V3, hint: Option<[f64; 2]>) -> [f64; 2] {
         Chart::Cone(_, alpha) => [u, rho * alpha.sin() + l[2] * alpha.cos()],
         Chart::Sphere(..) => [u, l[2].atan2(rho)],
         Chart::Torus(_, major, _) => [u, l[2].atan2(rho - major)],
+        // The apple has tube radius a + b cos v = rho; the lemon's is -rho, and its
+        // azimuth is opposite to the point's.
+        Chart::Spindle(_, major, _, true) => [u, l[2].atan2(rho - major)],
+        Chart::Spindle(_, major, _, false) => [
+            u + std::f64::consts::PI,
+            nearest(l[2].atan2(-rho - major), std::f64::consts::PI, TAU),
+        ],
         Chart::Nurbs(..) => unreachable!("elementary chart"),
     };
     let mut uv = uv;

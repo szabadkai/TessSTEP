@@ -42,6 +42,8 @@ pub enum SurfaceKind {
     Cone,
     Sphere,
     Torus,
+    /// One part of a self-intersecting torus whose minor radius exceeds its major radius.
+    SpindleTorus,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Shape {
@@ -50,6 +52,8 @@ enum Shape {
     Cone(f64),
     Sphere(f64),
     Torus(f64, f64),
+    /// Major radius, minor radius and whether the outer (apple) part is selected.
+    Spindle(f64, f64, bool),
 }
 /// Oriented elementary surfaces. Periodic parameters are unwrapped radians.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -99,6 +103,25 @@ impl<S: Space> Surface<S> {
             shape: Shape::Torus(a, b),
         })
     }
+    /// Spindle torus: the positive minor radius exceeds the major radius, so the
+    /// tube crosses the axis. `outer` selects the apple (v around 0) rather than the
+    /// lemon (v around pi); either part's v domain is closed and ends at the two axis
+    /// points, where the surface is singular like a sphere pole.
+    pub fn degenerate_torus(
+        frame: PlaneFrame<S, 3>,
+        major: Length,
+        minor: Length,
+        outer: bool,
+    ) -> Result<Self, Error> {
+        let (a, b) = (positive(major)?, positive(minor)?);
+        if a >= b {
+            return Err(Error::InvalidShape);
+        }
+        Ok(Self {
+            frame,
+            shape: Shape::Spindle(a, b, outer),
+        })
+    }
     pub fn kind(self) -> SurfaceKind {
         match self.shape {
             Shape::Plane => SurfaceKind::Plane,
@@ -106,6 +129,7 @@ impl<S: Space> Surface<S> {
             Shape::Cone(_) => SurfaceKind::Cone,
             Shape::Sphere(_) => SurfaceKind::Sphere,
             Shape::Torus(..) => SurfaceKind::Torus,
+            Shape::Spindle(..) => SurfaceKind::SpindleTorus,
         }
     }
     pub fn domain(self) -> [AxisDomain; 2] {
@@ -122,6 +146,22 @@ impl<S: Space> Surface<S> {
                 },
             ],
             Shape::Torus(..) => [periodic; 2],
+            Shape::Spindle(a, b, outer) => {
+                // The tube radius a + b cos v vanishes at v = ±v*, the axis points.
+                let star = (-a / b).acos();
+                let v = if outer {
+                    AxisDomain::Closed {
+                        min: -star,
+                        max: star,
+                    }
+                } else {
+                    AxisDomain::Closed {
+                        min: star,
+                        max: TAU - star,
+                    }
+                };
+                [periodic, v]
+            }
         }
     }
     pub fn evaluate(self, u: f64, v: f64) -> Result<Evaluation<S>, Error> {
@@ -171,11 +211,18 @@ impl<S: Space> Surface<S> {
                     [-rc * c, -rc * s, -rs],
                 )
             }
-            Shape::Torus(a, b) => {
+            Shape::Torus(a, b) | Shape::Spindle(a, b, _) => {
                 let (sv, cv) = v.sin_cos();
                 let bc = b * cv;
                 let bs = b * sv;
-                let r = finite(a + bc)?;
+                let mut r = finite(a + bc)?;
+                // At a spindle's axis points the tube radius is exactly zero, so du and
+                // duu vanish there like at a sphere pole.
+                if let AxisDomain::Closed { min, max } = domains[1] {
+                    if v == min || v == max {
+                        r = 0.;
+                    }
+                }
                 (
                     [r * c, r * s, bs],
                     [-r * s, r * c, 0.],

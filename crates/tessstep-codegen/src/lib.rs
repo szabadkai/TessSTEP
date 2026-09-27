@@ -147,31 +147,14 @@ pub fn generate(c: &Compilation, limits: Limits) -> Result<String, Error> {
                     );
                     let mut visited = BTreeSet::new();
                     let mut active = BTreeSet::new();
+                    let mut order = Vec::new();
                     let mut stack = vec![(DeclarationId(id), false)];
                     while let Some((current, finish)) = stack.pop() {
                         g.tick()?;
                         if finish {
                             active.remove(&current);
                             visited.insert(current);
-                            let IrKind::Entity { attributes, .. } = &g.decl(current)?.kind else {
-                                return Err(Error::InvalidCompilation);
-                            };
-                            for (index, a) in attributes
-                                .iter()
-                                .enumerate()
-                                .filter(|(_, a)| matches!(a.kind, AttributeKind::Explicit))
-                            {
-                                g.tick()?;
-                                g.identifier(&a.name)?;
-                                let schema = &ir.schemas[g.decl(current)?.schema].name;
-                                emit!(
-                                    g,
-                                    "pub attr_{}: super::schema_{}::Attribute{}_{index},\n",
-                                    a.name.to_ascii_lowercase(),
-                                    schema.to_ascii_lowercase(),
-                                    current.0
-                                );
-                            }
+                            order.push(current);
                         } else if !visited.contains(&current) {
                             if !active.insert(current) {
                                 return Err(Error::InvalidCompilation);
@@ -181,6 +164,48 @@ pub fn generate(c: &Compilation, limits: Limits) -> Result<String, Error> {
                             };
                             stack.push((current, true));
                             stack.extend(supertypes.iter().rev().map(|p| (*p, false)));
+                        }
+                    }
+                    // A redeclaration keeps its ancestor's field. Same-named attributes
+                    // inherited from different entities are qualified by their owner.
+                    let mut counts = std::collections::BTreeMap::new();
+                    for current in &order {
+                        let IrKind::Entity { attributes, .. } = &g.decl(*current)?.kind else {
+                            return Err(Error::InvalidCompilation);
+                        };
+                        for a in attributes.iter().filter(|a| {
+                            matches!(a.kind, AttributeKind::Explicit) && a.redeclares.is_none()
+                        }) {
+                            g.tick()?;
+                            *counts.entry(&a.name).or_insert(0usize) += 1;
+                        }
+                    }
+                    for current in &order {
+                        let owner = g.decl(*current)?;
+                        let IrKind::Entity { attributes, .. } = &owner.kind else {
+                            return Err(Error::InvalidCompilation);
+                        };
+                        for (index, a) in attributes.iter().enumerate().filter(|(_, a)| {
+                            matches!(a.kind, AttributeKind::Explicit) && a.redeclares.is_none()
+                        }) {
+                            g.tick()?;
+                            g.identifier(&a.name)?;
+                            let schema = &ir.schemas[owner.schema].name;
+                            let field = if counts[&a.name] > 1 {
+                                format!(
+                                    "{}__{}",
+                                    owner.name.to_ascii_lowercase(),
+                                    a.name.to_ascii_lowercase()
+                                )
+                            } else {
+                                a.name.to_ascii_lowercase()
+                            };
+                            emit!(
+                                g,
+                                "pub attr_{field}: super::schema_{}::Attribute{}_{index},\n",
+                                schema.to_ascii_lowercase(),
+                                current.0
+                            );
                         }
                     }
                     emit!(
@@ -569,6 +594,17 @@ impl<'a> Generator<'a> {
                                 entity.as_ref().map(|n| n.text.as_str()),
                                 attribute.text
                             ),
+                        }
+                        match a.redeclares {
+                            Some(id) => {
+                                self.decl(id)?;
+                                emit!(
+                                    self,
+                                    ", redeclares: Some(::tessstep_schema::DeclarationId({}))",
+                                    id.0
+                                );
+                            }
+                            None => emit!(self, ", redeclares: None"),
                         }
                         emit!(self, " }},");
                     }

@@ -28,10 +28,19 @@ the outer loop's chart (the nearest-center shift and its neighbours are tried); 
 shift is recorded in every use of the hole and no geometry changes. A noncontractible loop that fails to close in the unwrapped plane is rejected. A full
 cylinder strip works when its two explicit seam uses close the UV rectangle.
 
-Joining uses must agree within the UV tolerance. Per-use endpoint samples are retained;
-the polygon uses the next coedge's start at a join, so its chord can differ by that
-joining tolerance. This does not edit the source pcurve. Collapsed polygon segments,
-backtracking, self-intersections, boundary contacts and degenerate loops are rejected.
+Joining uses must agree within the UV tolerance, or within the model tolerance in
+metres: chart axes have unrelated units (radians on a millimetre tube beside metres
+along a cylinder), so chart offsets are scaled by the largest surface derivative
+sampled along each axis, and a join whose ends coincide on the surface within the
+model tolerance is accepted even when the pcurves miss each other in UV (a vertex
+may sit that far from its curve, and a seam meets such a vertex with the same gap).
+Singular points never qualify, and a closure gap near a whole period stays a
+non-contractible loop. Per-use endpoint samples are retained; the polygon uses the
+next coedge's start at a join, so its chord can differ by that joining tolerance.
+This does not edit the source pcurve. Collapsed polygon segments, backtracking,
+self-intersections, boundary contacts and degenerate loops are rejected; when the
+surface gives an axis scale these checks run in metres with a thousandth of the
+model tolerance, so a corner a few nanometres wide in one axis is not a backtrack.
 Outer winding must be counterclockwise and hole winding clockwise in the surface chart;
 face orientation is separately retained in topology. Holes must be strictly inside the
 outer polygon, mutually disjoint and unnested. No automatic winding repair occurs.

@@ -21,11 +21,26 @@ represented directly. Positional jumps beyond the smaller of model/chord toleran
 singular tangents and numeric failures produce typed errors.
 
 Canonical first/last positions are the exact stored vertex values, allowing different
-edges meeting at a vertex to share identical coordinates. The curve-to-vertex displacement
-must also satisfy the chord tolerance or sampling fails. At internal knots, adjacent
-spans retain the same stored position; a permitted small discrepancy is included in
-chord checks. Raw model geometry is never changed. A full closed circle retains both
-parameter endpoints with the same canonical vertex position.
+edges meeting at a vertex to share identical coordinates. A vertex may sit off its
+curve end by up to the model tolerance (the B-rep accepted it that way): the chord
+and tangent criteria measure the curve itself, and only the stored end samples move
+onto the vertex, so an end segment deviates from the curve by that offset in addition
+to the chord. A larger offset fails sampling. Seed parameters within numerical noise
+of each other or of the range ends (a range starting at -5e-17 beside the period
+break at 0) are dropped, since a span of no length can never satisfy the chord
+direction. At internal knots, adjacent spans retain the same stored position; a
+permitted small discrepancy is included in chord checks. Raw model geometry is never
+changed. A full closed circle retains both parameter endpoints with the same
+canonical vertex position.
+
+Face refinement accepts a facet when every probe lies within the chord of its plane
+and the surface normal within the angle of the facet normal. A facet thinner than
+the chord has no meaningful plane orientation, so its probes may instead agree with
+the corner normals within the angle. A rejected facet is split across the edge whose
+corner normals turn by more than the angle, or across its longest edge when none
+does, and Lawson flips never replace a diagonal within the angle by one whose ends
+turn further; both rules keep splitting and flipping from undoing each other on
+anisotropic charts.
 
 `SharedEdges::face_boundary` reconstructs a face's UV chart, then maps each canonical
 sample through each use's pcurve, applying its recorded chart shift and checking the
