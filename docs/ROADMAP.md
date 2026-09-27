@@ -591,6 +591,10 @@ entities), `data/ap203e2/ap203e2_mim_lf.exp` (1,006) and `data/ap203/ap203.exp` 
   64 exports under installed-consumer tests ([C API](C_API.md)). The single-root curved
   import C entry point remains with the curved-import follow-up.
 
+Result (2026-09-27): every exit criterion below is met, with the scope decisions
+recorded above; the reviewed corpus baseline holds 577 meshed roots and 585 accepted
+product structures (see [VALIDATION.md](VALIDATION.md)).
+
 Order: 21.1 → 21.2 → 21.3; then 21.4, 21.5 and 21.7 in parallel, with 21.8 after
 21.7. 21.6 does not depend on schema work and can start now. 21.9 accompanies each
 public operation.

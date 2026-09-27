@@ -1,24 +1,37 @@
-# Milestone 21 completion: assemblies, colours, supplied pcurves, C/C++ — 2026-09-27 (open items)
+# Milestone 21 completion: assemblies, colours, supplied pcurves, C/C++ — 2026-09-27
 
-Delivered on this branch: assembly linking and import (`link_assembly`,
-`import_assembly`), surface colours (`import_appearance`), schema selection and
-assembly import in C/C++ (64 exports), the corpus product stage, the closure-type
-coverage survey, the AP-schema join of profile rejections, `UNIFORM_*`/`BEZIER_*`
-knots, `PARABOLA`/`HYPERBOLA` edges, supplied pcurves and named rejections. `cargo
-test --workspace`, Clippy, `check_geometry.py --require-external` (83 outcomes),
-`check_capi.py`, `check_coverage.py`, `conformance.py --check` and the other check
-scripts passed.
+Delivered: assembly linking and import (`link_assembly`, `import_assembly`), surface
+colours (`import_appearance`), schema selection and assembly import in C/C++ (64
+exports), the corpus product stage, the closure-type coverage survey, the AP-schema
+join of profile rejections, `UNIFORM_*`/`BEZIER_*` knots, `PARABOLA`/`HYPERBOLA`
+edges, supplied pcurves and named rejections of rare geometry.
 
-**Open before merge:** the corpus baseline was not refreshed. The last reviewed
-`corpus.py --check` (before the final supplied-pcurve rule) showed 576 meshed roots
-against 577, with one regression, `bm2_ec_exhaust-A.stp` root #4408 (face #4660,
-trim `SelfIntersection` with supplied pcurves; fine without them). The rule was then
-narrowed: supplied pcurves serve only B-spline faces on which every use has an agreeing
-one, probed on every knot span at half the model tolerance. Rerun `--check`, confirm
-that root recovers and review the remaining movements (product stage newly measured on
-every mapped input; NIST AP203 inch files now use their context units; `OCC8228.stp`
-unsupported → resource limit; `bug28345_30338.stp`, `bug33261.stp` and
-`trj3_s1-db-214.stp` gain roots), then `--save-baseline`.
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets) | passed |
+| `check_geometry.py --require-external` | 83 reviewed outcomes passed, including four authored assembly fixtures and four hash-pinned exporter assemblies |
+| `check_capi.py` (installed C/C++ consumers) | passed; the sanitizer variant hangs on macOS 27 and was not run locally |
+| `check_coverage.py`, `conformance.py --check`, other check scripts | passed; 501 AP242 entities classified (68 adapted) |
+| `corpus.py --check` | 3,227 compatible inputs, no regressions |
+
+Corpus outcomes: 1,197 shape roots in 584 files, 740 passing geometry/topology and 577
+meshed (566 after the seam fix). The product stage links 2,652 inputs with a mapped
+schema: 585 accepted (1,330 products, 1,096 occurrences in 97 assemblies, 2,260 placed
+definition nodes, 607 placed shape roots), 1,807 rejected, 23 unsupported and 237
+without product records. About 1,740 rejections are synthetic `dodgy-step-files`
+inputs that write five-parameter `PRODUCT_DEFINITION`s; the real-exporter rejections
+are typed nonconformances (explicit SI dimensions, untyped measures in selects, unset
+required names, unordered complex instances) or genuine graph errors.
+
+Reviewed baseline movements before saving: 2,645 inputs gain the newly measured product
+stage and 207 only the closure-type survey; NIST AP203 inch files (`nist_ctc_02`,
+`nist_ctc_05`, `nist_ftc_09`) now use their context units after the tolerated
+`NAMED_UNIT(*)` on conversion-based units and reach tessellation; `bug28345_30338.stp`
+(+2), `bug33261.stp` (+5) and `trj3_s1-db-214.stp` (+4) gain meshed roots;
+`OCC8228.stp` moves from unsupported to a resource limit. An earlier supplied-pcurve
+rule lost roots on `-ec` exporter files (rounded periods such as `6.28318530718`, and
+mixed supplied and computed corners); the final rule (B-spline faces only, every use
+supplied and agreeing, knot-span probes at half the model tolerance) loses none.
 
 # Curved import: spindle tori, seam placement, tolerance-consistent meshing — 2026-09-27
 
