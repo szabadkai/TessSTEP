@@ -262,6 +262,28 @@ by an import profile in `corpus/geometry`), `supertype`, `product`, a named
 entity and no profile entity recorded otherwise. `--write` regenerates
 [COVERAGE.md](COVERAGE.md).
 
+## Product stage and coverage survey (Milestone 21)
+
+With `--schema-map`, every physically accepted input whose declared schema is mapped
+also runs the `assembly` example as its `product` stage (without a separate
+`--product-validator`). It links the product structure with the bundled original
+product profile, independently of the whole-file schema outcome, and imports no
+shape: `accepted` means every occurrence and its placement were linked, and the
+result counts products, occurrences, placed definition nodes and placed and unplaced
+shape roots. A missing or ambiguous placement is `rejected`; an occurrence or
+placement record outside the profile is `unsupported` (or `rejected` when invalid),
+with the first located reason; a file without product records is `not_applicable`.
+The summary reports outcomes by declared schema and the top failure categories; a
+previously accepted input becoming non-accepted fails `--check`.
+
+The shape survey also counts every record type in each root's local reference
+closure, whatever the root's outcome, and the runner keeps per-file totals (types,
+roots containing each type, failing roots containing each type) in the report and the
+baseline. The summary joins them with [the coverage matrix](COVERAGE.md): the types
+no import adapts that occur in failing roots are the entities an earlier rejection may
+hide. It also joins profile rejections with the AP schema stage: an unsupported entity
+in a schema-accepted file is valid in the AP but not adapted.
+
 ## Configured product stage (Milestone 5)
 
 `--product-validator EXE` adds a `product` stage after the configured schema stage
@@ -277,7 +299,6 @@ reviewed fixtures through physical, schema and product stages. See `reports/prod
 Six product models are accepted, four rejected and one unsupported; all eleven pass
 structural decoding. Accepted matrices, graph counts and uncertainty values are verified. These are test applications, not bundled AP validators.
 
-Without a checker, product remains `not_configured`. Older unmeasured baseline
-entries compare equivalently, avoiding artificial outcome changes. The physical
-baseline is not rewritten. No product result is inferred for the external AP
-corpus; its geometry and tessellation stages come from the solid import survey above.
+Without a checker or a schema map, product remains `not_configured`. Older unmeasured
+baseline entries compare equivalently, avoiding artificial outcome changes. For the
+external AP corpus the product stage is the Milestone 21 linker above.

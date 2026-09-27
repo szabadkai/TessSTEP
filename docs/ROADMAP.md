@@ -8,7 +8,9 @@ tessellations import directly as owned meshes and tessellated annotations as pla
 graphics, with discovery and representation selection (Milestone 20, Rust/C/C++); see
 [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md). Curved `MANIFOLD_SOLID_BREP`
 import with elementary and B-spline geometry, computed pcurves and discovered context
-units is available in Rust; see [CURVED_IMPORT.md](CURVED_IMPORT.md). The milestone
+units is available in Rust; see [CURVED_IMPORT.md](CURVED_IMPORT.md). Assemblies import
+as scenes with surface colours (Milestone 21, Rust/C/C++); see
+[PRODUCT_MODEL.md](PRODUCT_MODEL.md) and [APPEARANCE.md](APPEARANCE.md). The milestone
 records below describe their delivery-time scope.
 
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
@@ -21,7 +23,9 @@ Milestones 11–17 add structural topology, supplied-pcurve UV trimming, shared-
 Milestone 18 adds shared assembly mesh assets and explicit nested placements.
 Milestone 19 adds explicit color/opacity and inherited appearance overrides.
 Milestone 20 imports existing shape and presentation tessellations without retessellation.
-STEP geometry adaptation and industrial hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
+Milestone 21 compiles the AP long forms for a corpus schema stage, records AP242 geometry
+coverage, and imports STEP assemblies as coloured scenes.
+AP conformance and industrial hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz runs, documentation, conformance updates
 and architecture review before declaring work done. Benchmarks
 run automatically in the nightly CI workflow only; do not run them locally for milestone
@@ -461,7 +465,7 @@ adapter. These items feed Milestone 21.
   them in the baseline. The existing `unsupported_entity_types` summary names only
   the first rejection per root, so it hides entities behind an earlier failure.
 
-**Milestone 21 plan — systematic AP schema coverage (planned 2026-09-26).**
+**Milestone 21 — systematic AP schema coverage (planned 2026-09-26, completed 2026-09-27).**
 
 Goal: every input whose header names a supported application protocol passes a real
 schema stage, and every geometric, topological and shape-representation entity type
@@ -523,51 +527,69 @@ entities), `data/ap203e2/ap203e2_mim_lf.exp` (1,006) and `data/ap203/ap203.exp` 
   `--check`. Every rejection category was reviewed by entity
   ([VALIDATION.md](VALIDATION.md)); the object identifier is not yet compared
   against the compiled edition.
-- **21.4 Import through AP metadata.** Decode each selected root closure against the
-  input's AP schema and adapt those records. The reduced profiles remain only as
-  authored test schemas. A profile rejection then names an entity that is valid in
-  the AP but not adapted. Meshes of roots that were already accepted must not change
-  (compare hashes); VALIDATION.md explains any outcome change.
-- **21.5 Generated coverage matrix — matrix delivered 2026-09-27.**
+- **21.4 AP metadata and import profiles — delivered 2026-09-27 as re-scoped.**
+  Decoding each root closure against the AP long form inside the library is not
+  possible without redistributing ISO schemas (21.1), so the bounded original profiles
+  stay the import path and the AP validator stays a corpus stage. Their outcomes are
+  joined instead: the corpus summary reports, for every profile rejection naming an
+  unsupported entity, whether the file's AP schema stage accepted it (the entity is
+  then valid in the AP but not adapted) or rejected it. Accepted meshes are
+  unchanged by this item.
+- **21.5 Generated coverage matrix — delivered 2026-09-27.**
   `scripts/check_coverage.py` enumerates every instantiable subtype of
   `geometric_representation_item`, `topological_representation_item` and
   `shape_representation` from the compiled AP242 long form and checks
   `docs/coverage.json`: 501 entities, each adapted (and declared by an import
-  profile), a profile supertype, a product-adapter placement, a named unsupported
-  rejection or a recorded out-of-scope decision; [COVERAGE.md](COVERAGE.md) is
-  generated from it and CI runs the check. Still open: the reproducible coverage
-  survey in `scripts/corpus.py`, counting every type in each decoded closure rather
-  than only the first rejection.
-- **21.6 Geometry adapters and named rejections**, from the coverage gaps above, by
-  corpus frequency:
-  - read supplied pcurves on `SURFACE_CURVE` / `SEAM_CURVE`, honouring
-    `master_representation` and checking each pcurve against its 3D curve within
-    model tolerance; compute pcurves only where none is supplied;
-  - `DEGENERATE_TOROIDAL_SURFACE` spindle tori — delivered 2026-09-27 (see the
-    Onshape block above), together with seam placement that avoids holes and edges
-    tangent to the seam line, sampling and trimming tolerances expressed in metres
-    through the surface metric, and collapse of sliver faces thinner than the model
-    tolerance (a reported adaptation);
-  - `UNIFORM_*` and `BEZIER_*` B-spline forms, and `HYPERBOLA` / `PARABOLA` edges;
-  - named typed rejections for the rare entities listed above;
-  - recorded scope decisions: `SHELL_BASED_SURFACE_MODEL` (proposed: import as
-    shell meshes, never as solids) and `CURVE_BOUNDED_SURFACE` (proposed: named
-    unsupported for v1.0).
-- **21.7 Product structure and assemblies.** Run the product stage on the corpus with
-  AP metadata. Link each solid root to its product definition, shape representation
-  and occurrence placements, and build a Milestone 18 scene whose assets are the
-  imported meshes. Missing or ambiguous placements fail as in Milestone 5. Evidence:
-  stepcode `data/ap214e3/as1-oc-214.stp` and a NIST assembly with repeated parts.
-  External document references stay a named unsupported outcome.
-- **21.8 Presentation.** Adapt `STYLED_ITEM` / `OVER_RIDING_STYLED_ITEM` surface
-  colour and transparency (through presentation style assignments, surface style
-  usages and `SURFACE_STYLE_RENDERING`) to Milestone 19 appearance at root, shell
-  and face level. Layers, invisibility, curve styles and textures are named
-  unsupported. PMI is out of scope for v1.0.
-- **21.9 Public interfaces.** Provide C ABI and C++ entry points, with installed
-  consumer tests, for schema selection and validation results, assembly import and
-  imported appearance. C/C++ entry points for tessellated and curved import belong to
-  the Milestone 20 and curved-import follow-ups.
+  profile), a profile supertype, a product-profile container or placement, a named
+  unsupported rejection or a recorded out-of-scope decision; [COVERAGE.md](COVERAGE.md)
+  is generated from it and CI runs the check. The corpus survey counts every record
+  type in each root's reference closure, whatever the outcome, keeps the per-file
+  counts in the baseline, and lists the unadapted types in failing roots' closures
+  ([corpus testing](corpus-testing.md#product-stage-and-coverage-survey-milestone-21)).
+- **21.6 Geometry adapters and named rejections — delivered 2026-09-27:**
+  - supplied pcurves on `SURFACE_CURVE` / `SEAM_CURVE` are decoded apart with an
+    original pcurve profile, mapped from STEP surface parameters into elementary and
+    B-spline charts, tried master first and used only when they agree with the 3D
+    curve at nine parameters within the model tolerance; every other use is computed
+    ([curved import](CURVED_IMPORT.md#supplied-and-computed-pcurves));
+  - `DEGENERATE_TOROIDAL_SURFACE` spindle tori, seam placement that avoids holes and
+    edges tangent to the seam line, metric sampling and trimming tolerances, and
+    sliver-face collapse (see the Onshape block above);
+  - `UNIFORM_*` and `BEZIER_*` B-spline forms with ISO 10303-42 knots, and `HYPERBOLA` /
+    `PARABOLA` edges as exact quadratic arcs;
+  - named typed rejections for `OFFSET_SURFACE`, `RECTANGULAR_TRIMMED_SURFACE`,
+    `RECTANGULAR_COMPOSITE_SURFACE`, `COMPOSITE_CURVE`, `OFFSET_CURVE_3D` and `PCURVE` /
+    `DEGENERATE_PCURVE` edge geometry;
+  - scope decisions: `SHELL_BASED_SURFACE_MODEL` is a named unsupported outcome for
+    Milestone 21; importing surface models as shell meshes, never as solids, moves to
+    Milestone 22. `CURVE_BOUNDED_SURFACE` is named unsupported for v1.0.
+- **21.7 Product structure and assemblies — delivered 2026-09-27.**
+  `tessstep_import::link_assembly` decodes product records with an original product
+  profile (AP203/AP214/AP242 physical layouts; representation items and associated
+  documents as links) and places supplied meshes by next assembly usage occurrences and
+  their context dependent shape representations in a Milestone 18 scene;
+  `import_assembly` imports every selected shape root in its context units first.
+  Missing or ambiguous placements fail at the new product stage. The corpus runner
+  runs this product stage on every mapped input. Evidence: `tests/assembly.rs`
+  (authored nested, missing-placement, unplaced and inch fixtures) and, hash-pinned,
+  stepcode `as1-oc-214.stp` with three further exporter variants of the same assembly
+  (repeated nuts and bolts: 9 products, 13 occurrences, 28 definition nodes, 18 part
+  instances; consistent bounds and volumes). The corpus holds no NIST assembly, so the
+  repeated-part evidence is these unmodified exporter files. Mapped-item and
+  Cartesian-operator assemblies and external document references are not linked.
+- **21.8 Presentation — delivered 2026-09-27.** `import_appearance` adapts
+  `STYLED_ITEM` / `OVER_RIDING_STYLED_ITEM` fill-area and rendering colours and
+  transparency to Milestone 19 appearance on assets (solid, outer shell, shape
+  representation) and asset faces, from an original style profile that never decodes
+  curve or point styles. Context-dependent styles, layers, invisibility, curve styles
+  and textures are counted, never applied; PMI is out of scope for v1.0
+  ([appearance](APPEARANCE.md#step-surface-colours-milestone-21)).
+- **21.9 Public interfaces — delivered 2026-09-27.** `ts_document_get_schema` (schema
+  selection), `ts_document_import_assembly` with a retained `ts_assembly` (products,
+  nodes, root outcomes, typed exclusions, style counts, scene and appearance
+  acquisitions), C++ `Document::schema`, `Document::import_assembly` and `Assembly`;
+  64 exports under installed-consumer tests ([C API](C_API.md)). The single-root curved
+  import C entry point remains with the curved-import follow-up.
 
 Order: 21.1 → 21.2 → 21.3; then 21.4, 21.5 and 21.7 in parallel, with 21.8 after
 21.7. 21.6 does not depend on schema work and can start now. 21.9 accompanies each
@@ -583,7 +605,10 @@ with limits. EXPRESS rules, functions and WHERE clauses are not evaluated, so no
 conformance is claimed.
 
 Deferred to Milestone 22 (industrial hardening), from the backlog above: default
-parse budgets; opt-in sewing and orientation repair (124 `OpenShell`, 38
+parse budgets; surface models (`SHELL_BASED_SURFACE_MODEL`) as shell meshes; mapped-item
+assembly placements; C0 creases at B-spline knots of multiplicity equal to the degree
+(tessellation reaches its budget there); tolerated exporter unit deviations such as
+explicit dimensions on SI units; opt-in sewing and orientation repair (124 `OpenShell`, 38
 `BrokenWire` and 35 `InconsistentOrientation` roots in the latest run); tolerance
 handling for edges off their surface (70) and endpoints off their curves (22);
 tessellation budgets and anisotropic refinement (42 resource-limit roots, and the

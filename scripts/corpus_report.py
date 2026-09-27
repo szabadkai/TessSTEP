@@ -2,6 +2,8 @@
 from collections import Counter
 import html
 import json
+from pathlib import Path
+import re
 
 STAGES = ("physical_parse", "references", "schema", "product", "geometry", "tessellation")
 FAULTS = {"crash", "timeout", "runner_error", "nondeterministic"}
@@ -79,6 +81,52 @@ def schema_totals(cases):
             "categories": dict(categories.most_common(15)), "unevaluated": dict(unevaluated), "tolerated": dict(tolerated)}
 
 
+def coverage_status(name, coverage):
+    """The coverage matrix status of an entity type: explicit, by rule, or unrecorded."""
+    entry = coverage["entities"].get(name)
+    if entry:
+        return entry["status"]
+    for rule in coverage["rules"]:
+        if re.fullmatch(rule["pattern"], name):
+            return rule["status"]
+    return "unrecorded"
+
+
+def coverage_totals(cases):
+    """Coverage survey: root closure record types across files, with their matrix status."""
+    coverage = json.loads((Path(__file__).resolve().parents[1] / "docs/coverage.json").read_text(encoding="utf-8"))
+    results = [c["geometry_result"] for c in cases if c.get("geometry_result")]
+    roots = sum((Counter(r.get("closure_roots", {})) for r in results), Counter())
+    failing = sum((Counter(r.get("closure_failing_roots", {})) for r in results), Counter())
+    # Types that no import adapts, in the closures of failing roots: the entities an
+    # earlier rejection may hide.
+    blocking = {name: {"status": coverage_status(name, coverage), "failing_roots": n, "roots": roots[name]}
+                for name, n in failing.items()
+                if coverage_status(name, coverage) not in ("adapted", "supertype", "product")}
+    return {"types": len(roots), "truncated": sum(r.get("closure_truncated", 0) for r in results),
+            "blocking": dict(sorted(blocking.items(), key=lambda kv: (-kv[1]["failing_roots"], kv[0]))[:25])}
+
+
+def ap_join(cases):
+    """Profile rejections joined with the whole-file AP schema stage: an entity a
+    profile rejects as unsupported in a file the AP schema accepts is valid in the AP
+    but not adapted; in a schema-rejected file it may be invalid instead."""
+    joined = {"accepted": Counter(), "rejected": Counter(), "not_configured": Counter()}
+    roots = Counter()
+    for case in cases:
+        result = case.get("geometry_result")
+        if not result:
+            continue
+        schema = case["stages"].get("schema")
+        key = schema if schema in ("accepted", "rejected") else "not_configured"
+        types = Counter(result.get("unsupported_entity_types", {}))
+        joined[key].update(types)
+        roots[key] += sum(types.values())
+    return {"roots": dict(roots),
+            "valid_in_ap_not_adapted": dict(joined["accepted"].most_common(15)),
+            "schema_rejected": dict(joined["rejected"].most_common(10))}
+
+
 def product_totals(cases):
     """Product-stage outcomes by declared FILE_SCHEMA, failure categories and linked counts."""
     declared = {}
@@ -127,7 +175,7 @@ def aggregate(cases, baseline_present=False):
         tested = sum(n for status, n in counts.items() if status not in UNTESTED)
         stages[stage] = {"tested": tested, "total": len(cases), "statuses": dict(sorted(counts.items()))}
     times = sorted(c.get("seconds", 0) for c in cases)
-    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases), "schema": schema_totals(cases), "product": product_totals(cases),
+    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases), "schema": schema_totals(cases), "product": product_totals(cases), "coverage": coverage_totals(cases), "ap_join": ap_join(cases),
             "verdicts": dict(Counter(verdict(c, baseline_present) for c in cases)),
             "diagnostics": dict(Counter(code for c in cases for code in c.get("diagnostic_counts", {}))),
             "performance": {"total_input_bytes": sum(c.get("bytes", 0) for c in cases),

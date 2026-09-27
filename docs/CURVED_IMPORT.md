@@ -18,11 +18,22 @@ Rust is the only interface so far; C/C++ entry points are pending.
 | Contract | Supported |
 | --- | --- |
 | Root | `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL` of `ADVANCED_FACE`/`FACE_SURFACE`, or `BREP_WITH_VOIDS` adding cavity shells; `ORIENTED_CLOSED_SHELL` orientation is applied to its faces |
-| Surfaces | `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, ring `TOROIDAL_SURFACE`, `B_SPLINE_SURFACE_WITH_KNOTS`, `QUASI_UNIFORM_SURFACE`, rational forms; `SURFACE_OF_LINEAR_EXTRUSION` and `SURFACE_OF_REVOLUTION` of any supported curve (see [swept surfaces](#swept-surfaces)) |
-| Edge curves | `LINE`, `CIRCLE`, `ELLIPSE`, `B_SPLINE_CURVE_WITH_KNOTS`, `QUASI_UNIFORM_CURVE`, rational forms; any of these as the 3D curve of `SURFACE_CURVE`, `SEAM_CURVE` or `INTERSECTION_CURVE`, or as the basis of a `TRIMMED_CURVE` |
+| Surfaces | `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, ring `TOROIDAL_SURFACE`, `DEGENERATE_TOROIDAL_SURFACE`, `B_SPLINE_SURFACE_WITH_KNOTS`, `QUASI_UNIFORM_SURFACE`, `UNIFORM_SURFACE`, `BEZIER_SURFACE`, rational forms; `SURFACE_OF_LINEAR_EXTRUSION` and `SURFACE_OF_REVOLUTION` of any supported curve (see [swept surfaces](#swept-surfaces)) |
+| Edge curves | `LINE`, `CIRCLE`, `ELLIPSE`, `PARABOLA`, `HYPERBOLA`, `B_SPLINE_CURVE_WITH_KNOTS`, `QUASI_UNIFORM_CURVE`, `UNIFORM_CURVE`, `BEZIER_CURVE`, rational forms; any of these as the 3D curve of `SURFACE_CURVE`, `SEAM_CURVE` or `INTERSECTION_CURVE` (with their supplied `PCURVE`s, see below), or as the basis of a `TRIMMED_CURVE` |
 | Encodings | Simple and complex instances; the curve and surface supertype chains mirror the physical component names of complex B-spline records |
 | Loops | `EDGE_LOOP` of `ORIENTED_EDGE`; `FACE_OUTER_BOUND` optional (see below) |
 | Units | Explicit `LengthUnit` and `AngleUnit`; the angle unit applies only to `CONICAL_SURFACE.semi_angle` |
+
+Implicit-knot forms follow ISO 10303-42: quasi-uniform knots are clamped with unit
+spans, uniform knots run unclamped from `-degree` in unit steps, and piecewise Bézier
+knots have unit spans of multiplicity `degree` and ends of multiplicity `degree + 1`
+(a control count that is not a multiple of the degree plus one is rejected).
+`PARABOLA` (`o + f u² x + 2 f u y`; a negative focal distance turns the frame half a
+revolution) and `HYPERBOLA` (`o + a cosh u x + b sinh u y`) edges are read
+analytically, their vertex parameters are recovered in closed form, and each edge
+becomes the exact quadratic arc between its vertices: polynomial for the parabola,
+rational with middle weight `cosh h` over the half span `h` for the hyperbola. Open
+conics as swept-surface profiles are unsupported.
 
 Vertex identity is `VERTEX_POINT` identity and edge identity is `EDGE_CURVE`
 identity; coincident distinct entities are never welded. Each vertex parameter is
@@ -67,12 +78,37 @@ every use. A `LINE` whose vector magnitude is zero is read as unit speed, becaus
 only its direction is used. Evidence:
 `brep_swept_surfaces_are_exact_elementary_or_nurbs_charts`.
 
-## Computed pcurves
+## Supplied and computed pcurves
 
-Supplied `PCURVE` geometry is never read: `SURFACE_CURVE.associated_geometry` is a
-decoder link slot, retained as entity IDs without decoding its targets. Every coedge
-receives a pcurve computed from its 3D curve whose parameter is the edge parameter,
-so the trimming and tessellation affine correspondence is the identity.
+`SURFACE_CURVE.associated_geometry` (including `SEAM_CURVE`) is a decoder link slot:
+the solid's closure never depends on its pcurves. The linked `PCURVE` records are
+decoded apart with the original [pcurve profile](../corpus/geometry/pcurve.exp)
+(2D `LINE`, `CIRCLE`, `ELLIPSE` and B-spline curves in every knot form over a
+`DEFINITIONAL_REPRESENTATION`); a record outside it is counted and left out. A
+supplied pcurve is used for a coedge only when:
+
+* its `basis_surface` is the face's surface entity, and the face chart was built
+  directly from an elementary or B-spline surface (not a swept surface, spindle torus
+  or re-charted sphere). STEP surface parameters map affinely into the chart:
+  lengths to metres, plane angles to radians, and a cone's `v` to the slant
+  distance from its apex (`v L / cos α + R / sin α`);
+* the edge parameter is STEP's curve parameter (lines and B-splines) or radians of
+  it (conics), so the image keeps the edge parameterization. A 2D conic is mapped
+  only under a similarity and a matching angle parameter;
+* it agrees with the 3D curve at nine parameters across the edge within the model
+  tolerance.
+
+The `master_representation` pcurve is tried first. An exact computed image of the 3D
+curve (below) takes precedence: it is the same curve without the written rounding
+(exporters write periods such as `6.28318530718`), which otherwise breaks exact
+periodic joins. A supplied pcurve therefore replaces only a fitted image, and a
+rejected one falls back to the fit. Every pcurve's parameter is the edge parameter, so
+the trimming and tessellation affine correspondence is the identity.
+Supplied pcurves serve only B-spline charts (elementary charts have exact images or
+accurate inversions), and only when every use of the face has one that agrees: mixing
+sources leaves chart corners that meet in space but not exactly in the chart. A face
+with any missing or rejected supplied pcurve is computed entirely.
+`ImportedSolid::adaptations()` counts used and rejected supplied pcurves.
 
 * **Exact images.** Every curve on a plane (lines, conics and NURBS are projected
   affinely), generators of cylinders and cones, coaxial circles of revolved surfaces
@@ -190,9 +226,11 @@ the uncertainty as the model tolerance is the caller's decision.
 
 ## Limits and evidence
 
-Open shells, offset curves and surfaces, degenerate
-tori, reversed `TRIMMED_CURVE`s nested inside other curves, and healing are
-unsupported. Profile rejection is not an AP
+Open shells, offset curves and surfaces, reversed `TRIMMED_CURVE`s nested inside
+other curves, and healing are unsupported. `OFFSET_SURFACE`,
+`RECTANGULAR_TRIMMED_SURFACE`, `RECTANGULAR_COMPOSITE_SURFACE`, `COMPOSITE_CURVE`,
+`OFFSET_CURVE_3D` and `PCURVE` or `DEGENERATE_PCURVE` used directly as edge geometry
+are rejected by name at the profile stage (`brep_rare_geometry_is_a_named_rejection`). Profile rejection is not an AP
 validity verdict. `ImportOptions::strict` rejects `$` in derived `ORIENTED_EDGE`
 endpoint slots; `max_work` separately bounds decoding, adapter and pcurve work.
 
@@ -210,7 +248,13 @@ edge (two joins), a tetrahedron whose base is a bilinear B-spline patch with a c
 side, a cylinder whose side extrudes its base circle, an elliptic prism extruding a
 reversed trimmed ellipse (periodic NURBS, isocurve seam, flipped orientation), a cone
 tip revolving a line, a sphere revolving a rational B-spline semicircle (two collapsed
-sides) and a torus revolving a circle. Negative fixtures cover an off-surface edge, a
+sides) and a torus revolving a circle, cubes with piecewise Bézier (two segments,
+raised interior) and uniform top faces and edges, prisms bounded by a parabola and a
+hyperbola arc, a seamed cylinder whose circle edges carry supplied pcurves on both
+faces, one of them 1 mm off (elementary faces keep their exact images; none used,
+the wrong one rejected), and the B-spline cube with
+supplied pcurves on its B-spline face, one of them rational (four used; with one
+shifted 0.1 mm, one rejected and none used). Negative fixtures cover an off-surface edge, a
 `VERTEX_LOOP` away from the apex and an ambiguous outer bound. Cavity fixtures cover a cube
 with a cubical void and a cylinder with a spherical void bounded by a `VERTEX_LOOP`
 (each void an outward shell reversed by `ORIENTED_CLOSED_SHELL(.F.)`), and a cube whose

@@ -20,8 +20,13 @@ instantiate repeated subassemblies; this API does not expand a definition DAG.
 Positions and translations use metres. Local maps act on column vectors:
 `p_parent = linear * p_local + translation`. World placement composes parent placement
 after local placement. No STEP axes, defaults, units, representation relationships or
-product graph alternatives are interpreted. The Milestone 5 product adapter now supplies checked matrices and bounded definition-DAG
-expansion. Binding its representation identities to mesh assets remains caller-controlled.
+product graph alternatives are interpreted by the scene itself. The Milestone 5 product
+adapter supplies checked matrices and bounded definition-DAG expansion, and Milestone 21
+binds them to imported meshes: `tessstep_import::link_assembly` builds a scene whose
+assets are supplied shape meshes (asset ID = root entity ID), whose definition nodes
+carry occurrence placements and whose asset leaves are identity children of the
+definition holding the root; `import_assembly` imports every selected root first. See
+[PRODUCT_MODEL.md](PRODUCT_MODEL.md#linking-imported-shapes-milestone-21).
 
 `instances()` returns immutable source records, world transforms, depth (roots are
 one), and a reflection flag. Renderers using the shared mesh must reverse winding for

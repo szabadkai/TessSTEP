@@ -1,4 +1,5 @@
 //! Edge-based B-rep solids with elementary, B-spline and swept geometry.
+mod supplied;
 mod swept;
 use super::*;
 use crate::pcurve::{
@@ -37,25 +38,32 @@ pub struct Adaptations {
     /// approximates). Every use of the second edge is retargeted onto the first, so
     /// the neighbouring faces share one edge and the shell stays closed.
     pub collapsed_faces: usize,
+    /// Edge uses on a face whose supplied PCURVE (of a SURFACE_CURVE or SEAM_CURVE)
+    /// lies on that face's surface and agrees with the 3D curve at nine parameters
+    /// within the model tolerance; they are used instead of a computed pcurve.
+    pub supplied_pcurves: usize,
+    /// Supplied pcurves not used: outside the pcurve profile, or disagreeing with the
+    /// 3D curve on their face; those uses receive a computed pcurve.
+    pub rejected_pcurves: usize,
 }
 
-/// Import one selected MANIFOLD_SOLID_BREP whose faces lie on planes, cylinders,
-/// cones, spheres, ring tori or B-spline surfaces (including rational and
-/// quasi-uniform forms), bounded by LINE, CIRCLE, ELLIPSE or B-spline EDGE_CURVEs
-/// (directly or as the 3D curve of a SURFACE_CURVE, SEAM_CURVE or
-/// INTERSECTION_CURVE). Shared vertices/edges retain VERTEX_POINT/EDGE_CURVE identity.
+/// Import one selected MANIFOLD_SOLID_BREP (or BREP_WITH_VOIDS) whose faces lie on
+/// planes, cylinders, cones, spheres, ring and spindle tori, B-spline surfaces (every
+/// knot form, rational or not) or swept surfaces, bounded by LINE, CIRCLE, ELLIPSE,
+/// PARABOLA, HYPERBOLA or B-spline EDGE_CURVEs (directly, trimmed, or as the 3D curve
+/// of a SURFACE_CURVE, SEAM_CURVE or INTERSECTION_CURVE). Shared vertices/edges retain
+/// VERTEX_POINT/EDGE_CURVE identity. See docs/CURVED_IMPORT.md.
 ///
-/// Pcurves are computed from the 3D curves; supplied PCURVE geometry is retained as
-/// a link and never read. The outer bound of a face without FACE_OUTER_BOUND is its
-/// unique counterclockwise loop. An annular face whose two loops wind around a
-/// periodic surface direction is cut by an inserted isoparametric seam between two
-/// aligned vertices. Both adaptations are counted in [`ImportedSolid::adaptations`].
+/// Supplied PCURVEs are used where they lie on the face surface and agree with the 3D
+/// curve within the model tolerance; every other pcurve is computed from the 3D
+/// curve. Representation adaptations (inferred outer bounds, inserted seams, split
+/// edges, re-charted spheres, collapsed edges and faces, supplied and rejected
+/// pcurves) are counted in [`ImportedSolid::adaptations`]; none changes geometry.
 ///
-/// `angle` scales CONICAL_SURFACE semi-angles, the only plane-angle measure read.
-/// Vertex loops (surface poles and apices), faces that enclose a pole, cavity shells
-/// (BREP_WITH_VOIDS), degenerate/horn tori and swept surfaces are unsupported. No
-/// coordinate welding, healing or unit inference is performed. ORIENTED_EDGE
-/// endpoint slots must be `*`, or `$` unless `options.strict`.
+/// `angle` scales plane-angle measures (cone semi-angles and conic and surface
+/// parameters of supplied pcurves). No coordinate welding, healing or unit inference
+/// is performed. ORIENTED_EDGE endpoint slots must be `*`, or `$` unless
+/// `options.strict`.
 pub fn import_brep_solid(
     document: &Document,
     root: EntityId,
@@ -120,7 +128,26 @@ pub fn import_brep_solid(
         },
         pass_work: options.max_work,
         adaptations: Adaptations::default(),
+        supplied: BTreeMap::new(),
+        pcurve_uses: BTreeMap::new(),
+        unreadable_pcurves: 0,
     };
+    // Supplied pcurves are retained as links on surface curves and decoded apart,
+    // so a pcurve outside the profile never rejects the solid.
+    let mut candidates = Vec::new();
+    for view in decoded.entities() {
+        if c.is(view, "SURFACE_CURVE") {
+            if let ValueKind::Aggregate(values) = &c.attr(view, "ASSOCIATED_GEOMETRY")?.kind {
+                for v in values {
+                    c.charge(1)?;
+                    if let ValueKind::Reference(id) = v.kind {
+                        candidates.push(id);
+                    }
+                }
+            }
+        }
+    }
+    (b.supplied, b.unreadable_pcurves) = supplied::decode(document, &candidates, options)?;
     let solid = c.view(root)?;
     if !c.is(solid, "MANIFOLD_SOLID_BREP") {
         return Err(c.error(
@@ -193,6 +220,16 @@ struct EdgeRecord {
     /// Increasing curve parameter interval; `vertices[0]` is at `range[0]`.
     range: [f64; 2],
     vertices: [VertexId; 2],
+    /// Supplied pcurves, the master representation first.
+    supplied: Vec<EdgePcurve>,
+}
+/// A supplied pcurve of an edge: its surface, its curve in STEP parameters and the
+/// edge parameter per STEP curve parameter.
+#[derive(Clone, Debug)]
+struct EdgePcurve {
+    surface: EntityId,
+    curve: supplied::Curve2,
+    parameter_scale: f64,
 }
 /// One oriented use of an edge; `forward` follows the canonical edge direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,6 +248,11 @@ struct LoopRecord {
 #[derive(Clone)]
 struct FaceRecord {
     entity: EntityId,
+    /// The FACE_GEOMETRY surface entity.
+    surface_entity: EntityId,
+    /// Chart coordinates as `scale * step + offset` per axis of the STEP surface
+    /// parameters, for charts built directly from an elementary or B-spline surface.
+    step_map: Option<[[f64; 2]; 2]>,
     chart: Chart,
     surface: SurfaceGeometry,
     same: bool,
@@ -228,6 +270,11 @@ struct Builder {
     /// pcurves, and passes are capped, so the total stays bounded.
     pass_work: usize,
     adaptations: Adaptations,
+    /// Decoded supplied pcurves by PCURVE entity.
+    supplied: BTreeMap<EntityId, supplied::Supplied>,
+    /// Whether each (edge, face) use with supplied pcurves used one.
+    pcurve_uses: BTreeMap<(EntityId, EntityId), bool>,
+    unreadable_pcurves: usize,
 }
 
 impl<'d, 'a> Context<'d, 'a> {
@@ -272,7 +319,10 @@ impl<'d, 'a> Context<'d, 'a> {
     }
 }
 
-/// Expanded knot vector from STEP multiplicities, or the implicit quasi-uniform one.
+/// Expanded knot vector from STEP multiplicities, or the implicit one that ISO
+/// 10303-42 defines for the quasi-uniform (clamped, unit spans), uniform (unclamped,
+/// knots -degree..=controls) and piecewise Bezier (unit spans of multiplicity degree,
+/// ends degree+1) forms.
 fn knot_vector<'d, 'a>(
     c: &Context<'d, 'a>,
     v: &'d EntityView<'a>,
@@ -281,14 +331,37 @@ fn knot_vector<'d, 'a>(
     controls: usize,
 ) -> Result<Vec<f64>, Error> {
     let mut knots = Vec::new();
+    let spans = controls
+        .checked_sub(degree)
+        .filter(|&n| n > 0)
+        .ok_or_else(|| c.error(ErrorKind::InvalidGeometry, "too few control points"));
     if c.is(v, "QUASI_UNIFORM_CURVE") || c.is(v, "QUASI_UNIFORM_SURFACE") {
-        let spans = controls
-            .checked_sub(degree)
-            .filter(|&n| n > 0)
-            .ok_or_else(|| c.error(ErrorKind::InvalidGeometry, "too few control points"))?;
+        let spans = spans?;
         knots.extend(std::iter::repeat_n(0., degree + 1));
         knots.extend((1..spans).map(|i| i as f64));
         knots.extend(std::iter::repeat_n(spans as f64, degree + 1));
+        return Ok(knots);
+    }
+    if c.is(v, "UNIFORM_CURVE") || c.is(v, "UNIFORM_SURFACE") {
+        spans?;
+        let first = -(degree as f64);
+        knots.extend((0..controls + degree + 1).map(|i| first + i as f64));
+        return Ok(knots);
+    }
+    if c.is(v, "BEZIER_CURVE") || c.is(v, "BEZIER_SURFACE") {
+        spans?;
+        if degree == 0 || (controls - 1) % degree != 0 {
+            return Err(c.error(
+                ErrorKind::InvalidGeometry,
+                "piecewise Bezier control count is not a multiple of the degree plus one",
+            ));
+        }
+        let segments = (controls - 1) / degree;
+        knots.extend(std::iter::repeat_n(0., degree + 1));
+        for i in 1..segments {
+            knots.extend(std::iter::repeat_n(i as f64, degree));
+        }
+        knots.extend(std::iter::repeat_n(segments as f64, degree + 1));
         return Ok(knots);
     }
     let (m, k) = if prefix.is_empty() {
@@ -411,6 +484,55 @@ impl Builder {
                 },
             ));
         }
+        if c.is(v, "PARABOLA") || c.is(v, "HYPERBOLA") {
+            let placement = c.placement(c.reference(v, "POSITION")?)?;
+            let mut frame = Frame::new(placement);
+            let parabola = c.is(v, "PARABOLA");
+            let (a, b) = if parabola {
+                // A negative focal distance opens the parabola along -x; turning the
+                // frame half a revolution about its axis keeps the same curve.
+                let f = c.checked(c.unit.to_metres(c.real(v, "FOCAL_DIST")?))?;
+                if f == 0. {
+                    return Err(c.error(
+                        ErrorKind::InvalidGeometry,
+                        "PARABOLA focal distance must be nonzero",
+                    ));
+                }
+                if f < 0. {
+                    frame.x = scale(frame.x, -1.);
+                    frame.y = scale(frame.y, -1.);
+                }
+                (f.abs(), f.abs())
+            } else {
+                (c.length(v, "SEMI_AXIS")?, c.length(v, "SEMI_IMAG_AXIS")?)
+            };
+            let point = |p: V3| c.checked(Point::<ModelSpace, 3>::new(p));
+            let vector = |p: V3| c.checked(Vector::<ModelSpace, 3>::new(p));
+            let kernel = c.checked(PlaneFrame::new(
+                point(frame.o)?,
+                vector(frame.x)?,
+                vector(frame.y)?,
+                NumericalTolerance::default(),
+            ))?;
+            let curve = if parabola {
+                Curve::parabola(kernel, c.checked(Length::metres(a))?)
+            } else {
+                Curve::hyperbola(
+                    kernel,
+                    c.checked(Length::metres(a))?,
+                    c.checked(Length::metres(b))?,
+                )
+            };
+            return Ok((
+                CurveGeometry::Analytic(c.checked(curve)?),
+                CurveShape::OpenConic {
+                    frame,
+                    parabola,
+                    a,
+                    b,
+                },
+            ));
+        }
         if c.is(v, "B_SPLINE_CURVE") {
             let degree = degree(c, v, "DEGREE")?;
             let controls = c.points(c.aggregate(v, "CONTROL_POINTS_LIST")?)?;
@@ -424,10 +546,18 @@ impl Builder {
             } else {
                 vec![1.; controls.len()]
             };
-            if !c.is(v, "B_SPLINE_CURVE_WITH_KNOTS") && !c.is(v, "QUASI_UNIFORM_CURVE") {
+            if ![
+                "B_SPLINE_CURVE_WITH_KNOTS",
+                "QUASI_UNIFORM_CURVE",
+                "UNIFORM_CURVE",
+                "BEZIER_CURVE",
+            ]
+            .iter()
+            .any(|form| c.is(v, form))
+            {
                 return Err(c.error(
                     ErrorKind::Unsupported,
-                    "B_SPLINE_CURVE needs explicit or quasi-uniform knots",
+                    "B_SPLINE_CURVE needs explicit knots or an implicit-knot form",
                 ));
             }
             let curve =
@@ -548,10 +678,18 @@ impl Builder {
             .map(|(chart, surface)| (chart, SurfaceGeometry::Analytic(surface)));
         }
         if c.is(v, "B_SPLINE_SURFACE") {
-            if !c.is(v, "B_SPLINE_SURFACE_WITH_KNOTS") && !c.is(v, "QUASI_UNIFORM_SURFACE") {
+            if ![
+                "B_SPLINE_SURFACE_WITH_KNOTS",
+                "QUASI_UNIFORM_SURFACE",
+                "UNIFORM_SURFACE",
+                "BEZIER_SURFACE",
+            ]
+            .iter()
+            .any(|form| c.is(v, form))
+            {
                 return Err(c.error(
                     ErrorKind::Unsupported,
-                    "B_SPLINE_SURFACE needs explicit or quasi-uniform knots",
+                    "B_SPLINE_SURFACE needs explicit knots or an implicit-knot form",
                 ));
             }
             let degrees = [degree(c, v, "U_DEGREE")?, degree(c, v, "V_DEGREE")?];
@@ -651,6 +789,19 @@ impl Builder {
                 let d = sub(p, frame.o);
                 (dot(d, frame.y) / b).atan2(dot(d, frame.x) / a)
             }
+            CurveShape::OpenConic {
+                frame,
+                parabola,
+                a,
+                b,
+            } => {
+                let y = dot(sub(p, frame.o), frame.y);
+                if *parabola {
+                    y / (2. * a)
+                } else {
+                    (y / b).asinh()
+                }
+            }
             CurveShape::Nurbs => {
                 let CurveGeometry::Nurbs(n) = curve else {
                     unreachable!("NURBS shape");
@@ -683,6 +834,8 @@ impl Builder {
         let (geometry, sense) = swept::trimmed_basis(c, c.reference(edge, "EDGE_GEOMETRY")?)?;
         // SAME_SENSE is relative to a trimmed curve; its basis may run the other way.
         let same = same == sense;
+        let supplied = self.edge_pcurves(c, geometry)?;
+        c.current = edge.id;
         let (curve, shape) = self.curve(c, geometry)?;
         c.current = edge.id;
         let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
@@ -742,6 +895,20 @@ impl Builder {
                 [ts.min(te), ts.max(te)]
             }
         };
+        // Open conics become exact quadratic arcs between the edge's vertices.
+        let (curve, shape, range) = match shape {
+            CurveShape::OpenConic {
+                frame,
+                parabola,
+                a,
+                b,
+            } => (
+                CurveGeometry::Nurbs(c.checked(open_conic_arc(&frame, parabola, a, b, range))?),
+                CurveShape::Nurbs,
+                [0., 1.],
+            ),
+            shape => (curve, shape, range),
+        };
         c.record()?;
         let index = self.edges.len();
         self.edges.push(EdgeRecord {
@@ -750,6 +917,7 @@ impl Builder {
             shape,
             range,
             vertices: if same { [start, end] } else { [end, start] },
+            supplied,
         });
         self.edge_index.insert(edge.id, (index, same));
         Ok((index, same))
@@ -818,8 +986,9 @@ impl Builder {
             }
         }
         c.current = face.id;
-        let (chart, surface, flipped) =
-            self.surface(c, c.reference(face, "FACE_GEOMETRY")?, &points)?;
+        let geometry = c.reference(face, "FACE_GEOMETRY")?;
+        let (chart, surface, flipped) = self.surface(c, geometry, &points)?;
+        let step_map = self.step_map(c, geometry, &chart)?;
         c.current = face.id;
         // The face orientation is relative to the kernel surface's normal.
         let same = same != flipped;
@@ -837,6 +1006,8 @@ impl Builder {
         }
         self.faces.push(FaceRecord {
             entity: face.id,
+            surface_entity: geometry.id,
+            step_map,
             chart,
             surface,
             same,
@@ -844,6 +1015,148 @@ impl Builder {
             shell: 0,
         });
         Ok(())
+    }
+
+    /// The supplied pcurves of a surface curve, the master representation first, with
+    /// the edge parameter per STEP curve parameter: the internal parameter of lines
+    /// and B-splines is STEP's; conics use radians. Other 3D curves (parabolas and
+    /// hyperbolas, which become arcs) and unmatched records supply none.
+    fn edge_pcurves<'d, 'a>(
+        &self,
+        c: &mut Context<'d, 'a>,
+        geometry: &'d EntityView<'a>,
+    ) -> Result<Vec<EdgePcurve>, Error> {
+        if !c.is(geometry, "SURFACE_CURVE") {
+            return Ok(Vec::new());
+        }
+        c.current = geometry.id;
+        let curve_3d = c.reference(geometry, "CURVE_3D")?;
+        let parameter_scale = if c.is(curve_3d, "LINE") || c.is(curve_3d, "B_SPLINE_CURVE") {
+            1.
+        } else if c.is(curve_3d, "CIRCLE") || c.is(curve_3d, "ELLIPSE") {
+            c.checked(self.angle.to_angle(1.))?.as_radians()
+        } else {
+            return Ok(Vec::new());
+        };
+        let master = match &c.attr(geometry, "MASTER_REPRESENTATION")?.kind {
+            ValueKind::Enumeration(m) if m.eq_ignore_ascii_case("PCURVE_S1") => Some(0),
+            ValueKind::Enumeration(m) if m.eq_ignore_ascii_case("PCURVE_S2") => Some(1),
+            _ => None,
+        };
+        let mut found = Vec::new();
+        for (i, v) in c
+            .aggregate(geometry, "ASSOCIATED_GEOMETRY")?
+            .iter()
+            .enumerate()
+        {
+            c.charge(1)?;
+            let ValueKind::Reference(id) = v.kind else {
+                continue;
+            };
+            if let Some(s) = self.supplied.get(&id) {
+                let use_ = EdgePcurve {
+                    surface: s.surface,
+                    curve: s.curve.clone(),
+                    parameter_scale,
+                };
+                if master == Some(i) {
+                    found.insert(0, use_);
+                } else {
+                    found.push(use_);
+                }
+            }
+        }
+        Ok(found)
+    }
+
+    /// A supplied pcurve of `edge` on `face`'s surface, mapped into the face chart,
+    /// when it agrees with the 3D curve at nine parameters within the model tolerance,
+    /// and whether the edge supplied any pcurve on that surface.
+    fn supplied_pcurve(
+        &self,
+        face: &FaceRecord,
+        edge: usize,
+        tolerance: f64,
+    ) -> (Option<Pcurve>, bool) {
+        let e = &self.edges[edge];
+        let (Some(map), Ok(angle)) = (face.step_map, self.angle.to_angle(1.)) else {
+            return (None, false);
+        };
+        let angle = angle.as_radians();
+        let mut offered = false;
+        for s in e
+            .supplied
+            .iter()
+            .filter(|s| s.surface == face.surface_entity)
+        {
+            offered = true;
+            let Some(curve) = supplied::to_chart(&s.curve, map, s.parameter_scale, angle) else {
+                continue;
+            };
+            // Probe 17 uniform parameters and four interior points of every knot span
+            // of either curve, against half the model tolerance (the trimmer later
+            // checks the sampled boundary against the whole tolerance).
+            let Ok(mut probes) = curve.break_parameters(e.range, 4096) else {
+                continue;
+            };
+            if let Ok(more) = e.curve.break_parameters(e.range, 4096) {
+                probes.extend(more);
+            }
+            probes.sort_by(f64::total_cmp);
+            probes.dedup();
+            let mut samples: Vec<f64> = (0..=16)
+                .map(|i| e.range[0] + (e.range[1] - e.range[0]) * i as f64 / 16.)
+                .collect();
+            for w in probes.windows(2).take(1024) {
+                samples.extend([0.2, 0.4, 0.6, 0.8].map(|f| w[0] + (w[1] - w[0]) * f));
+            }
+            let agrees = samples.iter().all(|&t| {
+                let (Ok(uv), Ok(p)) = (curve.evaluate(t), e.curve.evaluate(t)) else {
+                    return false;
+                };
+                face.surface
+                    .evaluate(uv.position.coordinates())
+                    .ok()
+                    .and_then(|jet| jet.position.distance(p.position).ok())
+                    .is_some_and(|d| d <= 0.5 * tolerance)
+            });
+            if agrees {
+                let pcurve = Pcurve {
+                    curve,
+                    range: e.range,
+                };
+                return (Some(pcurve), true);
+            }
+        }
+        (None, offered)
+    }
+
+    /// Chart coordinates of the STEP surface parameters, for charts built directly
+    /// from an elementary or B-spline surface: lengths scale to metres, plane angles
+    /// to radians, and a cone's slant coordinate starts at its apex.
+    fn step_map(
+        &self,
+        c: &Context<'_, '_>,
+        surface: &EntityView<'_>,
+        chart: &Chart,
+    ) -> Result<Option<[[f64; 2]; 2]>, Error> {
+        let length = c.unit.scale();
+        let angle = c.checked(self.angle.to_angle(1.))?.as_radians();
+        let b_spline = c.is(surface, "B_SPLINE_SURFACE");
+        if !b_spline && !c.is(surface, "ELEMENTARY_SURFACE") {
+            return Ok(None);
+        }
+        Ok(match *chart {
+            Chart::Plane(_) => Some([[length; 2], [0.; 2]]),
+            Chart::Cylinder(..) => Some([[angle, length], [0.; 2]]),
+            Chart::Cone(_, alpha) => {
+                let r = c.checked(c.unit.to_metres(c.real(surface, "RADIUS")?))?;
+                Some([[angle, length / alpha.cos()], [0., r / alpha.sin()]])
+            }
+            Chart::Sphere(..) | Chart::Torus(..) => Some([[angle; 2], [0.; 2]]),
+            Chart::Nurbs(..) if b_spline => Some([[1.; 2], [0.; 2]]),
+            _ => None,
+        })
     }
 
     fn pcurve_error(&self, c: &Context<'_, '_>, edge: usize, e: PcurveError) -> Error {
@@ -1014,7 +1327,12 @@ impl Builder {
             brep,
             faces: face_entities,
             root,
-            adaptations: self.adaptations,
+            adaptations: Adaptations {
+                supplied_pcurves: self.pcurve_uses.values().filter(|&&used| used).count(),
+                rejected_pcurves: self.pcurve_uses.values().filter(|&&used| !used).count()
+                    + self.unreadable_pcurves,
+                ..self.adaptations
+            },
         })
     }
 }
@@ -1292,6 +1610,8 @@ impl Builder {
                 };
                 let mut candidate = face.clone();
                 (candidate.chart, candidate.surface) = recharted;
+                // STEP parameters no longer describe the rotated chart.
+                candidate.step_map = None;
                 let saved = self.snapshot(c);
                 match self.plan_chart(c, &candidate, tolerance, singular) {
                     Ok(Planned::Face(mut plan)) => {
@@ -1525,6 +1845,7 @@ impl Builder {
             shape: CurveShape::Nurbs,
             range: [0., span],
             vertices: [vertex; 2],
+            supplied: Vec::new(),
         });
         self.adaptations.collapsed_edges += 1;
         Ok((self.edges.len() - 1, pcurve))
@@ -1576,6 +1897,7 @@ impl Builder {
             shape,
             range,
             vertices: if forward { [from, to] } else { [to, from] },
+            supplied: Vec::new(),
         });
         self.adaptations.inserted_seams += 1;
         Ok(Some((self.edges.len() - 1, forward, pcurve)))
@@ -1620,17 +1942,53 @@ impl Builder {
             surface: &face.surface,
             tolerance,
         };
-        let mut pcurves = BTreeMap::new();
-        for l in &face.loops {
-            for u in &l.uses {
-                if pcurves.contains_key(&u.edge) {
-                    continue;
-                }
-                let e = &self.edges[u.edge];
-                let p = pcurve::pcurve(&inverter, &e.shape, &e.curve, e.range, &mut self.work)
-                    .map_err(|err| self.pcurve_error(c, u.edge, err))?;
-                pcurves.insert(u.edge, p);
+        // Supplied pcurves serve B-spline charts, which have no exact images, and only
+        // when every use of the face has one that agrees: mixing sources leaves chart
+        // corners that meet in space but not exactly in the chart.
+        let mut edges: Vec<usize> = Vec::new();
+        for u in face.loops.iter().flat_map(|l| &l.uses) {
+            if !edges.contains(&u.edge) {
+                edges.push(u.edge);
             }
+        }
+        let mut supplied: BTreeMap<usize, Pcurve> = BTreeMap::new();
+        let mut offered = false;
+        let mut complete = matches!(face.chart, Chart::Nurbs(..));
+        for &edge in &edges {
+            c.charge(1)?;
+            let (candidate, any) = self.supplied_pcurve(face, edge, tolerance);
+            offered |= any;
+            if let (Some(entity), true, None) = (self.edges[edge].entity, any, &candidate) {
+                self.pcurve_uses
+                    .entry((entity, face.entity))
+                    .or_insert(false);
+            }
+            match candidate {
+                Some(p) => {
+                    supplied.insert(edge, p);
+                }
+                None => complete = false,
+            }
+        }
+        if !complete || !offered {
+            supplied.clear();
+        }
+        let mut pcurves = BTreeMap::new();
+        for &edge in &edges {
+            let e = &self.edges[edge];
+            let (p, source) = pcurve::pcurve_with(
+                &inverter,
+                &e.shape,
+                &e.curve,
+                e.range,
+                &mut self.work,
+                supplied.remove(&edge),
+            )
+            .map_err(|err| self.pcurve_error(c, edge, err))?;
+            if let (Some(entity), pcurve::Source::Supplied) = (e.entity, source) {
+                self.pcurve_uses.insert((entity, face.entity), true);
+            }
+            pcurves.insert(edge, p);
         }
         let singular = face.chart.singular();
         let periods = face.chart.periods();
@@ -2343,6 +2701,7 @@ impl Builder {
                                 shape,
                                 range,
                                 vertices: if forward { [va, vb] } else { [vb, va] },
+                                supplied: Vec::new(),
                             }),
                             p.i,
                             q.i,
@@ -2422,6 +2781,50 @@ impl Builder {
         self.adaptations.split_edges += 1;
         Ok(())
     }
+}
+
+/// The exact quadratic arc of a parabola (polynomial) or hyperbola (rational, middle
+/// weight cosh of the half span) over curve parameters `[u0, u1]`, on `[0, 1]`.
+fn open_conic_arc(
+    frame: &Frame,
+    parabola: bool,
+    a: f64,
+    b: f64,
+    [u0, u1]: [f64; 2],
+) -> Result<NurbsCurve<ModelSpace, 3>, tessstep_math::Error> {
+    let at = |x: f64, y: f64| add(frame.o, add(scale(frame.x, x), scale(frame.y, y)));
+    let (points, middle_weight) = if parabola {
+        let p = |u: f64| at(a * u * u, 2. * a * u);
+        // Tangents at the ends meet over the parameter midpoint.
+        let tangent = add(scale(frame.x, 2. * a * u0), scale(frame.y, 2. * a));
+        (
+            [p(u0), add(p(u0), scale(tangent, 0.5 * (u1 - u0))), p(u1)],
+            1.,
+        )
+    } else {
+        let (m, h) = (0.5 * (u0 + u1), 0.5 * (u1 - u0));
+        let p = |u: f64| at(a * u.cosh(), b * u.sinh());
+        (
+            [
+                p(u0),
+                at(a * m.cosh() / h.cosh(), b * m.sinh() / h.cosh()),
+                p(u1),
+            ],
+            h.cosh(),
+        )
+    };
+    let controls = points
+        .iter()
+        .map(|&p| Point::new(p))
+        .collect::<Result<Vec<_>, _>>()?;
+    NurbsCurve::new(
+        2,
+        &[0., 0., 0., 1., 1., 1.],
+        &controls,
+        &[1., middle_weight, 1.],
+        SplineLimits::default(),
+    )
+    .map_err(|_| tessstep_math::Error::NonFinite)
 }
 
 /// Chart point at fraction `s` along a use, in its pcurve's own chart.

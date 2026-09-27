@@ -126,7 +126,7 @@ def cylinder(s, radius, z0, z1, caps=True, seam=False, cap_outer=True):
     surface = s.add(f"CYLINDRICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},{num(radius)})")
     if seam:
         line = s.line((radius, 0, z0), (0, 0, 1))
-        # Supplied pcurves are retained as links and never read by the importer.
+        # Supplied seam pcurves: u = 0 and u = 2 pi lines on the cylinder.
         ctx = s.add("(GEOMETRIC_REPRESENTATION_CONTEXT(2)PARAMETRIC_REPRESENTATION_CONTEXT()REPRESENTATION_CONTEXT('2D SPACE',''))")
         pcurves = []
         for u in (0.0, 2 * math.pi):
@@ -182,6 +182,42 @@ def fixtures():
 
     s = Step("Original solid cylinder r=10 h=20 mm; side face with an explicit SEAM_CURVE and supplied PCURVEs")
     s.write("brep-seam-cylinder.step", cylinder(s, 10, 0, 20, seam=True))
+
+    # A seamed cylinder whose circles are SURFACE_CURVEs with supplied pcurves on the
+    # side (v = z lines) and on each cap (2D circles); the top circle's side pcurve is
+    # written 1 mm too high. Every use has an exact computed image, which wins, so no
+    # supplied pcurve (right or wrong) is used.
+    s = Step("Original seamed cylinder whose circle edges carry supplied pcurves, one of them wrong")
+    faces = cylinder(s, 10, 0, 20, seam=True)
+    ctx = s.add("(GEOMETRIC_REPRESENTATION_CONTEXT(2)PARAMETRIC_REPRESENTATION_CONTEXT()REPRESENTATION_CONTEXT('2D SPACE',''))")
+    side = next(l for l in s.lines if "CYLINDRICAL_SURFACE" in l).split("=")[0][1:]
+    planes = [l.split("=")[0][1:] for l in s.lines if "=PLANE(" in l]
+
+    def pcurve(surface, curve):
+        representation = s.add(f"DEFINITIONAL_REPRESENTATION('',(#{curve}),#{ctx})")
+        return s.add(f"PCURVE('',#{surface},#{representation})")
+
+    def line2(p, d):
+        point = s.add(f"CARTESIAN_POINT('',({num(p[0])},{num(p[1])}))")
+        direction = s.add(f"DIRECTION('',({num(d[0])},{num(d[1])}))")
+        vector = s.add(f"VECTOR('',#{direction},1.)")
+        return s.add(f"LINE('',#{point},#{vector})")
+
+    def circle2(radius):
+        centre = s.add("CARTESIAN_POINT('',(0.,0.))")
+        reference = s.add("DIRECTION('',(1.,0.))")
+        placement = s.add(f"AXIS2_PLACEMENT_2D('',#{centre},#{reference})")
+        return s.add(f"CIRCLE('',#{placement},{num(radius)})")
+
+    circles = [l for l in s.lines if "=CIRCLE(" in l]
+    for (z, written), plane, line in zip(((0, 0), (20, 21)), planes, circles):
+        circle = line.split("=")[0][1:]
+        wrapped = s.add(f"SURFACE_CURVE('',#{circle},(#{pcurve(side, line2((0, written), (1, 0)))},"
+                        f"#{pcurve(plane, circle2(10))}),.CURVE_3D.)")
+        s.lines = [l.replace(f",#{circle},.T.)", f",#{wrapped},.T.)") if l.startswith("#") and "EDGE_CURVE" in l else l
+                   for l in s.lines]
+    s.write("brep-pcurve-cylinder.step", faces)
+
 
     # Cone frustum widening upward: r=10 at z=0, semi-angle 30 degrees, height 10.
     s = Step("Original cone frustum r0=10 h=10 mm, semi-angle 30 degrees in a degree context")
@@ -302,6 +338,133 @@ def fixtures():
         faces.append(s.face([s.bound([(bottom[i], True), (vertical[j], True), (top[i], False), (vertical[i], False)], outer=True)],
                             s.plane(corners[i], normal, [r / 10 for r in ref])))
     s.write("brep-bspline-cube.step", faces)
+
+
+    # The B-spline cube with its top edges as SURFACE_CURVEs carrying supplied pcurves
+    # on the B-spline top face, which has no exact computed images: lines, and for the
+    # rational edge a rational quadratic with the edge's weights, so all four agree.
+    lines = (OUTPUT / "brep-bspline-cube.step").read_text().splitlines()
+    data = [l for l in lines if l.startswith("#")]
+    top_surface = next(l for l in data if "(BOUNDED_SURFACE()B_SPLINE_SURFACE(" in l).split("=")[0]
+    curves = [l.split("=")[0] for l in data if "B_SPLINE_CURVE" in l]
+    extra = []
+    ids = iter(range(700, 1000))
+
+    def new(body):
+        name = f"#{next(ids)}"
+        extra.append(f"{name}={body};")
+        return name
+
+    ctx = new("(GEOMETRIC_REPRESENTATION_CONTEXT(2)PARAMETRIC_REPRESENTATION_CONTEXT()REPRESENTATION_CONTEXT('2D SPACE',''))")
+    # Top edges run corner i to corner i+1: (0,0)->(1,0)->(1,1)->(0,1)->(0,0) in (u, v).
+    starts = [((0, 0), (1, 0)), ((1, 0), (0, 1)), ((1, 1), (-1, 0)), ((0, 1), (0, -1))]
+    wrapped = {}
+    for i, (curve, (origin, direction)) in enumerate(zip(curves, starts)):
+        if i == 1:
+            poles = ",".join(new(f"CARTESIAN_POINT('',(1.,{num(v)}))") for v in (0, 0.5, 1))
+            line = new(f"(BOUNDED_CURVE()B_SPLINE_CURVE(2,({poles}),.UNSPECIFIED.,.F.,.F.)"
+                       "B_SPLINE_CURVE_WITH_KNOTS((3,3),(0.,1.),.UNSPECIFIED.)CURVE()"
+                       "GEOMETRIC_REPRESENTATION_ITEM()RATIONAL_B_SPLINE_CURVE((1.,2.,1.))REPRESENTATION_ITEM(''))")
+        else:
+            point = new(f"CARTESIAN_POINT('',({num(origin[0])},{num(origin[1])}))")
+            unit = new(f"DIRECTION('',({num(direction[0])},{num(direction[1])}))")
+            vector = new("VECTOR(''," + unit + ",1.)")
+            line = new(f"LINE('',{point},{vector})")
+        representation = new(f"DEFINITIONAL_REPRESENTATION('',({line}),{ctx})")
+        pcurve = new(f"PCURVE('',{top_surface},{representation})")
+        wrapped[curve] = new(f"SURFACE_CURVE('',{curve},({pcurve}),.PCURVE_S1.)")
+    body = []
+    for l in lines:
+        if l.startswith("#") and "EDGE_CURVE(" in l:
+            for curve, surface_curve in wrapped.items():
+                l = l.replace(f",{curve},", f",{surface_curve},")
+        body.append(l)
+    at = body.index("ENDSEC;", body.index("DATA;"))
+    body[at:at] = extra
+    body[2] = "FILE_DESCRIPTION(('Original 10 mm B-spline cube whose top edges carry supplied pcurves on the B-spline face'),'2;1');"
+    body[3] = body[3].replace("brep-bspline-cube.step", "brep-pcurve-bspline-cube.step")
+    (OUTPUT / "brep-pcurve-bspline-cube.step").write_text("\n".join(body) + "\n")
+
+    # 10 mm cubes whose top face and top edges use implicit-knot forms. Piecewise
+    # Bezier: two quadratic segments per direction (interior knot multiplicity 2) and
+    # the 3 x 3 interior poles raised 4 mm, so the boundary stays planar, the joins
+    # stay C1 and the bulge adds 4 * (20/3)^2 = 1600/9 mm3. Uniform: unclamped knots -d..N+1, so the control nets
+    # are extended to make each curve end on its vertices.
+    for form in ("BEZIER", "UNIFORM"):
+        s = Step(f"Original 10 mm cube with a degree-2 {form}_SURFACE top face and {form}_CURVE top edges")
+        vb = [s.vertex(p) for p in corners]
+        vt = [s.vertex((x, y, 10)) for x, y, _ in corners]
+
+        def implicit_edge(a, b, pa, pb):
+            mid = [(pa[k] + pb[k]) / 2 for k in range(3)]
+            if form == "BEZIER":
+                poles = [[pa[k] + (pb[k] - pa[k]) * i / 4 for k in range(3)] for i in range(5)]
+            else:
+                poles = ([2 * pa[k] - mid[k] for k in range(3)], mid, [2 * pb[k] - mid[k] for k in range(3)])
+            pts = ",".join(f"#{s.point(p)}" for p in poles)
+            return s.edge(a, b, s.add(f"{form}_CURVE('',2,({pts}),.UNSPECIFIED.,.F.,.F.)"))
+
+        bottom = [s.edge(vb[i], vb[(i + 1) % 4], s.line(corners[i], [corners[(i + 1) % 4][k] - corners[i][k] for k in range(3)]))
+                  for i in range(4)]
+        top = [implicit_edge(vt[i], vt[(i + 1) % 4], (*corners[i][:2], 10), (*corners[(i + 1) % 4][:2], 10))
+               for i in range(4)]
+        vertical = [s.edge(vb[i], vt[i], s.line(corners[i], (0, 0, 1))) for i in range(4)]
+        grid = (0, 2.5, 5, 7.5, 10) if form == "BEZIER" else (-5, 5, 15)
+        raised = {1, 2, 3} if form == "BEZIER" else set()
+        rows = ["(" + ",".join(f"#{s.point((x, y, 14 if i in raised and j in raised else 10))}"
+                               for j, y in enumerate(grid)) + ")" for i, x in enumerate(grid)]
+        surface = s.add(f"{form}_SURFACE('',2,2,({','.join(rows)}),.PLANE_SURF.,.F.,.F.,.F.)")
+        faces = [
+            s.face([s.bound([(bottom[3], False), (bottom[2], False), (bottom[1], False), (bottom[0], False)], outer=True)],
+                   s.plane((0, 0, 0), (0, 0, 1)), same=False),
+            s.face([s.bound([(top[0], True), (top[1], True), (top[2], True), (top[3], True)], outer=True)], surface),
+        ]
+        for i in range(4):
+            j = (i + 1) % 4
+            normal = [(0, -1, 0), (1, 0, 0), (0, 1, 0), (-1, 0, 0)][i]
+            ref = [corners[j][k] - corners[i][k] for k in range(3)]
+            faces.append(s.face([s.bound([(bottom[i], True), (vertical[j], True), (top[i], False), (vertical[i], False)], outer=True)],
+                                s.plane(corners[i], normal, [r / 10 for r in ref])))
+        s.write(f"brep-{form.lower()}-cube.step", faces)
+
+    # 10 mm prisms over a region between an open conic arc (u in [-1, 1]) and its
+    # chord: a parabola with focal distance 5 (area 200/3 mm2) and a rectangular
+    # hyperbola with semi-axes 5 (area 12.5 (sinh 2 - 2) mm2). The curved side is the
+    # arc's exact quadratic, or rational quadratic, B-spline extrusion.
+    for kind in ("parabola", "hyperbola"):
+        s = Step(f"Original 10 mm prism bounded by a {kind.upper()} arc and its chord")
+        if kind == "parabola":
+            conic = lambda z: s.add(f"PARABOLA('',#{s.placement((0, 0, z), (0, 0, 1), (1, 0, 0))},5.)")
+            poles, weight = [(5, -10), (-5, 0), (5, 10)], 1.
+        else:
+            conic = lambda z: s.add(f"HYPERBOLA('',#{s.placement((0, 0, z), (0, 0, 1), (1, 0, 0))},5.,5.)")
+            c1, s1 = math.cosh(1), math.sinh(1)
+            poles, weight = [(5 * c1, -5 * s1), (5 / c1, 0), (5 * c1, 5 * s1)], c1
+        a, b = poles[0], poles[2]
+        va, vb = s.vertex((*a, 0)), s.vertex((*b, 0))
+        vc, vd = s.vertex((*a, 10)), s.vertex((*b, 10))
+        arc0, arc1 = s.edge(va, vb, conic(0)), s.edge(vc, vd, conic(10))
+        chord0 = s.edge(vb, va, s.line((*b, 0), (0, -1, 0)))
+        chord1 = s.edge(vd, vc, s.line((*b, 10), (0, -1, 0)))
+        side_a = s.edge(va, vc, s.line((*a, 0), (0, 0, 1)))
+        side_b = s.edge(vb, vd, s.line((*b, 0), (0, 0, 1)))
+        rows = ",".join("(" + ",".join(f"#{s.point((x, y, z))}" for z in (0, 10)) + ")" for x, y in poles)
+        common = f"B_SPLINE_SURFACE(2,1,({rows}),.UNSPECIFIED.,.F.,.F.,.F.)B_SPLINE_SURFACE_WITH_KNOTS((3,3),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.)"
+        if weight == 1.:
+            surface = s.add(f"B_SPLINE_SURFACE_WITH_KNOTS('',2,1,({rows}),.UNSPECIFIED.,.F.,.F.,.F.,(3,3),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.)")
+        else:
+            w = num(weight)
+            surface = s.add(f"(BOUNDED_SURFACE(){common}GEOMETRIC_REPRESENTATION_ITEM()"
+                            f"RATIONAL_B_SPLINE_SURFACE(((1.,1.),({w},{w}),(1.,1.)))REPRESENTATION_ITEM('')SURFACE())")
+        faces = [
+            s.face([s.bound([(arc0, True), (chord0, True)], outer=True)], s.plane((0, 0, 0), (0, 0, -1)), same=True),
+            s.face([s.bound([(chord1, False), (arc1, False)], outer=True)], s.plane((0, 0, 10), (0, 0, 1))),
+            s.face([s.bound([(chord0, False), (side_b, True), (chord1, True), (side_a, False)], outer=True)],
+                   s.plane((*b, 0), (1, 0, 0), (0, 1, 0))),
+            # The surface normal (arc tangent x z) points into the prism.
+            s.face([s.bound([(side_a, True), (arc1, True), (side_b, False), (arc0, False)], outer=True)], surface, same=False),
+        ]
+        s.write(f"brep-{kind}-prism.step", faces)
 
     # Negative: circle edges of radius 10 on a cylinder of radius 10.5.
     s = Step("Original rejected solid: circle edges do not lie on their cylinder")

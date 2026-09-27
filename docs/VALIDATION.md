@@ -1,3 +1,25 @@
+# Milestone 21 completion: assemblies, colours, supplied pcurves, C/C++ — 2026-09-27 (open items)
+
+Delivered on this branch: assembly linking and import (`link_assembly`,
+`import_assembly`), surface colours (`import_appearance`), schema selection and
+assembly import in C/C++ (64 exports), the corpus product stage, the closure-type
+coverage survey, the AP-schema join of profile rejections, `UNIFORM_*`/`BEZIER_*`
+knots, `PARABOLA`/`HYPERBOLA` edges, supplied pcurves and named rejections. `cargo
+test --workspace`, Clippy, `check_geometry.py --require-external` (83 outcomes),
+`check_capi.py`, `check_coverage.py`, `conformance.py --check` and the other check
+scripts passed.
+
+**Open before merge:** the corpus baseline was not refreshed. The last reviewed
+`corpus.py --check` (before the final supplied-pcurve rule) showed 576 meshed roots
+against 577, with one regression, `bm2_ec_exhaust-A.stp` root #4408 (face #4660,
+trim `SelfIntersection` with supplied pcurves; fine without them). The rule was then
+narrowed: supplied pcurves serve only B-spline faces on which every use has an agreeing
+one, probed on every knot span at half the model tolerance. Rerun `--check`, confirm
+that root recovers and review the remaining movements (product stage newly measured on
+every mapped input; NIST AP203 inch files now use their context units; `OCC8228.stp`
+unsupported → resource limit; `bug28345_30338.stp`, `bug33261.stp` and
+`trj3_s1-db-214.stp` gain roots), then `--save-baseline`.
+
 # Curved import: spindle tori, seam placement, tolerance-consistent meshing — 2026-09-27
 
 `DEGENERATE_TOROIDAL_SURFACE` imports as a spindle torus (apple or lemon part as a

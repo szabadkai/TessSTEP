@@ -51,6 +51,21 @@ def markdown(report):
         if prod["categories"]:
             lines += ["", "| Top product failures | Inputs |", "| --- | ---: |"]
             lines += [f"| {cell(k)} | {v:,} |" for k, v in list(prod["categories"].items())[:10]]
+    join = stats.get("ap_join", {})
+    if join.get("roots"):
+        n = join["roots"]
+        lines += ["", f'**Profile rejections joined with the AP schema stage:** {n.get("accepted", 0):,} unsupported-entity root '
+                  f'rejections in schema-accepted files name entities valid in the AP but not adapted; {n.get("rejected", 0):,} are in '
+                  f'schema-rejected files and {n.get("not_configured", 0):,} in files without a mapped schema.', "",
+                  "| Valid in the AP, not adapted | Roots |", "| --- | ---: |"]
+        lines += [f"| {cell(k)} | {v:,} |" for k, v in list(join["valid_in_ap_not_adapted"].items())[:10]]
+    cov = stats.get("coverage", {})
+    if cov.get("blocking"):
+        lines += ["", f'**Coverage survey:** {cov["types"]:,} record types in shape root closures ({cov["truncated"]:,} truncated closures). '
+                  "Types no import adapts, in the closures of failing roots (a root counts once per type; the coverage matrix "
+                  "status follows [COVERAGE.md](../../docs/COVERAGE.md)):", "",
+                  "| Entity | Matrix status | Failing roots | All roots |", "| --- | --- | ---: | ---: |"]
+        lines += [f'| {cell(k)} | {v["status"]} | {v["failing_roots"]:,} | {v["roots"]:,} |' for k, v in list(cov["blocking"].items())[:15]]
     g = stats["geometry"]
     if g["files_surveyed"]:
         shown = g["presentation"]

@@ -227,6 +227,15 @@ pub(crate) enum CurveShape {
         b: f64,
     },
     Nurbs,
+    /// A parabola, P(u) = o + a u^2 x + 2 a u y, or the positive-x hyperbola branch,
+    /// P(u) = o + a cosh(u) x + b sinh(u) y, as read; edges replace it by an exact
+    /// quadratic NURBS arc between their vertices before any other use.
+    OpenConic {
+        frame: Frame,
+        parabola: bool,
+        a: f64,
+        b: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -708,14 +717,26 @@ fn singular_crossing(
     Ok(None)
 }
 
-/// Compute the pcurve of an edge (curve on `range`) on a face surface.
-pub(crate) fn pcurve(
+/// Where a pcurve came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Source {
+    Exact,
+    Supplied,
+    Fitted,
+}
+
+/// The pcurve of an edge (curve on `range`) on a face surface: the exact image of
+/// the 3D curve when one exists; otherwise a verified `supplied`
+/// pcurve; otherwise a fitted image. Exact images are the same curve as a supplied
+/// one but free of its written rounding, so periodic joins stay exact.
+pub(crate) fn pcurve_with(
     inverter: &Inverter<'_>,
     shape: &CurveShape,
     curve: &CurveGeometry<ModelSpace, 3>,
     range: [f64; 2],
     work: &mut Work,
-) -> Result<Pcurve, PcurveError> {
+    supplied: Option<Pcurve>,
+) -> Result<(Pcurve, Source), PcurveError> {
     let tolerance = inverter.tolerance;
     if let Some(parameter) = singular_crossing(inverter.chart, curve, range, tolerance, work)? {
         return Err(PcurveError::Singular { parameter });
@@ -736,16 +757,25 @@ pub(crate) fn pcurve(
             }
         }
         if agrees {
-            return Ok(Pcurve {
-                curve: candidate,
-                range,
-            });
+            return Ok((
+                Pcurve {
+                    curve: candidate,
+                    range,
+                },
+                Source::Exact,
+            ));
         }
     }
-    Ok(Pcurve {
-        curve: CurveGeometry::Nurbs(fitted(inverter, curve, range, work)?),
-        range,
-    })
+    if let Some(p) = supplied {
+        return Ok((p, Source::Supplied));
+    }
+    Ok((
+        Pcurve {
+            curve: CurveGeometry::Nurbs(fitted(inverter, curve, range, work)?),
+            range,
+        },
+        Source::Fitted,
+    ))
 }
 
 struct Segment {

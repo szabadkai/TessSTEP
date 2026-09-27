@@ -72,6 +72,8 @@ def spindle_zone(a, b, h, outer):
 # split edges, recharted spheres) and the closed-form volume with its smallest
 # curvature radius, or None.
 BREP_EXPECTED = {
+    "brep-pcurve-cylinder.step": (("accepted",) * 3, (0, 0, 0, 0, 0, 0, 0, 1), (math.pi * 2000e-9, 0.01)),
+    "brep-pcurve-bspline-cube.step": (("accepted",) * 3, (0, 0, 0, 0, 0, 0, 4, 0), (1e-6, math.inf)),
     "brep-cylinder.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
     "brep-seam-cylinder.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
     "brep-cone.step": (("accepted",) * 3, (0, 1, 0, 0, 0),
@@ -83,6 +85,10 @@ BREP_EXPECTED = {
     "brep-spindle-lemon.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * spindle_zone(5, 12, 6, False) * 1e-9, (108 ** 0.5 - 5) * 1e-3)),
     "brep-washer.step": (("accepted",) * 3, (2, 2, 0, 0, 0), (math.pi * 1500e-9, 0.01)),
     "brep-bspline-cube.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (1e-6, math.inf)),
+    "brep-bezier-cube.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (1e-6 + 1600 / 9 * 1e-9, 0.002)),
+    "brep-uniform-cube.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (1e-6, math.inf)),
+    "brep-parabola-prism.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (2000 / 3 * 1e-9, 0.01)),  # apex radius 2f
+    "brep-hyperbola-prism.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (125 * (math.sinh(2) - 2) * 1e-9, 0.005)),  # apex radius b^2/a
     "brep-off-surface.step": (("accepted", "rejected", "not_run"), None, None),
     "brep-misaligned.step": (("accepted",) * 3, (0, 1, 1, 0, 0), (math.pi * 2000e-9, 0.01)),
     "brep-sphere-cap.step": (("accepted",) * 3, (0, 0, 0, 1, 0), (math.pi * 16 * 26 / 3 * 1e-9, 0.008)),
@@ -107,7 +113,8 @@ BREP_EXPECTED = {
 BREP_CHORD = 1e-5
 # Mesh components of accepted solids with BREP_WITH_VOIDS cavities (others have one).
 BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2}
-ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges", "collapsed_faces")
+ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges", "collapsed_faces",
+               "supplied_pcurves", "rejected_pcurves")
 
 
 # Product structure linked with the bundled product profile and placed in a scene:
@@ -181,7 +188,7 @@ def main():
     assert planar_generated == (ROOT / "crates/tessstep-import/src/planar_profile.rs").read_bytes(), "Regenerate the planar profile"
     tessellated_generated = subprocess.check_output([str(target / ("expressc"+suffix)), "--rust", "corpus/geometry/tessellated.exp"], cwd=ROOT)
     assert tessellated_generated == (ROOT / "crates/tessstep-import/src/tessellated_profile.rs").read_bytes(), "Regenerate the tessellated profile"
-    for profile in ("brep", "context", "product", "style"):
+    for profile in ("brep", "context", "product", "style", "pcurve"):
         generated = subprocess.check_output([str(target / ("expressc"+suffix)), "--rust", f"corpus/geometry/{profile}.exp"], cwd=ROOT)
         assert generated == (ROOT / f"crates/tessstep-import/src/{profile}_profile.rs").read_bytes(), f"Regenerate the {profile} profile"
     with tempfile.TemporaryDirectory() as scratch:

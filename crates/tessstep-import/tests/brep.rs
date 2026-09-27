@@ -87,6 +87,7 @@ fn brep_annular_cylinder_inserts_one_seam_and_meshes_as_a_strip() {
 #[test]
 fn brep_seam_curve_with_supplied_pcurves_matches_the_seamless_cylinder() {
     let seamed = import(SEAM_CYLINDER).unwrap();
+    // The seam's supplied pcurves are read, but its exact computed image wins.
     assert_eq!(seamed.adaptations(), Adaptations::default());
     let a = mesh(&seamed, 1e-6);
     let b = mesh(&import(CYLINDER).unwrap(), 1e-6);
@@ -409,6 +410,120 @@ fn brep_bspline_faces_and_rational_complex_instances() {
         (mesh.data().positions.len(), mesh.data().triangles.len()),
         (8, 12)
     );
+}
+
+#[test]
+fn brep_implicit_knot_forms_follow_iso_10303_42() {
+    // Piecewise Bezier: two quadratic segments per direction; the raised interior
+    // poles add 1600/9 mm3 only with interior knots of multiplicity two.
+    let bezier = include_str!("../../../corpus/geometry/brep-bezier-cube.step");
+    let curved = mesh(&import(bezier).unwrap(), 1e-5);
+    let exact = 1e-6 + 1600. / 9. * 1e-9;
+    assert!((curved.statistics().signed_volume - exact).abs() < 1e-3 * exact);
+    // Uniform: unclamped knots; the extended control polygons end on the vertices
+    // only with knots -degree..=controls.
+    let uniform = include_str!("../../../corpus/geometry/brep-uniform-cube.step");
+    let flat = mesh(&import(uniform).unwrap(), 1e-5);
+    assert!((flat.statistics().signed_volume - 1e-6).abs() < 1e-15);
+}
+
+#[test]
+fn brep_supplied_pcurves_are_verified_before_use() {
+    // On the B-spline top face (no exact images) all four supplied pcurves agree with
+    // their edges, including a rational one, and are used.
+    let text = include_str!("../../../corpus/geometry/brep-pcurve-bspline-cube.step");
+    let solid = import(text).unwrap();
+    let a = solid.adaptations();
+    assert_eq!((a.supplied_pcurves, a.rejected_pcurves), (4, 0));
+    assert!((mesh(&solid, 1e-6).statistics().signed_volume - 1e-6).abs() < 1e-18);
+    // One pcurve 0.1 mm off is rejected, and then the whole face is computed: sources
+    // are never mixed on one face.
+    let (first, _) = text
+        .lines()
+        .find_map(|l| l.split_once("=CARTESIAN_POINT('',(0.0,0.0));"))
+        .expect("first 2D pcurve point");
+    let shifted = text.replace(
+        &format!("{first}=CARTESIAN_POINT('',(0.0,0.0));"),
+        &format!("{first}=CARTESIAN_POINT('',(0.0,0.01));"),
+    );
+    let solid = import(&shifted).unwrap();
+    let a = solid.adaptations();
+    assert_eq!((a.supplied_pcurves, a.rejected_pcurves), (0, 1));
+    assert!((mesh(&solid, 1e-6).statistics().signed_volume - 1e-6).abs() < 1e-18);
+    // Elementary faces keep their exact images: the cylinder's supplied pcurves are
+    // read but not used, and the one written 1 mm off is counted as rejected.
+    let text = include_str!("../../../corpus/geometry/brep-pcurve-cylinder.step");
+    let solid = import(text).unwrap();
+    assert_eq!(
+        solid.adaptations(),
+        Adaptations {
+            rejected_pcurves: 1,
+            ..Adaptations::default()
+        }
+    );
+    check_volume(
+        &mesh(&solid, 1e-5),
+        std::f64::consts::PI * 2000e-9,
+        1e-5,
+        10e-3,
+    );
+}
+
+#[test]
+fn brep_parabola_and_hyperbola_edges_become_exact_arcs() {
+    let parabola = include_str!("../../../corpus/geometry/brep-parabola-prism.step");
+    let prism = mesh(&import(parabola).unwrap(), 1e-5);
+    let exact = 2000. / 3. * 1e-9;
+    assert!((prism.statistics().signed_volume - exact).abs() < 1e-2 * exact);
+    let hyperbola = include_str!("../../../corpus/geometry/brep-hyperbola-prism.step");
+    let prism = mesh(&import(hyperbola).unwrap(), 1e-5);
+    let exact = 125. * (2_f64.sinh() - 2.) * 1e-9;
+    assert!((prism.statistics().signed_volume - exact).abs() < 1e-2 * exact);
+}
+
+/// Replace the body of the first record whose body starts with `prefix`.
+fn replace_record(text: &str, prefix: &str, body: &str) -> String {
+    let at = text.find(&format!("={prefix}")).expect("record present") + 1;
+    let end = at + text[at..].find(";\n").expect("record end");
+    format!("{}{body}{}", &text[..at], &text[end..])
+}
+
+#[test]
+fn brep_rare_geometry_is_a_named_rejection() {
+    // Rare face and edge geometry (mostly in synthetic corpus files) is outside the
+    // profile and rejected by name, never approximated.
+    let surface = "(BOUNDED_SURFACE()B_SPLINE_SURFACE(";
+    let edge = "B_SPLINE_CURVE_WITH_KNOTS('',2,";
+    let cases = [
+        (surface, "OFFSET_SURFACE('',#1,1.,.F.)", "OFFSET_SURFACE"),
+        (
+            surface,
+            "RECTANGULAR_TRIMMED_SURFACE('',#1,0.,1.,0.,1.,.T.,.T.)",
+            "RECTANGULAR_TRIMMED_SURFACE",
+        ),
+        (
+            surface,
+            "RECTANGULAR_COMPOSITE_SURFACE('',((#1)))",
+            "RECTANGULAR_COMPOSITE_SURFACE",
+        ),
+        (edge, "COMPOSITE_CURVE('',(#1),.F.)", "COMPOSITE_CURVE"),
+        (edge, "OFFSET_CURVE_3D('',#1,1.,.F.,#1)", "OFFSET_CURVE_3D"),
+        (edge, "PCURVE('',#1,#1)", "PCURVE"),
+        (edge, "DEGENERATE_PCURVE('',#1,#1)", "DEGENERATE_PCURVE"),
+    ];
+    for (prefix, body, name) in cases {
+        let error = import(&replace_record(BSPLINE_CUBE, prefix, body)).unwrap_err();
+        assert_eq!(
+            (error.kind, error.stage),
+            (ErrorKind::Unsupported, Stage::Profile),
+            "{error}"
+        );
+        assert!(
+            error.message.starts_with(&format!("{name} is outside")),
+            "{error}"
+        );
+        assert!(error.entity.is_some() && error.source.is_some());
+    }
 }
 
 #[test]

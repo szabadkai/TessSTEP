@@ -17,7 +17,7 @@ expressc ──→ tessstep-codegen ──→ tessstep-express
 
 generated consumer ──→ tessstep-schema (standard library only)
 
-tessstep-capi ──→ tessstep-model / tessstep-part21 / tessstep-mesh
+tessstep-capi ──→ tessstep-model / tessstep-part21 / tessstep-mesh / tessstep-import
 C++ wrapper ──→ public C ABI only
 
 stepdump ──→ tessstep-model ──→ tessstep-part21
@@ -459,7 +459,8 @@ adaptation remain distinct stages.
 ## First STEP geometry integration
 
 `tessstep-import` is an explicit composition boundary above model/schema,
-math/curves/surfaces/topology, trim/tessellate and mesh. It supplies a generated,
+math/curves/surfaces/topology, trim/tessellate and mesh, and (since Milestone 21, for
+assembly linking) above the `tessstep-ap242` product adapter and `tessstep-product`. It supplies a generated,
 original reduced faceted profile; the generic model decoder now offers bounded
 `decode_reachable` without changing whole-document validation semantics. Traversal
 is iterative and cycle-safe, charges work, and preserves reference-owner source

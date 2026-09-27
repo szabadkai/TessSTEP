@@ -239,7 +239,13 @@ def summarize_survey(payload):
             "categories": dict(Counter(re.sub(r"\d+", "N", r["message"]) for r in failures).most_common(10)),
             "unsupported_entity_types": dict(Counter(r["entity_type"] for r in failures if r["failed_stage"] == "profile" and r["kind"] == "unsupported").most_common(10)),
             "presentation": presentation,
-            "roots": [{k: v for k, v in r.items() if k != "seconds"} for r in roots[:20]]}
+            # Coverage survey: every record type in every root's reference closure, and
+            # how many roots and failing roots contain it (not only the first rejection).
+            "closure_types": dict(sorted(sum((Counter(r.get("closure", {})) for r in roots), Counter()).items())),
+            "closure_roots": dict(sorted(Counter(t for r in roots for t in r.get("closure", {})).items())),
+            "closure_failing_roots": dict(sorted(Counter(t for r in failures for t in r.get("closure", {})).items())),
+            "closure_truncated": sum(bool(r.get("closure_truncated")) for r in roots),
+            "roots": [{k: v for k, v in r.items() if k not in ("seconds", "closure")} for r in roots[:20]]}
 
 
 def stage_outcome(roots, stage):
@@ -341,6 +347,8 @@ def signature(case):
     # Saved baselines keep only these counts, not the full per-file survey summary.
     geometry = case.get("geometry_result")
     result["geometry_accepted_roots"] = geometry["accepted_roots"] if geometry else case.get("geometry_accepted_roots")
+    # The coverage survey's per-file root closure types are kept in the baseline.
+    result["geometry_closure_types"] = geometry.get("closure_types") if geometry else case.get("geometry_closure_types")
     presentation = (geometry or {}).get("presentation")
     result["presentation_accepted"] = (presentation["accepted"] if presentation and presentation["occurrence_count"]
                                        else None if geometry else case.get("presentation_accepted"))

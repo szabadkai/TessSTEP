@@ -10,30 +10,31 @@ constructed boundary representations (B-reps). Meshes retain shared boundary
 positions, per-corner normals and UVs, and face provenance. Assembly scenes reuse
 mesh assets across nested placements and support explicit appearance overrides.
 
-**STEP-to-mesh supports explicit solid profiles.** The importers accept a selected
-`FACETED_BREP` with polygon boundaries, a `MANIFOLD_SOLID_BREP` with straight edges
-(Rust, C and C++), or a `MANIFOLD_SOLID_BREP` on planes, cylinders, cones, spheres,
-ring tori and B-spline surfaces (Rust). Units are caller-supplied or discovered from
-each root's representation context. Cavity shells, swept surfaces and faces touching
-poles or apices are not imported yet.
-No AP203, AP214, or AP242 conformance is claimed; successful physical parsing does
-not establish schema or CAD validity.
+**STEP-to-mesh supports explicit solid profiles and assemblies.** The importers accept
+a selected `FACETED_BREP` with polygon boundaries, a `MANIFOLD_SOLID_BREP` with straight
+edges (Rust, C and C++), or a `MANIFOLD_SOLID_BREP` / `BREP_WITH_VOIDS` on elementary,
+B-spline and swept surfaces with supplied or computed pcurves (Rust). Whole assemblies
+import as scenes: every shape root in its context units, placed by the product
+structure's occurrences and coloured by its surface styles (Rust, C and C++).
+The AP242, AP214 and AP203 long forms compile and validate corpus files structurally,
+but EXPRESS rules are not evaluated, so no AP203, AP214 or AP242 conformance is
+claimed; successful parsing does not establish schema or CAD validity.
 
 ## Current capabilities
 
 | Area | Available now | Scope and limitations |
 | --- | --- | --- |
 | STEP Part 21 | Streaming parser, generic entity storage, source spans, resource limits, and reference diagnostics | A documented clear-text subset; external references and signatures are retained but not fetched or verified |
-| EXPRESS and schemas | Declaration parsing, import resolution, Rust bindings, static reflection, and structural instance decoding | General EXPRESS rules and algorithms are unsupported; no full ISO application-protocol schema is bundled |
-| Products and assemblies | Product/representation graphs, unit scales, uncertainty measures, evaluated placements, and bounded nested expansion | Local 3D relationships with supplied metadata and explicit alternative selection; mesh binding remains caller-controlled |
+| EXPRESS and schemas | Declaration parsing, import resolution, Rust bindings, static reflection, structural instance decoding; the AP242, AP214 and AP203 long forms compile, and a generated validator checks the corpus structurally | General EXPRESS rules and algorithms are not evaluated; ISO schemas are fetched by hash, never bundled ([COVERAGE.md](docs/COVERAGE.md)) |
+| Products and assemblies | Product/representation graphs, unit scales, uncertainty measures, evaluated placements, bounded nested expansion, and STEP assembly import as a scene | Occurrences placed by context dependent shape representations; missing or ambiguous placements fail; mapped-item assemblies are not linked |
 | Geometry | Typed coordinates, tolerances, affine transforms, analytic curves/surfaces, and NURBS evaluation, knot insertion and periodic surface axes | Independent evaluators, adapted from STEP by the curved import profile |
 | Topology and trimming | Structural B-rep validation, UV reconstruction with periodic chart and hole placement, and canonical shared-edge sampling | No automatic healing or general volume-validity proof; pcurves are computed by the STEP importer |
 | Tessellation | Planar and regular curved-face refinement, owned shell/solid meshes, and manifold closure checks | Constructed B-reps; sampled error checks, no certified continuous bounds, singularity repair, or self-intersection proof |
 | Planar STEP import | Faceted and edge-based solids converted to owned meshes with original STEP face IDs | One closed shell; planar polygon or LINE/EDGE_LOOP boundaries; explicit root, units and tolerances |
-| Curved STEP import | Elementary and B-spline B-rep solids with computed pcurves, inferred outer bounds and inserted annulus seams; root and context-unit discovery | One closed shell; no cavity shells, swept surfaces, pole/apex charts or healing; Rust only ([CURVED_IMPORT.md](docs/CURVED_IMPORT.md)) |
+| Curved STEP import | Elementary, B-spline and swept B-rep solids with cavities, poles, verified supplied or computed pcurves, inferred outer bounds and inserted seams; root and context-unit discovery | No healing or surface models; rare geometry is a named rejection; single-root import is Rust only ([CURVED_IMPORT.md](docs/CURVED_IMPORT.md)) |
 | Existing STEP tessellations | Tessellated solids, shells and triangulated surface sets imported as owned meshes without retessellation; tessellated annotations as placed polylines, points and fills; root discovery and B-rep/tessellation representation selection | Triangulated faces, strips, fans, edges and connecting edges; coordinate-index identity; annotation graphics are not meshes and styles are not interpreted |
-| Mesh scenes and appearance | Shared assets, nested affine instances, explicit baking, linear RGBA palettes, and inherited style overrides | No automatic STEP mesh binding or style adaptation, world-space tolerance guarantee, textures, or rendering |
-| C and C++ | Document inspection, planar/faceted STEP tessellation, existing-tessellation and annotation import, triangle-buffer import, retained mesh and annotation views, scenes, and appearance | Shared ABI 1 library and C++17 RAII; general schema decoding, discovery and constructed B-rep tessellation remain Rust APIs |
+| Mesh scenes and appearance | Shared assets, nested affine instances, explicit baking, linear RGBA palettes, inherited style overrides, and STEP surface colours and transparency on solids and faces | No curve, point or occurrence-specific STEP styles, world-space tolerance guarantee, textures, or rendering |
+| C and C++ | Document inspection, schema selection, planar/faceted STEP tessellation, existing-tessellation and annotation import, assembly import with imported colours, triangle-buffer import, retained mesh and annotation views, scenes, and appearance | Shared ABI 1 library and C++17 RAII; general schema decoding, discovery and single-root curved B-rep import remain Rust APIs |
 
 The [STEP import guide](docs/STEP_IMPORT.md) documents the first end-to-end slice;
 [existing tessellations](docs/EXISTING_TESSELLATIONS.md) documents direct mesh and annotation import.

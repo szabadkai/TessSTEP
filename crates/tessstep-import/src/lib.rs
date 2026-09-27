@@ -24,6 +24,9 @@ mod context_profile;
 mod product_profile;
 #[allow(dead_code)]
 #[rustfmt::skip]
+mod pcurve_profile;
+#[allow(dead_code)]
+#[rustfmt::skip]
 mod style_profile;
 mod assembly;
 mod brep;

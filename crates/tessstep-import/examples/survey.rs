@@ -159,11 +159,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             )?,
             Err(e) => failure(&mut out, &doc, &e, true)?,
         }
-        write!(
-            out,
-            ",\"chord_m\":{chord:e},\"seconds\":{:.6}}}",
-            started.elapsed().as_secs_f64()
-        )?;
+        write!(out, ",\"chord_m\":{chord:e}")?;
+        closure(&mut out, &doc, id)?;
+        write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
     }
     // Existing shape tessellations: no model tolerance or chord applies.
     for (index, root) in tessellations
@@ -207,12 +205,67 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(e) => failure(&mut out, &doc, &e, false)?,
         }
+        closure(&mut out, &doc, root.entity)?;
         write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
     }
     out.push(']');
     presentations(&mut out, &doc, unit, max_roots)?;
     out.push('}');
     println!("{out}");
+    Ok(())
+}
+
+/// Record names in the root's local reference closure, each complex component
+/// counted, whatever the import outcome: the coverage survey sees every entity type
+/// a root uses, not only the first one a profile rejects. Bounded traversal; a
+/// closure beyond the bound is marked truncated.
+fn closure(out: &mut String, doc: &Document, root: EntityId) -> std::fmt::Result {
+    use tessstep_part21::{StepValue, ValueKind};
+    const MAX_VISITS: usize = 2_000_000;
+    let mut counts = std::collections::BTreeMap::<String, usize>::new();
+    let mut seen = std::collections::BTreeSet::from([root]);
+    let mut stack = vec![root];
+    let mut visits = 0;
+    while let Some(id) = stack.pop() {
+        let Some(entity) = doc.entities().get(id) else {
+            continue;
+        };
+        let mut values: Vec<&StepValue> = Vec::new();
+        for record in entity.kind.records() {
+            *counts
+                .entry(record.name.as_ref().to_ascii_uppercase())
+                .or_default() += 1;
+            values.extend(&record.parameters);
+        }
+        while let Some(v) = values.pop() {
+            visits += 1;
+            if visits > MAX_VISITS {
+                break;
+            }
+            match &v.kind {
+                ValueKind::Reference(next) if seen.insert(*next) => stack.push(*next),
+                ValueKind::Aggregate(items) => values.extend(items),
+                ValueKind::Typed { value, .. } => values.push(value),
+                _ => {}
+            }
+        }
+        if visits > MAX_VISITS {
+            break;
+        }
+    }
+    write!(
+        out,
+        ",\"closure_truncated\":{},\"closure\":{{",
+        visits > MAX_VISITS
+    )?;
+    for (k, (name, n)) in counts.iter().enumerate() {
+        if k > 0 {
+            out.push(',');
+        }
+        json_string(out, name)?;
+        write!(out, ":{n}")?;
+    }
+    out.push('}');
     Ok(())
 }
 

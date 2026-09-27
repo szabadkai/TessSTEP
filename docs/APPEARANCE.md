@@ -92,10 +92,32 @@ and checks arbitrary-bit colors. Native consumers cover copied inputs, ownership
 concurrent reads, moves, scalar layouts, error clearing and installed-package relocation.
 The `appearance` benchmark separates inheritance construction from triangle queries.
 
-STEP presentation/style adaptation, surface-side styles, texture images, vertex colors,
-line/point styles, physically based material properties, shader evaluation, color-space
-conversion, rendering and exporters remain future work. This module does not enable an
-external STEP appearance, geometry or tessellation corpus stage. Milestone 20 now
+## STEP surface colours (Milestone 21)
+
+`tessstep_import::import_appearance` adapts STEP surface styles to an `Appearance`
+over a linked assembly's scene (and the C/C++ assembly import returns it). Styled items
+are decoded with the bundled original [style profile](../corpus/geometry/style.exp):
+`STYLED_ITEM` and `OVER_RIDING_STYLED_ITEM` → `PRESENTATION_STYLE_ASSIGNMENT` →
+`SURFACE_STYLE_USAGE` → `SURFACE_SIDE_STYLE` → `SURFACE_STYLE_FILL_AREA` (fill colour)
+and `SURFACE_STYLE_RENDERING(_WITH_PROPERTIES)` (surface colour, `SURFACE_STYLE_TRANSPARENT`).
+The fill colour wins over the rendering colour; opacity is one minus the transparency.
+`COLOUR_RGB` components are read as sRGB-encoded display values and converted to linear
+light; `DRAUGHTING_PRE_DEFINED_COLOUR` names map to the ISO 10303-46 colours. A style on
+a solid root, its outer shell or a shape representation holding it binds the asset; a
+style on a face binds that asset face (mesh face IDs are STEP face IDs). An over-riding
+style wins on its target, then a direct target over a derived one, then document order
+(conflicts are counted). Materials are the distinct colours in order of first use.
+
+Curve, point and text styles are never decoded (assignment and side-style elements are
+links, and only surface usages, fill areas and renderings are decoded as roots), so a
+malformed curve style cannot hide a surface colour. Styles by context and
+`CONTEXT_DEPENDENT_OVER_RIDING_STYLED_ITEM`, layers, invisibility, textures and PMI are
+counted, never applied; an invalid colour or transparency excludes only its own styled
+item. Evidence: `surface_styles_colour_solids_and_faces`, the C/C++ consumers, and the
+hash-pinned exporter assemblies of `check_geometry.py`.
+
+Texture images, vertex colors, line/point styles, physically based material
+properties, shader evaluation, rendering and exporters remain future work. Milestone 20 now
 imports existing tessellations and tessellated annotations, whose style assignments it
 retains as entity IDs without decoding them; see
 [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md).

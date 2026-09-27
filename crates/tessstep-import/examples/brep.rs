@@ -65,13 +65,15 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let result =
         imported.and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
     let adapted = format!(
-        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{}",
+        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{},\"supplied_pcurves\":{},\"rejected_pcurves\":{}",
         adaptations.inferred_outer_bounds,
         adaptations.inserted_seams,
         adaptations.split_edges,
         adaptations.recharted_spheres,
         adaptations.collapsed_edges,
-        adaptations.collapsed_faces
+        adaptations.collapsed_faces,
+        adaptations.supplied_pcurves,
+        adaptations.rejected_pcurves
     );
     match result {
         Ok(mesh) => {

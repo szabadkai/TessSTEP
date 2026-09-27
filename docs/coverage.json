@@ -50,17 +50,21 @@
       "status": "adapted",
       "note": ""
     },
+    "AXIS2_PLACEMENT_2D": {
+      "status": "adapted",
+      "note": "placement of 2D conic pcurves"
+    },
     "AXIS2_PLACEMENT_3D": {
       "status": "adapted",
       "note": ""
     },
     "BEZIER_CURVE": {
-      "status": "unsupported",
-      "note": "implicit knots: roadmap item"
+      "status": "adapted",
+      "note": "implicit piecewise Bezier knots (ISO 10303-42)"
     },
     "BEZIER_SURFACE": {
-      "status": "unsupported",
-      "note": "implicit knots: roadmap item"
+      "status": "adapted",
+      "note": "implicit piecewise Bezier knots (ISO 10303-42)"
     },
     "BOUNDARY_CURVE": {
       "status": "unsupported",
@@ -299,8 +303,8 @@
       "note": "hybrid B-rep/tessellation assignments are not read"
     },
     "HYPERBOLA": {
-      "status": "unsupported",
-      "note": "evaluator exists; no adapter (roadmap item)"
+      "status": "adapted",
+      "note": "edge curve; exact rational quadratic arc between its vertices"
     },
     "IMPLICIT_INTERSECTION_CURVE": {
       "status": "out_of_scope",
@@ -407,16 +411,16 @@
       "note": "CURVE_BOUNDED_SURFACE boundary; scope decision"
     },
     "PARABOLA": {
-      "status": "unsupported",
-      "note": "evaluator exists; no adapter (roadmap item)"
+      "status": "adapted",
+      "note": "edge curve; exact polynomial quadratic arc between its vertices"
     },
     "PATH_SHAPE_REPRESENTATION": {
       "status": "out_of_scope",
       "note": "wire path"
     },
     "PCURVE": {
-      "status": "unsupported",
-      "note": "retained as a link on surface curves; direct edge geometry is rejected"
+      "status": "adapted",
+      "note": "supplied pcurves of SURFACE_CURVE and SEAM_CURVE, verified against the 3D curve; as direct edge geometry a named rejection"
     },
     "PLACEMENT": {
       "status": "unsupported",
@@ -556,7 +560,7 @@
     },
     "SHELL_BASED_SURFACE_MODEL": {
       "status": "unsupported",
-      "note": "surface models: roadmap scope decision (proposed: import as shell meshes, never as solids)"
+      "note": "surface models: named unsupported in Milestone 21; import as shell meshes, never as solids, is Milestone 22 (roadmap scope decision)"
     },
     "SHELL_BASED_WIREFRAME_SHAPE_REPRESENTATION": {
       "status": "out_of_scope",
@@ -703,12 +707,12 @@
       "note": "composite-ply and presentation data"
     },
     "UNIFORM_CURVE": {
-      "status": "unsupported",
-      "note": "implicit knots: roadmap item"
+      "status": "adapted",
+      "note": "implicit uniform knots (ISO 10303-42), unclamped"
     },
     "UNIFORM_SURFACE": {
-      "status": "unsupported",
-      "note": "implicit knots: roadmap item"
+      "status": "adapted",
+      "note": "implicit uniform knots (ISO 10303-42), unclamped"
     },
     "VECTOR": {
       "status": "adapted",

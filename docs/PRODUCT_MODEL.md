@@ -137,6 +137,25 @@ C/C++ product operations are not yet exposed; existing physical/mesh/scene inter
 and their ownership contracts are unchanged. Rust math or container layouts never cross
 that ABI.
 
+## Linking imported shapes (Milestone 21)
+
+`tessstep_import::link_assembly` decodes the document's product records with the
+bundled original [product profile](../corpus/geometry/product.exp), which matches the
+physical layouts AP203, AP214 and AP242 exporters write: next assembly usage
+occurrences, context dependent shape representations, shape definition representations
+of product definition shapes and untransformed shape representation relationships are
+roots; representation items and associated documents are retained as links, never
+decoded. The records are adapted by this crate's adapter (a linked item is an opaque
+identity) and each root definition is expanded with `Model::expand`. A shape root is
+placed wherever an expanded representation, or one associated with it in the same
+context, holds it. A combined closure outside the profile is decoded record by record;
+excluded records are reported, and those that are occurrences or placements mark the
+structure incomplete. The solid-angle unit of a context is optional, and the tolerant
+default accepts `NAMED_UNIT(*)` on conversion-based units (the dimensions follow from
+the unit role; strict mode rejects it). Mapped-item and Cartesian-operator assemblies
+and external document references are not linked. Evidence: `tests/assembly.rs`, the
+product stage of the corpus runner and `external-assembly.json`.
+
 ## Evidence and references
 
 The authored `corpus/product` schema is a reduced synthetic schema, not an ISO extract.
