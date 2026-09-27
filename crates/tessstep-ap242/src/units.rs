@@ -34,8 +34,7 @@ impl<'d, 'a> Context<'d, 'a> {
             length: length.ok_or_else(|| self.error(ErrorKind::Units, "missing length unit"))?,
             plane_angle: plane
                 .ok_or_else(|| self.error(ErrorKind::Units, "missing plane angle unit"))?,
-            solid_angle: solid
-                .ok_or_else(|| self.error(ErrorKind::Units, "missing solid angle unit"))?,
+            solid_angle: solid,
         })
     }
     fn dimension(&mut self, view: &EntityView<'a>) -> Result<Dimension, Error> {
@@ -99,31 +98,38 @@ impl<'d, 'a> Context<'d, 'a> {
                 };
                 break scale;
             } else if conversion {
-                let exponents = self.target(view, "dimensions", "dimensional_exponents")?;
-                for (i, name) in [
-                    "length_exponent",
-                    "mass_exponent",
-                    "time_exponent",
-                    "electric_current_exponent",
-                    "thermodynamic_temperature_exponent",
-                    "amount_of_substance_exponent",
-                    "luminous_intensity_exponent",
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    let value = self.attr(exponents, name)?;
-                    let n = self.number(value)?;
-                    let expected = if i == 0 && dimension == Dimension::Length {
-                        1.0
+                // A tolerated `*` (an importer omitted slot) leaves the dimensions to
+                // the unit role checked above.
+                let names: &[&'static str] =
+                    if matches!(self.attr(view, "dimensions")?.kind, ValueKind::Omitted) {
+                        &[]
                     } else {
-                        0.0
+                        &[
+                            "length_exponent",
+                            "mass_exponent",
+                            "time_exponent",
+                            "electric_current_exponent",
+                            "thermodynamic_temperature_exponent",
+                            "amount_of_substance_exponent",
+                            "luminous_intensity_exponent",
+                        ]
                     };
-                    if n != expected {
-                        return Err(self.error(
-                            ErrorKind::Units,
-                            "conversion dimensions disagree with unit role",
-                        ));
+                if !names.is_empty() {
+                    let exponents = self.target(view, "dimensions", "dimensional_exponents")?;
+                    for (i, &name) in names.iter().enumerate() {
+                        let value = self.attr(exponents, name)?;
+                        let n = self.number(value)?;
+                        let expected = if i == 0 && dimension == Dimension::Length {
+                            1.0
+                        } else {
+                            0.0
+                        };
+                        if n != expected {
+                            return Err(self.error(
+                                ErrorKind::Units,
+                                "conversion dimensions disagree with unit role",
+                            ));
+                        }
                     }
                 }
                 let measure = self.target(view, "conversion_factor", "measure_with_unit")?;

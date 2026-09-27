@@ -633,27 +633,29 @@ fn decode_representation(
         "tessstep_context",
         &[representation],
         &[
-            decode::OmittedSlot {
-                entity: s::Entity_SI_UNIT::DECLARATION,
-                attribute: "DIMENSIONS",
-                allow_unset: !options.strict,
-                allow_value: false,
-            },
-            // Derived from the representation by the standard; many exporters write
-            // the values instead of `*`, which the tolerant default accepts.
-            decode::OmittedSlot {
-                entity: s::Entity_CHARACTERIZED_OBJECT::DECLARATION,
-                attribute: "OBJECT_NAME",
-                allow_unset: false,
-                allow_value: !options.strict,
-            },
-            decode::OmittedSlot {
-                entity: s::Entity_CHARACTERIZED_OBJECT::DECLARATION,
-                attribute: "OBJECT_DESCRIPTION",
-                allow_unset: false,
-                allow_value: !options.strict,
-            },
-        ],
+            unit_slots(
+                s::Entity_SI_UNIT::DECLARATION,
+                s::Entity_CONVERSION_BASED_UNIT::DECLARATION,
+                options,
+            ),
+            vec![
+                // Derived from the representation by the standard; many exporters write
+                // the values instead of `*`, which the tolerant default accepts.
+                decode::OmittedSlot {
+                    entity: s::Entity_CHARACTERIZED_OBJECT::DECLARATION,
+                    attribute: "OBJECT_NAME",
+                    allow_unset: false,
+                    allow_value: !options.strict,
+                },
+                decode::OmittedSlot {
+                    entity: s::Entity_CHARACTERIZED_OBJECT::DECLARATION,
+                    attribute: "OBJECT_DESCRIPTION",
+                    allow_unset: false,
+                    allow_value: !options.strict,
+                },
+            ],
+        ]
+        .concat(),
         &[decode::LinkSlot {
             entity: s::Entity_REPRESENTATION::DECLARATION,
             attribute: "ITEMS",
@@ -817,13 +819,17 @@ impl<'d, 'a> Units<'d, 'a> {
             if !self.is(v, "CONVERSION_BASED_UNIT") {
                 return Err(self.error("unit is neither SI nor conversion based"));
             }
-            let exponents = self.reference(v, "DIMENSIONS");
             let expected_length = if dimension == Dimension::Length {
                 1.
             } else {
                 0.
             };
-            for (i, a) in exponents.attributes.iter().enumerate() {
+            // A tolerated `*` leaves the dimensions to the unit role checked above.
+            let exponents = match self.attr(v, "DIMENSIONS").kind {
+                ValueKind::Omitted => &[][..],
+                _ => &self.reference(v, "DIMENSIONS").attributes[..],
+            };
+            for (i, a) in exponents.iter().enumerate() {
                 let n = Self::number(a.value).unwrap_or(f64::NAN);
                 if n != if i == 0 { expected_length } else { 0. } {
                     return Err(self.error("conversion dimensions disagree with the unit role"));
@@ -853,12 +859,11 @@ fn context_units(
         &context_profile::SCHEMA_SET,
         "tessstep_context",
         &[context],
-        &[decode::OmittedSlot {
-            entity: s::Entity_SI_UNIT::DECLARATION,
-            attribute: "DIMENSIONS",
-            allow_unset: !options.strict,
-            allow_value: false,
-        }],
+        &unit_slots(
+            s::Entity_SI_UNIT::DECLARATION,
+            s::Entity_CONVERSION_BASED_UNIT::DECLARATION,
+            options,
+        ),
         decode::Limits {
             max_work: options.max_work,
             ..decode::Limits::default()
@@ -943,6 +948,32 @@ fn context_units(
             .map_err(|_| u.error("invalid plane angle unit scale"))?,
         distance_uncertainty: uncertainty.map(|(_, m)| m),
     })
+}
+
+/// Unit dimension slots: SI units derive DIMENSIONS and write `*` (`$` tolerated);
+/// conversion-based units write explicit exponents, and the tolerant default also
+/// accepts `*` there, taking the dimensions from the unit role (several AP203
+/// exporters, including NIST's, write `NAMED_UNIT(*)` for inch and degree units).
+pub(crate) fn unit_slots(
+    si: tessstep_schema::DeclarationId,
+    conversion: tessstep_schema::DeclarationId,
+    options: ImportOptions,
+) -> Vec<decode::OmittedSlot> {
+    let mut slots = vec![decode::OmittedSlot {
+        entity: si,
+        attribute: "DIMENSIONS",
+        allow_unset: !options.strict,
+        allow_value: false,
+    }];
+    if !options.strict {
+        slots.push(decode::OmittedSlot {
+            entity: conversion,
+            attribute: "DIMENSIONS",
+            allow_unset: false,
+            allow_value: true,
+        });
+    }
+    slots
 }
 
 fn prefix_scale(s: &str) -> Option<f64> {

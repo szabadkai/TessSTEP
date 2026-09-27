@@ -39,6 +39,18 @@ def markdown(report):
         if sch["unevaluated"] or sch["tolerated"]:
             lines += ["", "Accepted inputs: unevaluated " + ", ".join(f"{k} {v:,}" for k, v in sorted(sch["unevaluated"].items()))
                       + "; tolerated " + ", ".join(f"{k} {v:,}" for k, v in sorted(sch["tolerated"].items())) + "."]
+    prod = stats.get("product", {})
+    if prod.get("files"):
+        a = prod["accepted"]
+        lines += ["", f'**Product stage:** {prod["files"]:,} inputs with a mapped FILE_SCHEMA linked with the bundled product profile; '
+                  f'accepted structures hold {a.get("products", 0):,} products, {a.get("occurrences", 0):,} occurrences in '
+                  f'{a.get("files_with_occurrences", 0):,} assemblies, {a.get("definition_nodes", 0):,} placed definition nodes and '
+                  f'{a.get("placed_roots", 0):,} placed shape roots ({a.get("unplaced_roots", 0):,} unplaced).', "",
+                  "| Declared schema | Outcomes |", "| --- | --- |"]
+        lines += [f'| {cell(name)} | ' + ', '.join(f'{k}: {v:,}' for k, v in row.items()) + ' |' for name, row in prod["declared"].items()]
+        if prod["categories"]:
+            lines += ["", "| Top product failures | Inputs |", "| --- | ---: |"]
+            lines += [f"| {cell(k)} | {v:,} |" for k, v in list(prod["categories"].items())[:10]]
     g = stats["geometry"]
     if g["files_surveyed"]:
         shown = g["presentation"]

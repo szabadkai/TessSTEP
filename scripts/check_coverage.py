@@ -76,7 +76,9 @@ def classify(closure, coverage, profiles):
             problems.append(f"{name}: invalid status {entry['status']}")
         if entry["status"] in ("adapted", "supertype") and name not in profiles:
             problems.append(f"{name}: recorded as {entry['status']} but no import profile declares it")
-        if entry["status"] not in ("adapted", "supertype") and name in profiles:
+        # The product linker declares representation containers without adapting their items.
+        linking = entry["status"] == "product" and set(profiles.get(name, [])) <= {"product"}
+        if entry["status"] not in ("adapted", "supertype") and name in profiles and not linking:
             problems.append(f"{name}: declared by profile {profiles[name]} but recorded as {entry['status']}")
         rows[name] = {"status": entry["status"], "note": entry.get("note", ""), "profiles": profiles.get(name, []), "roots": sorted(closure[name])}
     for name in explicit:

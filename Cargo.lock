@@ -83,11 +83,13 @@ version = "0.1.0"
 name = "tessstep-import"
 version = "0.1.0"
 dependencies = [
+ "tessstep-ap242",
  "tessstep-curves",
  "tessstep-math",
  "tessstep-mesh",
  "tessstep-model",
  "tessstep-part21",
+ "tessstep-product",
  "tessstep-schema",
  "tessstep-surfaces",
  "tessstep-tessellate",

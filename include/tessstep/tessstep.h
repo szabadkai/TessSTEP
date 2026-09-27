@@ -195,6 +195,8 @@ typedef struct ts_faceted_options {
 #define TS_IMPORT_STAGE_GEOMETRY 2u
 #define TS_IMPORT_STAGE_TOPOLOGY 3u
 #define TS_IMPORT_STAGE_TESSELLATION 4u
+#define TS_IMPORT_STAGE_PRODUCT 5u
+#define TS_IMPORT_STAGE_PRESENTATION 6u
 /* All-zero on success/invalid call arguments; entity/offsets zero if unavailable.
  * Offsets are half-open bytes in the original document. No borrowed storage. */
 typedef struct ts_import_error {

@@ -187,8 +187,8 @@
       "note": ""
     },
     "EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION": {
-      "status": "out_of_scope",
-      "note": "wireframe model"
+      "status": "product",
+      "note": "linked by the product profile as a product's shape representation; its wireframe or curve-bounded surface items are not imported"
     },
     "EDGE_CURVE": {
       "status": "adapted",
@@ -263,12 +263,12 @@
       "note": "wireframe model"
     },
     "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION": {
-      "status": "unsupported",
-      "note": "CURVE_BOUNDED_SURFACE models: named unsupported for v1.0 (roadmap scope decision)"
+      "status": "product",
+      "note": "linked by the product profile as a product's shape representation; its wireframe or curve-bounded surface items are not imported"
     },
     "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION": {
-      "status": "out_of_scope",
-      "note": "wireframe model"
+      "status": "product",
+      "note": "linked by the product profile as a product's shape representation; its wireframe or curve-bounded surface items are not imported"
     },
     "GEOMETRIC_CURVE_SET": {
       "status": "unsupported",

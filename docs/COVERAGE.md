@@ -8,16 +8,16 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | --- | ---: |
 | adapted | 60 |
 | supertype | 14 |
-| product | 2 |
-| unsupported | 114 |
-| out_of_scope | 311 |
+| product | 5 |
+| unsupported | 113 |
+| out_of_scope | 309 |
 
 | Entity | Status | Roots | Profiles | Note |
 | --- | --- | --- | --- | --- |
 | `ACTUATED_KINEMATIC_PAIR` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
 | `ADJACENT_TRIANGLE_PAIR` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
 | `ADJACENT_TRIANGULATED_FACE_PAIR` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
-| `ADVANCED_BREP_SHAPE_REPRESENTATION` | adapted | shape | context | curved B-rep root container |
+| `ADVANCED_BREP_SHAPE_REPRESENTATION` | adapted | shape | context, product | curved B-rep root container |
 | `ADVANCED_FACE` | adapted | geometric, topological | brep, faceted, planar |  |
 | `AGC_WITH_DIMENSION` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `ANGLE_ASSEMBLY_CONSTRAINT_WITH_DIMENSION` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
@@ -37,7 +37,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `AUXILIARY_LEADER_LINE` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `AXIS1_PLACEMENT` | adapted | geometric | brep |  |
 | `AXIS2_PLACEMENT_2D` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
-| `AXIS2_PLACEMENT_3D` | adapted | geometric | brep, faceted, planar, tessellated |  |
+| `AXIS2_PLACEMENT_3D` | adapted | geometric | brep, faceted, planar, product, tessellated |  |
 | `BEVELED_SHEET_REPRESENTATION` | unsupported | shape |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `BEZIER_CURVE` | unsupported | geometric |  | implicit knots: roadmap item |
 | `BEZIER_SURFACE` | unsupported | geometric |  | implicit knots: roadmap item |
@@ -68,7 +68,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `CAMERA_MODEL_D3_WITH_HLHSR` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `CAMERA_MODEL_WITH_LIGHT_SOURCES` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `CARTESIAN_11` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
-| `CARTESIAN_POINT` | adapted | geometric | brep, faceted, planar, tessellated |  |
+| `CARTESIAN_POINT` | adapted | geometric | brep, faceted, planar, product, tessellated |  |
 | `CARTESIAN_TRANSFORMATION_OPERATOR` | product | geometric |  | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
 | `CARTESIAN_TRANSFORMATION_OPERATOR_2D` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `CARTESIAN_TRANSFORMATION_OPERATOR_3D` | product | geometric |  | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
@@ -138,7 +138,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `DIMENSION_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `DIMENSION_CURVE_DIRECTED_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `DIMENSION_TEXT_ASSOCIATIVITY` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
-| `DIRECTION` | adapted | geometric | brep, faceted, planar, tessellated |  |
+| `DIRECTION` | adapted | geometric | brep, faceted, planar, product, tessellated |  |
 | `DIRECTION_SHAPE_REPRESENTATION` | unsupported | shape |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `DOUBLE_OFFSET_SHELLED_SOLID` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
 | `DRAUGHTING_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
@@ -149,7 +149,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `ECCENTRIC_CONICAL_VOLUME` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
 | `EDGE` | supertype | topological | brep, planar |  |
 | `EDGE_BASED_WIREFRAME_MODEL` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
-| `EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION` | out_of_scope | shape |  | wireframe model |
+| `EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION` | product | shape | product | linked by the product profile as a product's shape representation; its wireframe or curve-bounded surface items are not imported |
 | `EDGE_BOUNDED_CURVE_WITH_LENGTH` | unsupported | geometric, topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `EDGE_CURVE` | adapted | geometric, topological | brep, planar |  |
 | `EDGE_LOOP` | adapted | topological | brep, planar |  |
@@ -170,7 +170,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `EXTRUDED_FACE_SOLID_WITH_TRIM_CONDITIONS` | out_of_scope | geometric |  | solids by construction: only B-rep and tessellated solids are imported |
 | `FACE` | supertype | topological | brep, faceted, planar |  |
 | `FACETED_BREP` | adapted | geometric | faceted |  |
-| `FACETED_BREP_SHAPE_REPRESENTATION` | adapted | shape | context | faceted B-rep root container |
+| `FACETED_BREP_SHAPE_REPRESENTATION` | adapted | shape | context, product | faceted B-rep root container |
 | `FACETED_PRIMITIVE` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
 | `FACE_BASED_SURFACE_MODEL` | unsupported | geometric |  | surface models: roadmap scope decision (proposed: import as shell meshes, never as solids) |
 | `FACE_BOUND` | adapted | topological | brep, faceted, planar |  |
@@ -190,12 +190,12 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `GEAR_PAIR_VALUE` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
 | `GEAR_PAIR_WITH_RANGE` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
 | `GEOMETRICALLY_BOUNDED_2D_WIREFRAME_REPRESENTATION` | out_of_scope | shape |  | wireframe model |
-| `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | CURVE_BOUNDED_SURFACE models: named unsupported for v1.0 (roadmap scope decision) |
-| `GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION` | out_of_scope | shape |  | wireframe model |
+| `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` | product | shape | product | linked by the product profile as a product's shape representation; its wireframe or curve-bounded surface items are not imported |
+| `GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION` | product | shape | product | linked by the product profile as a product's shape representation; its wireframe or curve-bounded surface items are not imported |
 | `GEOMETRICAL_TOLERANCE_CALLOUT` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `GEOMETRIC_CURVE_SET` | unsupported | geometric |  | loose geometry sets are not solid roots; a set as edge/face geometry is rejected naming the entity |
 | `GEOMETRIC_MODEL_ELEMENT_RELATIONSHIP` | unsupported | geometric |  | hybrid B-rep/tessellation assignments are not read |
-| `GEOMETRIC_REPRESENTATION_ITEM` | supertype | geometric | brep, tessellated |  |
+| `GEOMETRIC_REPRESENTATION_ITEM` | supertype | geometric | brep, product, tessellated |  |
 | `GEOMETRIC_SET` | unsupported | geometric |  | loose geometry sets are not solid roots; a set as edge/face geometry is rejected naming the entity |
 | `HALF_SPACE_2D` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `HALF_SPACE_SOLID` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
@@ -244,7 +244,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `LOW_ORDER_KINEMATIC_PAIR_WITH_RANGE` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
 | `MANIFOLD_SOLID_BREP` | adapted | geometric | brep, faceted, planar |  |
 | `MANIFOLD_SUBSURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | subface models are not imported |
-| `MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | adapted | shape | context | shell container; open shells import as shells, never as solids |
+| `MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | adapted | shape | context, product | shell container; open shells import as shells, never as solids |
 | `MIN_AND_MAJOR_PLY_ORIENTATION_BASIS` | out_of_scope | geometric |  | composite-ply and presentation data |
 | `NEUTRAL_SKETCH_REPRESENTATION` | out_of_scope | shape |  | explicit geometric and assembly constraints: design-intent data with no mesh |
 | `NON_MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | non-manifold shells are rejected by the manifold shell checks |
@@ -378,7 +378,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `SDGC_WITH_DIMENSION` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `SEAM_CURVE` | adapted | geometric | brep | imported through its 3D curve |
 | `SHAPE_DIMENSION_REPRESENTATION` | out_of_scope | shape |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
-| `SHAPE_REPRESENTATION` | adapted | shape | context | generic container searched for solid roots |
+| `SHAPE_REPRESENTATION` | adapted | shape | context, product | generic container searched for solid roots |
 | `SHAPE_REPRESENTATION_WITH_PARAMETERS` | unsupported | shape |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `SHELLED_SOLID` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
 | `SHELL_BASED_SURFACE_MODEL` | unsupported | geometric |  | surface models: roadmap scope decision (proposed: import as shell meshes, never as solids) |
@@ -471,7 +471,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `TESSELLATED_MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | container not searched for roots; tessellated shells import through TESSELLATED_SHAPE_REPRESENTATION |
 | `TESSELLATED_OPEN_SHELL` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `TESSELLATED_POINT_SET` | adapted | geometric | tessellated | presentation points |
-| `TESSELLATED_SHAPE_REPRESENTATION` | adapted | shape | context | existing tessellation container |
+| `TESSELLATED_SHAPE_REPRESENTATION` | adapted | shape | context, product | existing tessellation container |
 | `TESSELLATED_SHAPE_REPRESENTATION_WITH_ACCURACY_PARAMETERS` | unsupported | shape |  | accuracy parameters are not read |
 | `TESSELLATED_SHELL` | adapted | geometric | tessellated | existing tessellations |
 | `TESSELLATED_SOLID` | adapted | geometric | tessellated | existing tessellations |

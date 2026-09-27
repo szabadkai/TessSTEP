@@ -26,9 +26,12 @@ TYPE ratio_measure = REAL;
 END_TYPE;
 TYPE positive_ratio_measure = REAL;
 END_TYPE;
+TYPE solid_angle_measure = REAL;
+END_TYPE;
 TYPE measure_value = SELECT
  (length_measure, positive_length_measure, plane_angle_measure,
-  positive_plane_angle_measure, ratio_measure, positive_ratio_measure);
+  positive_plane_angle_measure, ratio_measure, positive_ratio_measure,
+  solid_angle_measure);
 END_TYPE;
 ENTITY dimensional_exponents;
  length_exponent : REAL;

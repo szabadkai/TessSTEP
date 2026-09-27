@@ -322,6 +322,8 @@ fn failure(out: &mut String, doc: &Document, e: &Error, tessellates: bool) -> st
         Stage::Profile => (status, "not_run", "not_run"),
         Stage::Geometry | Stage::Topology => ("accepted", status, "not_run"),
         Stage::Tessellation => ("accepted", "accepted", status),
+        // Shape roots do not reach product or presentation adaptation.
+        Stage::Product | Stage::Presentation => (status, "not_run", "not_run"),
     };
     if !tessellates {
         tessellation = "not_applicable";

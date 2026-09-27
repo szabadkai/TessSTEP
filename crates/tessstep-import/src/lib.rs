@@ -19,11 +19,24 @@ mod brep_profile;
 #[allow(dead_code)]
 #[rustfmt::skip]
 mod context_profile;
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod product_profile;
+#[allow(dead_code)]
+#[rustfmt::skip]
+mod style_profile;
+mod assembly;
 mod brep;
 mod discovery;
 mod pcurve;
 mod planar;
+mod style;
 mod tessellated;
+pub use assembly::{
+    AssemblyImportOptions, AssemblyNode, AssemblyOptions, ExcludedRecord, ImportedAssembly,
+    LinkedAssembly, ProductInfo, RootImport, ShapeAsset, ShapeRootKind, import_assembly,
+    link_assembly,
+};
 pub use brep::{Adaptations, import_brep_solid};
 pub use discovery::{
     ContextUnits, Pairing, PresentationRoot, RepresentationChoice, RepresentationPreference,
@@ -31,6 +44,7 @@ pub use discovery::{
     discover_tessellations, select_representations,
 };
 pub use planar::import_planar_solid;
+pub use style::{ImportedAppearance, StyleCounts, StyleOptions, import_appearance};
 pub use tessellated::{
     EdgeConnection, ImportedPresentation, ImportedTessellation, PresentationItem,
     PresentationItemKind, PresentationLimits, TessellatedEdge, TessellatedFace, TessellatedKind,
@@ -55,6 +69,10 @@ pub enum Stage {
     Geometry,
     Topology,
     Tessellation,
+    /// Product structure: definitions, occurrences and their placements.
+    Product,
+    /// Presentation styles: colours and transparency of shape items.
+    Presentation,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {

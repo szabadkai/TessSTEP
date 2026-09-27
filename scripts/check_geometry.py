@@ -110,6 +110,45 @@ BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2}
 ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges", "collapsed_faces")
 
 
+# Product structure linked with the bundled product profile and placed in a scene:
+# status, definition nodes, asset instances, world bounds (mm) and total volume (m3).
+ASSEMBLY_EXPECTED = {
+    "assembly-nested.step": ("accepted", 7, 4, [0, 0, 0, 100, 60, 30], 2.4e-5),
+    "assembly-missing-placement.step": ("rejected", None, None, None, None),
+    "assembly-unplaced.step": ("accepted", 1, 1, [0, 0, 0, 10, 20, 30], 6e-6),
+    "assembly-inch.step": ("accepted", 3, 2, [0, 0, 0, 254, 1524, 762], 12000 * 0.0254 ** 3),
+    "assembly-styled.step": ("accepted", 1, 1, [0, 0, 0, 10, 20, 30], 6e-6),
+}
+# Surface styles adapted to the scene appearance: asset and face styles, materials, bindings.
+STYLE_EXPECTED = {"assembly-styled.step": {"asset_styles": 1, "face_styles": 1, "materials": 2, "bindings": 2,
+                                           "no_surface_colour": 1, "layers": 1, "excluded": 0}}
+
+
+def assemble(binary, path):
+    started = time.monotonic()
+    p = subprocess.run([str(binary), "--meshes", "AUTOMOTIVE_DESIGN", str(path)],
+                       capture_output=True, text=True, timeout=300, cwd=ROOT)
+    assert p.returncode in (0, 1), (path, p.returncode, p.stderr)
+    result = json.loads(p.stdout)
+    assert result["format_version"] == 1 and result["scope"] == "product-structure"
+    assert (p.returncode == 0) == (result["status"] == "accepted")
+    # The report table lists per-stage columns; the product stage is its own row.
+    result.update(profile=result["status"], geometry="—", tessellation="—")
+    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "result": result, "diagnostic": p.stderr, "seconds": round(time.monotonic()-started, 4)}
+
+
+def assembly_matches(r, status, nodes, leaves, bounds_mm, volume, volume_tolerance=1e-9):
+    if r["status"] != status:
+        return False
+    if status != "accepted":
+        return True
+    measured = [round(x * 1e3, 3) for x in r["world_bounds_m"][0] + r["world_bounds_m"][1]]
+    return (r["definition_nodes"] == nodes and r["asset_instances"] == leaves and r["failed_imports"] == 0
+            and r["unimported_placed"] == 0 and measured == [float(x) for x in bounds_mm]
+            and abs(r["volume_m3"] - volume) <= volume_tolerance * volume)
+
+
 def expected_adaptations(values):
     """Expectation tuples list the leading counters; later ones default to zero."""
     return tuple(values) + (0,) * (len(ADAPTATIONS) - len(values))
@@ -142,11 +181,12 @@ def main():
     assert planar_generated == (ROOT / "crates/tessstep-import/src/planar_profile.rs").read_bytes(), "Regenerate the planar profile"
     tessellated_generated = subprocess.check_output([str(target / ("expressc"+suffix)), "--rust", "corpus/geometry/tessellated.exp"], cwd=ROOT)
     assert tessellated_generated == (ROOT / "crates/tessstep-import/src/tessellated_profile.rs").read_bytes(), "Regenerate the tessellated profile"
-    for profile in ("brep", "context"):
+    for profile in ("brep", "context", "product", "style"):
         generated = subprocess.check_output([str(target / ("expressc"+suffix)), "--rust", f"corpus/geometry/{profile}.exp"], cwd=ROOT)
         assert generated == (ROOT / f"crates/tessstep-import/src/{profile}_profile.rs").read_bytes(), f"Regenerate the {profile} profile"
     with tempfile.TemporaryDirectory() as scratch:
         subprocess.run([sys.executable, str(ROOT / "corpus/geometry/brep_fixtures.py"), "--output", scratch], check=True)
+        subprocess.run([sys.executable, str(ROOT / "corpus/geometry/assembly_fixtures.py"), "--output", scratch], check=True)
         for fixture in sorted(Path(scratch).iterdir()):
             assert fixture.read_bytes() == (ROOT / "corpus/geometry" / fixture.name).read_bytes(), f"Regenerate {fixture.name}"
     binary = target / "examples" / ("faceted"+suffix)
@@ -155,7 +195,15 @@ def main():
     presentation_binary = target / "examples" / ("presentation"+suffix)
     survey_binary = target / "examples" / ("survey"+suffix)
     brep_binary = target / "examples" / ("brep"+suffix)
+    assembly_binary = target / "examples" / ("assembly"+suffix)
     cases = []
+    for name, expected in ASSEMBLY_EXPECTED.items():
+        case = assemble(assembly_binary, ROOT / "corpus/geometry" / name)
+        case["expected"] = expected
+        styles = STYLE_EXPECTED.get(name, {"materials": 0, "bindings": 0})
+        case["passed"] = assembly_matches(case["result"], *expected) and (
+            expected[0] != "accepted" or all(case["result"]["styles"][k] == v for k, v in styles.items()))
+        cases.append(case)
     for name, expected in {**EXPECTED, **PLANAR_EXPECTED}.items():
         planar = name in PLANAR_EXPECTED
         case = inspect(planar_binary if planar else binary, ROOT / "corpus/geometry" / name,
@@ -300,6 +348,21 @@ def main():
         case["passed"] = (r["status"] == "accepted" and all(r.get(k) == specification[k] for k in PRESENTATION_KEYS)
                           and strict["result"]["status"] == specification["strict_status"])
         cases.append(case)
+    # Unmodified exporter assemblies; hashes pin the reviewed inputs.
+    for specification in json.loads((ROOT / "corpus/geometry/external-assembly.json").read_text()):
+        path = external / specification["path"]
+        if args.require_external and not path.is_file():
+            raise RuntimeError(f"Required exporter fixture unavailable: {path}")
+        if not path.is_file():
+            continue
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == specification["sha256"], "Review changed exporter fixture before updating its hash"
+        case = assemble(assembly_binary, path)
+        case["expected"] = specification
+        case["passed"] = (assembly_matches(case["result"], "accepted", specification["definition_nodes"], specification["asset_instances"],
+                                           specification["world_bounds_mm"], specification["volume_m3"], specification["volume_tolerance"])
+                          and case["result"]["products"] == specification["products"]
+                          and all(case["result"]["styles"][k] == v for k, v in specification["styles"].items()))
+        cases.append(case)
     output = ROOT / "reports/geometry"
     output.mkdir(parents=True,exist_ok=True)
     report = {"scope":"selected-root faceted, edge-based planar, curved B-rep, existing-tessellation and presentation-tessellation import; no full-document/AP validation",
@@ -321,7 +384,7 @@ def main():
         '<table><thead><tr><th>File</th><th>Expectation passed</th><th>Profile</th><th>Geometry/topology</th><th>Tessellation</th><th>Diagnostic</th></tr></thead><tbody>'
         +''.join(rows)+'</tbody></table></html>',encoding="utf-8")
     assert all(c["passed"] for c in cases), json.dumps(report,indent=2)
-    print(f"planar/faceted/curved/tessellated/presentation import: {len(cases)} reviewed outcomes passed; {output/'index.html'}")
+    print(f"planar/faceted/curved/tessellated/presentation import and assembly linking: {len(cases)} reviewed outcomes passed; {output/'index.html'}")
 
 
 if __name__ == "__main__":

@@ -79,7 +79,7 @@ fn explicit_units_check_numeric_range_and_dimensions() {
         units: Units {
             length: mm,
             plane_angle: mm,
-            solid_angle: mm,
+            solid_angle: Some(mm),
         },
     });
     assert_eq!(Model::new(input, 1000), Err(Error::InvalidUnit));
@@ -123,7 +123,7 @@ fn product_expansion_is_iterative_bounded_and_does_not_invent_placements() {
         units: Units {
             length,
             plane_angle: Unit::new(Dimension::PlaneAngle, 1.).unwrap(),
-            solid_angle: Unit::new(Dimension::SolidAngle, 1.).unwrap(),
+            solid_angle: Some(Unit::new(Dimension::SolidAngle, 1.).unwrap()),
         },
     });
     for i in 0..2000_u64 {

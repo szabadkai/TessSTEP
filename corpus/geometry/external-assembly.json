@@ -1,0 +1,98 @@
+[
+  {
+    "path": "vendor/stepcode/data/ap214e3/as1-oc-214.stp",
+    "sha256": "038be659c54b16c9f3da8d7b2da7b63e3fd8879d3abe5b7826108336a7c0bae9",
+    "source": "stepcode in corpus/sources.json; unmodified Open CASCADE AP214 export of the as1 assembly (9 products, 13 occurrences, repeated nuts and bolts)",
+    "products": 9,
+    "definition_nodes": 28,
+    "asset_instances": 18,
+    "world_bounds_mm": [
+      -10.0,
+      0.0,
+      -4.0,
+      190.0,
+      150.0,
+      80.0
+    ],
+    "volume_m3": 0.0007644773292461224,
+    "volume_tolerance": 0.01,
+    "styles": {
+      "asset_styles": 5,
+      "face_styles": 0,
+      "materials": 5,
+      "bindings": 5
+    }
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/trj3_as1-id-203.stp",
+    "sha256": "dbd101fb2ef440d7ebf110f41b494221cb9de2f5b22fe6e94d9bd9601c8d564c",
+    "source": "opencascade-dataset in corpus/sources.json; unmodified AP203 export of the same assembly with PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
+    "products": 9,
+    "definition_nodes": 28,
+    "asset_instances": 18,
+    "world_bounds_mm": [
+      -10.0,
+      0.0,
+      -7.0,
+      190.0,
+      150.0,
+      80.0
+    ],
+    "volume_m3": 0.0007658771671126594,
+    "volume_tolerance": 0.01,
+    "styles": {
+      "asset_styles": 0,
+      "face_styles": 0,
+      "materials": 0,
+      "bindings": 0
+    }
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/trj6_as1-pe-203.stp",
+    "sha256": "0549cae227dca25d40381cd731dab0b4455df0a32e721745ac3e872cbd1cbc40",
+    "source": "opencascade-dataset in corpus/sources.json; unmodified Pro/ENGINEER AP203 export of the same assembly in a rotated frame",
+    "products": 9,
+    "definition_nodes": 28,
+    "asset_instances": 18,
+    "world_bounds_mm": [
+      -10.0,
+      -7.0,
+      -150.0,
+      190.0,
+      80.0,
+      0.0
+    ],
+    "volume_m3": 0.000765811616720339,
+    "volume_tolerance": 0.01,
+    "styles": {
+      "asset_styles": 0,
+      "face_styles": 0,
+      "materials": 0,
+      "bindings": 0
+    }
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/trj6_as1-tu-214.stp",
+    "source": "opencascade-dataset in corpus/sources.json; unmodified AP214 export of the same assembly with solid and face colours",
+    "sha256": "dfd9df012790a58dddd096f9c5becaaa9dc2956982233069ef9daa5654a444d8",
+    "products": 9,
+    "definition_nodes": 28,
+    "asset_instances": 18,
+    "world_bounds_mm": [
+      -10.0,
+      0.0,
+      -4.0,
+      190.0,
+      150.0,
+      80.0
+    ],
+    "volume_m3": 0.0007644627057903369,
+    "volume_tolerance": 0.01,
+    "styles": {
+      "asset_styles": 5,
+      "face_styles": 22,
+      "materials": 7,
+      "bindings": 27
+    }
+  }
+]

@@ -70,7 +70,8 @@ impl Unit {
 pub struct Units {
     pub length: Unit,
     pub plane_angle: Unit,
-    pub solid_angle: Unit,
+    /// Optional: no placement uses it, and some exporters omit it.
+    pub solid_angle: Option<Unit>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Product {
@@ -234,7 +235,9 @@ impl Model {
             work.tick()?;
             if p.units.length.dimension() != Dimension::Length
                 || p.units.plane_angle.dimension() != Dimension::PlaneAngle
-                || p.units.solid_angle.dimension() != Dimension::SolidAngle
+                || p.units
+                    .solid_angle
+                    .is_some_and(|u| u.dimension() != Dimension::SolidAngle)
             {
                 return Err(Error::InvalidUnit);
             }

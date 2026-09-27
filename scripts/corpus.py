@@ -113,7 +113,7 @@ def declared_schema(result):
         if not schemas:
             return None
         schemas = schemas[0]
-    return re.split(r"[\s{]", str(schemas).strip(), 1)[0].upper() or None
+    return re.split(r"[\s{]", str(schemas).strip(), maxsplit=1)[0].upper() or None
 
 
 def map_schema(result, schema_map):
@@ -167,6 +167,48 @@ def inspect_schema(binary, schema_name, path, timeout, result, *, stage="schema"
             result["status"] = "runner_error"
             result["stages"][stage] = "runner_error"
             result[stage + "_stderr"] = str(error)
+    result["seconds"] = round(result["seconds"] + time.monotonic() - started, 4)
+
+
+PRODUCT_STATUSES = {"accepted", "rejected", "unsupported", "not_applicable", "resource_limit"}
+
+
+def inspect_product(binary, declared, path, timeout, result):
+    """Link the product structure with the bundled product profile after physical acceptance."""
+    if result["stages"]["physical_parse"] != "accepted":
+        result["stages"]["product"] = "not_run"
+        return
+    started = time.monotonic()
+    with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+        try:
+            process = subprocess.run([str(binary), declared, str(path)], stdout=stdout, stderr=stderr, timeout=timeout)
+            stderr.seek(0)
+            result["product_stderr"] = stderr.read(4096).decode("utf-8", errors="replace")
+            if process.returncode not in (0, 1):
+                result["status"] = "crash" if process.returncode < 0 or process.returncode == 101 else "runner_error"
+                result["stages"]["product"] = result["status"]
+            else:
+                if stdout.tell() > 64 * 1024:
+                    raise ValueError("product JSON exceeds 64 KiB")
+                stdout.seek(0)
+                payload = json.load(stdout)
+                if payload.get("format_version") != 1 or payload.get("scope") != "product-structure":
+                    raise ValueError("unsupported product stage protocol")
+                if payload["status"] not in PRODUCT_STATUSES:
+                    raise ValueError("invalid product status")
+                if (payload["status"] == "accepted") != (process.returncode == 0):
+                    raise ValueError("product exit status disagrees with payload")
+                if payload.get("entity_count") != result["entity_count"]:
+                    raise ValueError("product entity count differs from physical parser")
+                result["stages"]["product"] = payload["status"]
+                result["product_result"] = payload
+        except subprocess.TimeoutExpired:
+            result["status"] = "timeout"
+            result["stages"]["product"] = "timeout"
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            result["status"] = "runner_error"
+            result["stages"]["product"] = "runner_error"
+            result["product_stderr"] = str(error)
     result["seconds"] = round(result["seconds"] + time.monotonic() - started, 4)
 
 
@@ -458,11 +500,12 @@ def main():
         if set(expectations) != paths:
             parser.error("expectations must cover every discovered path exactly")
     subprocess.run(["cargo", "build", "--release", "--locked", "-p", "stepdump"], cwd=ROOT, check=True)
-    subprocess.run(["cargo", "build", "--release", "--locked", "-p", "tessstep-import", "--example", "survey"], cwd=ROOT, check=True)
+    subprocess.run(["cargo", "build", "--release", "--locked", "-p", "tessstep-import", "--example", "survey", "--example", "assembly"], cwd=ROOT, check=True)
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--format-version=1"], cwd=ROOT))
     suffix = ".exe" if os.name == "nt" else ""
     binary = Path(metadata["target_directory"]) / "release" / ("stepdump" + suffix)
     survey = Path(metadata["target_directory"]) / "release" / "examples" / ("survey" + suffix)
+    assembly = Path(metadata["target_directory"]) / "release" / "examples" / ("assembly" + suffix)
     source = hashlib.sha256()
     for path in sorted([ROOT / "Cargo.toml", ROOT / "Cargo.lock", *sorted((ROOT / "scripts").glob("*.py")), *ROOT.glob("crates/**/*.rs"), *ROOT.glob("crates/**/*.rs.txt"), *ROOT.glob("crates/**/Cargo.toml"), *ROOT.glob("tools/**/*.rs"), *ROOT.glob("tools/**/Cargo.toml")]):
         source.update(path.relative_to(ROOT).as_posix().encode())
@@ -493,6 +536,12 @@ def main():
                            "metres_per_unit": args.geometry_metres_per_unit, "binary_sha256": digest(survey_snapshot)}
         product_snapshot = None
         product_config = None
+        linker_snapshot = None
+        if schema_map and not args.product_validator:
+            linker_snapshot = Path(directory) / assembly.name
+            shutil.copy2(assembly, linker_snapshot)
+            product_config = {"scope": "bundled product profile on every physically accepted input with a mapped FILE_SCHEMA; shapes are not imported",
+                              "binary_sha256": digest(linker_snapshot)}
         if args.product_validator:
             product_snapshot = Path(directory) / ("product-validator.exe" if os.name == "nt" else "product-validator")
             shutil.copy2(args.product_validator, product_snapshot)
@@ -505,6 +554,8 @@ def main():
                 selected = map_schema(case, schema_map)
                 if selected:
                     inspect_schema(schema_snapshot, selected, path, args.timeout, case, arguments=schema_map.get("arguments", []))
+                    if linker_snapshot:
+                        inspect_product(linker_snapshot, declared_schema(case), path, args.timeout, case)
             elif schema_snapshot:
                 inspect_schema(schema_snapshot, args.schema_name, path, args.timeout, case)
             if product_snapshot:

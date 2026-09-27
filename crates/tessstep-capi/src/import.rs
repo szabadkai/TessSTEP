@@ -325,6 +325,8 @@ pub(crate) unsafe fn report(
                 Stage::Geometry => 2,
                 Stage::Topology => 3,
                 Stage::Tessellation => 4,
+                Stage::Product => 5,
+                Stage::Presentation => 6,
             },
             reserved: 0,
             entity_id: e.entity.map_or(0, EntityId::get),

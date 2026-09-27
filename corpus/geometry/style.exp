@@ -1,0 +1,97 @@
+(* Original bounded presentation-style profile, not an ISO schema. Matches the
+   physical attributes AP203, AP214 and AP242 exporters write for styled items,
+   over-riding styled items, presentation style assignments, surface style usages,
+   fill areas and fill colours, surface renderings with transparency and
+   reflectance, and RGB and pre-defined colours. The styled item's target, a
+   style's context, the styles of an assignment and the elements of a surface side
+   style are retained as links: the style adapter decodes surface style usages,
+   fill areas and renderings as their own roots and matches targets to imported
+   shapes by identity, so curve, point and text styles are never decoded. General
+   AP rules are excluded. *)
+SCHEMA tessstep_style;
+TYPE surface_side = ENUMERATION OF (positive, negative, both);
+END_TYPE;
+TYPE shading_surface_method = ENUMERATION OF
+ (constant_shading, colour_shading, dot_shading, normal_shading);
+END_TYPE;
+TYPE colour_select = SELECT (colour_rgb, draughting_pre_defined_colour);
+END_TYPE;
+TYPE surface_style_element_select = SELECT
+ (surface_style_fill_area, surface_style_rendering);
+END_TYPE;
+TYPE rendering_properties_select = SELECT
+ (surface_style_reflectance_ambient, surface_style_transparent);
+END_TYPE;
+ENTITY representation_item;
+ name : STRING;
+END_ENTITY;
+ENTITY styled_item SUBTYPE OF (representation_item);
+ styles : SET [0:?] OF presentation_style_assignment;
+ item : representation_item;
+END_ENTITY;
+ENTITY over_riding_styled_item SUBTYPE OF (styled_item);
+ over_ridden_style : styled_item;
+END_ENTITY;
+ENTITY presentation_style_assignment;
+ styles : SET [1:?] OF surface_style_usage;
+END_ENTITY;
+ENTITY presentation_style_by_context SUBTYPE OF (presentation_style_assignment);
+ style_context : representation_item;
+END_ENTITY;
+ENTITY surface_style_usage;
+ side : surface_side;
+ style : surface_side_style;
+END_ENTITY;
+ENTITY surface_side_style;
+ name : STRING;
+ styles : SET [1:7] OF surface_style_element_select;
+END_ENTITY;
+ENTITY surface_style_fill_area;
+ fill_area : fill_area_style;
+END_ENTITY;
+ENTITY fill_area_style;
+ name : STRING;
+ fill_styles : SET [1:?] OF fill_area_style_colour;
+END_ENTITY;
+ENTITY fill_area_style_colour;
+ name : STRING;
+ fill_colour : colour_select;
+END_ENTITY;
+ENTITY surface_style_rendering;
+ rendering_method : shading_surface_method;
+ surface_colour : colour_select;
+END_ENTITY;
+ENTITY surface_style_rendering_with_properties SUBTYPE OF (surface_style_rendering);
+ properties : SET [1:2] OF rendering_properties_select;
+END_ENTITY;
+ENTITY surface_style_transparent;
+ transparency : REAL;
+END_ENTITY;
+ENTITY surface_style_reflectance_ambient;
+ ambient_reflectance : REAL;
+END_ENTITY;
+ENTITY surface_style_reflectance_ambient_diffuse SUBTYPE OF (surface_style_reflectance_ambient);
+ diffuse_reflectance : REAL;
+END_ENTITY;
+ENTITY surface_style_reflectance_ambient_diffuse_specular
+ SUBTYPE OF (surface_style_reflectance_ambient_diffuse);
+ specular_reflectance : REAL;
+ specular_exponent : REAL;
+ specular_colour : colour_select;
+END_ENTITY;
+ENTITY pre_defined_item;
+ name : STRING;
+END_ENTITY;
+ENTITY pre_defined_colour SUBTYPE OF (pre_defined_item);
+END_ENTITY;
+ENTITY draughting_pre_defined_colour SUBTYPE OF (pre_defined_colour);
+END_ENTITY;
+ENTITY colour_specification;
+ name : STRING;
+END_ENTITY;
+ENTITY colour_rgb SUBTYPE OF (colour_specification);
+ red : REAL;
+ green : REAL;
+ blue : REAL;
+END_ENTITY;
+END_SCHEMA;

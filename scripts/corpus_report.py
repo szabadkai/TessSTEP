@@ -79,6 +79,28 @@ def schema_totals(cases):
             "categories": dict(categories.most_common(15)), "unevaluated": dict(unevaluated), "tolerated": dict(tolerated)}
 
 
+def product_totals(cases):
+    """Product-stage outcomes by declared FILE_SCHEMA, failure categories and linked counts."""
+    declared = {}
+    categories = Counter()
+    totals = Counter()
+    for case in cases:
+        result = case.get("product_result")
+        if not result or "declared" not in result:
+            continue
+        row = declared.setdefault(result["declared"], Counter())
+        row[result["status"]] += 1
+        if result["status"] in ("rejected", "unsupported", "resource_limit"):
+            message = result.get("message") or result.get("excluded_first") or ""
+            categories[f'{result["status"]}: {message[:120]}'] += 1
+        if result["status"] == "accepted":
+            totals.update({k: result.get(k, 0) for k in ("products", "occurrences", "definition_nodes", "placed_roots", "unplaced_roots")})
+            totals["files_with_occurrences"] += bool(result.get("occurrences"))
+    return {"files": sum(sum(v.values()) for v in declared.values()),
+            "declared": {name: dict(sorted(row.items())) for name, row in sorted(declared.items(), key=lambda kv: -sum(kv[1].values()))},
+            "categories": dict(categories.most_common(15)), "accepted": dict(totals)}
+
+
 def declared_of(case):
     schemas = case.get("schemas") or []
     while isinstance(schemas, list):
@@ -105,7 +127,7 @@ def aggregate(cases, baseline_present=False):
         tested = sum(n for status, n in counts.items() if status not in UNTESTED)
         stages[stage] = {"tested": tested, "total": len(cases), "statuses": dict(sorted(counts.items()))}
     times = sorted(c.get("seconds", 0) for c in cases)
-    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases), "schema": schema_totals(cases),
+    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases), "schema": schema_totals(cases), "product": product_totals(cases),
             "verdicts": dict(Counter(verdict(c, baseline_present) for c in cases)),
             "diagnostics": dict(Counter(code for c in cases for code in c.get("diagnostic_counts", {}))),
             "performance": {"total_input_bytes": sum(c.get("bytes", 0) for c in cases),

@@ -6,7 +6,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWED = {
-    "tessstep-import": {"tessstep-model", "tessstep-schema", "tessstep-part21", "tessstep-math", "tessstep-curves", "tessstep-surfaces", "tessstep-topology", "tessstep-trim", "tessstep-tessellate", "tessstep-mesh"},
+    "tessstep-import": {"tessstep-model", "tessstep-schema", "tessstep-part21", "tessstep-math", "tessstep-curves", "tessstep-surfaces", "tessstep-topology", "tessstep-trim", "tessstep-tessellate", "tessstep-mesh", "tessstep-product", "tessstep-ap242"},
     "tessstep-part21": set(),
     "tessstep-express": set(),
     "tessstep-schema": set(),

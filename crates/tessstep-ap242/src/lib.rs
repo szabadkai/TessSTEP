@@ -220,9 +220,7 @@ pub fn adapt(
             let mut items = Vec::new();
             for value in values {
                 cx.tick()?;
-                let item = cx.ref_value(value)?;
-                cx.expect(item, "representation_item")?;
-                items.push(ItemId(item.id.get()));
+                items.push(cx.item(value)?);
             }
             parts.representations.push(Representation {
                 id: RepresentationId(id),
@@ -421,6 +419,21 @@ impl<'d, 'a> Context<'d, 'a> {
         } else {
             Err(self.error(ErrorKind::TypeMismatch, "expected entity reference"))
         }
+    }
+    /// A representation item. A decoder link slot retains items as local references
+    /// without decoding them; such an item is an opaque identity, never a guess.
+    fn item(&mut self, value: &'a StepValue) -> Result<ItemId, Error> {
+        let value = self.untag(value)?;
+        self.tick()?;
+        let ValueKind::Reference(id) = value.kind else {
+            return Err(self.error(ErrorKind::TypeMismatch, "expected entity reference"));
+        };
+        match self.decoded.get(id) {
+            Some(view) => self.expect(view, "representation_item")?,
+            None if self.decoded.document().entities().get(id).is_some() => (),
+            None => return Err(self.error(ErrorKind::TypeMismatch, "reference is not local")),
+        }
+        Ok(ItemId(id.get()))
     }
     fn reference(
         &mut self,

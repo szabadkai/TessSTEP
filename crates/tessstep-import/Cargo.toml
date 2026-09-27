@@ -16,6 +16,8 @@ tessstep-surfaces.workspace = true
 tessstep-topology.workspace = true
 tessstep-tessellate.workspace = true
 tessstep-mesh.workspace = true
+tessstep-product.workspace = true
+tessstep-ap242.workspace = true
 
 [lints]
 workspace = true
