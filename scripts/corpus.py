@@ -229,6 +229,8 @@ def summarize_survey(payload):
     reached = lambda stage: [r for r in roots if r["stages"][stage] == "accepted"]
     presentation = payload["presentation"]
     return {"metres_per_unit": payload["metres_per_unit"], "root_count": payload["root_count"],
+            # Import budgets the survey used for this document (sized by entity count unless overridden).
+            "budgets": payload.get("budgets"),
             "surveyed_roots": len(roots), "truncated": payload["truncated"],
             "geometry_roots": len(reached("geometry")), "accepted_roots": sum(r["status"] == "accepted" for r in roots),
             "tessellated_roots": sum(r["profile"] == "tessellated" for r in roots),
@@ -285,7 +287,7 @@ def valid_presentation(summary):
             and isinstance(summary["failures"], list) and len(summary["failures"]) <= 5)
 
 
-def inspect_geometry(binary, path, timeout, result, metres_per_unit):
+def inspect_geometry(binary, path, timeout, result, metres_per_unit, budgets=()):
     """Import every solid and shape tessellation root and every tessellated annotation
     occurrence with the selected-root profiles after physical acceptance."""
     if result["stages"]["physical_parse"] != "accepted":
@@ -294,7 +296,7 @@ def inspect_geometry(binary, path, timeout, result, metres_per_unit):
     started = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
         try:
-            process = subprocess.run([str(binary), str(path), repr(metres_per_unit)], stdout=stdout, stderr=stderr, timeout=timeout)
+            process = subprocess.run([str(binary), *budgets, str(path), repr(metres_per_unit)], stdout=stdout, stderr=stderr, timeout=timeout)
             stderr.seek(0)
             result["geometry_stderr"] = stderr.read(4096).decode("utf-8", errors="replace")
             if process.returncode != 0:
@@ -471,11 +473,16 @@ def main():
     parser.add_argument("--schema-name", help="Explicit schema for the configured validator (every input)")
     parser.add_argument("--schema-map", type=Path, help="JSON table selecting each input's validator schema from its declared FILE_SCHEMA name, with validator arguments")
     parser.add_argument("--product-validator", type=Path, help="Product checker; requires the schema validator and uses its schema name")
+    parser.add_argument("--geometry-max-work", type=int, help="Explicit import work budget for every root (default: sized by entity count)")
+    parser.add_argument("--geometry-max-records", type=int, help="Explicit import record budget for every root (default: sized by entity count)")
     parser.add_argument("--geometry-metres-per-unit", type=float, default=0.001,
                         help="Fallback source length unit for roots without discovered context units (default 0.001: millimetres)")
     args = parser.parse_args()
     if not (math.isfinite(args.geometry_metres_per_unit) and args.geometry_metres_per_unit > 0):
         parser.error("--geometry-metres-per-unit must be finite and positive")
+    geometry_budgets = [f"--max-{name}={value}" for name, value in (("work", args.geometry_max_work), ("records", args.geometry_max_records)) if value is not None]
+    if any(value is not None and value < 0 for value in (args.geometry_max_work, args.geometry_max_records)):
+        parser.error("import budgets must be non-negative")
     if args.product_validator and (not args.schema_name or not args.product_validator.is_file()):
         parser.error("--product-validator requires an existing checker and a schema validator with --schema-name")
     if bool(args.schema_validator) != bool(args.schema_name or args.schema_map) or (args.schema_name and args.schema_map):
@@ -569,7 +576,7 @@ def main():
             if product_snapshot:
                 inspect_schema(product_snapshot, args.schema_name, path, args.timeout, case, stage="product")
             if case["status"] not in FAULTS:
-                inspect_geometry(survey_snapshot, path, args.timeout, case, args.geometry_metres_per_unit)
+                inspect_geometry(survey_snapshot, path, args.timeout, case, args.geometry_metres_per_unit, geometry_budgets)
             check_expectations(case, expectations)
             print(f'[{index}/{len(cases)}] {case["status"]:16} {case["seconds"]:7.3f}s {case["paths"][0]}', flush=True)
     summary = {"files": sum(len(c["paths"]) for c in cases), "unique_inputs": len(cases),

@@ -272,6 +272,14 @@ class CorpusTests(unittest.TestCase):
             corpus.inspect_geometry(Path("survey"), Path("file.step"), 1, result, 0.001)
         self.assertEqual((result["status"], result["stages"]["geometry"]), ("timeout", "timeout"))
 
+    def test_geometry_stage_passes_explicit_budgets_to_the_survey(self):
+        result = case()
+        result["seconds"] = 0
+        with patch.object(corpus.subprocess, "run", side_effect=subprocess.TimeoutExpired("survey", 1)) as run:
+            corpus.inspect_geometry(Path("survey"), Path("file.step"), 1, result, 0.001, ("--max-work=7", "--max-records=3"))
+        self.assertEqual(run.call_args.args[0][1:3], ["--max-work=7", "--max-records=3"])
+        self.assertEqual(run.call_args.args[0][-2:], [str(Path("file.step")), "0.001"])
+
     def test_geometry_baseline_migration_and_root_regressions(self):
         old = case()
         old["stages"].update(geometry="not_integrated", tessellation="not_integrated")

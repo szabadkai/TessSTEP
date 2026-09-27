@@ -146,9 +146,16 @@ pub(crate) fn link(
 ) -> Result<LinkedAssembly, Error> {
     let mut work = options.import.max_work;
     let mut charge = |n: usize| -> Result<(), Error> {
-        work = work
-            .checked_sub(n)
-            .ok_or_else(|| product_error(ErrorKind::ResourceLimit, None, "assembly work budget"))?;
+        work = work.checked_sub(n).ok_or_else(|| {
+            product_error(
+                ErrorKind::ResourceLimit,
+                None,
+                &format!(
+                    "assembly work budget exceeded (max_work {})",
+                    options.import.max_work
+                ),
+            )
+        })?;
         Ok(())
     };
     let mut meshes: BTreeMap<EntityId, &ShapeAsset> = BTreeMap::new();

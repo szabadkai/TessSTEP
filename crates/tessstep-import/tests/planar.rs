@@ -358,3 +358,49 @@ fn planar_unset_derived_slots_are_tolerated_unless_strict() {
         );
     }
 }
+#[test]
+fn import_budgets_are_sized_by_the_document_and_named_in_diagnostics() {
+    let doc = tessstep_model::parse(BOX.as_bytes(), ParseLimits::default()).unwrap();
+    // A small document keeps the default budgets; the sizing rule is explicit.
+    let sized = ImportOptions::for_document(&doc);
+    let defaults = ImportOptions::default();
+    assert_eq!(
+        (sized.max_work, sized.max_records, sized.strict),
+        (
+            defaults
+                .max_work
+                .max(doc.entities().len() * ImportOptions::WORK_PER_ENTITY),
+            defaults.max_records.max(doc.entities().len()),
+            false
+        )
+    );
+    assert_eq!((sized.max_work, sized.max_records), (5_000_000, 100_000));
+    // Budget failures name the budget and its configured value.
+    for (limits, expected) in [
+        (
+            ImportOptions {
+                max_work: 7,
+                ..ImportOptions::default()
+            },
+            "work budget exceeded (max_work 7)",
+        ),
+        (
+            ImportOptions {
+                max_records: 3,
+                ..ImportOptions::default()
+            },
+            "record budget exceeded (max_records 3)",
+        ),
+    ] {
+        let error = import_planar_solid(
+            &doc,
+            EntityId::new(1000).unwrap(),
+            LengthUnit::MILLIMETRE,
+            model_tolerance(),
+            limits,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind, ErrorKind::ResourceLimit, "{error}");
+        assert!(error.message.contains(expected), "{error}");
+    }
+}

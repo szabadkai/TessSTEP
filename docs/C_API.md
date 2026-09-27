@@ -58,7 +58,11 @@ auto report = document.diagnostics(); // Separate reference/trust analysis.
 
 `ts_document_parse` borrows bytes only during the call, returns a complete immutable
 document or a typed failure, and accepts explicit budgets initialized by
-`ts_parse_options_init`. `ts_document_get_info`, `ts_document_entity_at`, and
+`ts_parse_options_init`. Budget failures name the budget and its configured value in
+the diagnostic message. Import option initializers keep their documented defaults;
+for large documents, size `max_work` and `max_records` from
+`ts_document_info.entity_count` as the Rust `ImportOptions::for_document` rule does
+(at least 512 work units and one record per entity), see [STEP_IMPORT.md](STEP_IMPORT.md). `ts_document_get_info`, `ts_document_entity_at`, and
 `ts_document_record_name` inspect counts, source-order IDs and component names.
 C names are borrowed without copying; C++ `record_name` explicitly returns owned
 text. Reference analysis returns an independent report that survives document

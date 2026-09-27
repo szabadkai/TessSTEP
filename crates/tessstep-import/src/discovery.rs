@@ -50,7 +50,7 @@ pub fn discover_solids(
     document: &Document,
     options: ImportOptions,
 ) -> Result<Vec<SolidRoot>, Error> {
-    let mut work = Work(options.max_work);
+    let mut work = Work::new(options.max_work);
     let mut roots = Vec::new();
     for e in document.entities().iter() {
         work.charge(1)?;
@@ -102,7 +102,7 @@ pub fn discover_tessellations(
     document: &Document,
     options: ImportOptions,
 ) -> Result<Vec<TessellatedRoot>, Error> {
-    let mut work = Work(options.max_work);
+    let mut work = Work::new(options.max_work);
     let mut roots = Vec::new();
     for e in document.entities().iter() {
         work.charge(1)?;
@@ -166,7 +166,7 @@ pub fn discover_presentations(
     document: &Document,
     options: ImportOptions,
 ) -> Result<Vec<PresentationRoot>, Error> {
-    let mut work = Work(options.max_work);
+    let mut work = Work::new(options.max_work);
     let mut roots = Vec::new();
     let mut index = BTreeMap::new();
     for e in document.entities().iter() {
@@ -299,7 +299,7 @@ pub fn select_representations(
     preference: RepresentationPreference,
     options: ImportOptions,
 ) -> Result<Vec<RepresentationChoice>, Error> {
-    let mut work = Work(options.max_work);
+    let mut work = Work::new(options.max_work);
     let mut by_solid: BTreeMap<EntityId, usize> = BTreeMap::new();
     let mut by_shell: BTreeMap<EntityId, usize> = BTreeMap::new();
     for (i, solid) in solids.iter().enumerate() {
@@ -433,15 +433,27 @@ pub fn select_representations(
     Ok(choices)
 }
 
-struct Work(usize);
+struct Work {
+    remaining: usize,
+    max_work: usize,
+}
 impl Work {
+    fn new(max_work: usize) -> Self {
+        Self {
+            remaining: max_work,
+            max_work,
+        }
+    }
     fn charge(&mut self, n: usize) -> Result<(), Error> {
-        self.0 = self.0.checked_sub(n).ok_or_else(|| Error {
+        self.remaining = self.remaining.checked_sub(n).ok_or_else(|| Error {
             kind: ErrorKind::ResourceLimit,
             stage: Stage::Profile,
             entity: None,
             source: None,
-            message: "root discovery work budget".into(),
+            message: format!(
+                "root discovery work budget exceeded (max_work {})",
+                self.max_work
+            ),
         })?;
         Ok(())
     }

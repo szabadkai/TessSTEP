@@ -77,7 +77,13 @@ impl<R: BufRead> Lexer<R> {
             match self.reader.fill_buf() {
                 Ok(bytes) => {
                     if !bytes.is_empty() && self.position.offset >= self.limits.max_input_bytes {
-                        return Err(self.error(Code::LimitExceeded, "input byte budget exceeded"));
+                        return Err(self.error(
+                            Code::LimitExceeded,
+                            format!(
+                                "input byte budget exceeded (limit {} bytes)",
+                                self.limits.max_input_bytes
+                            ),
+                        ));
                     }
                     return Ok(bytes.first().copied());
                 }
@@ -115,7 +121,13 @@ impl<R: BufRead> Lexer<R> {
         if self.position.offset.saturating_sub(self.token_start.offset)
             > self.limits.max_token_bytes as u64
         {
-            return Err(self.error(Code::LimitExceeded, "token byte budget exceeded"));
+            return Err(self.error(
+                Code::LimitExceeded,
+                format!(
+                    "token byte budget exceeded (limit {} bytes)",
+                    self.limits.max_token_bytes
+                ),
+            ));
         }
         Ok(byte)
     }
@@ -296,7 +308,16 @@ impl<R: BufRead> Lexer<R> {
         }
         crate::strings::decode(&raw, self.limits.max_string_bytes)
             .map(TokenKind::String)
-            .map_err(|(code, message)| self.error(code, message))
+            .map_err(|(code, message)| {
+                if code == Code::LimitExceeded {
+                    self.error(
+                        code,
+                        format!("{message} (limit {} bytes)", self.limits.max_string_bytes),
+                    )
+                } else {
+                    self.error(code, message)
+                }
+            })
     }
     fn binary(&mut self) -> Result<TokenKind, Diagnostic> {
         self.bump()?;

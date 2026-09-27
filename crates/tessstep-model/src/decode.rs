@@ -90,7 +90,7 @@ pub struct Error {
     pub entity: Option<EntityId>,
     pub attribute: Option<&'static str>,
     pub source: Option<SourceSpan>,
-    pub message: &'static str,
+    pub message: String,
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -631,18 +631,24 @@ struct Context<'a> {
     types: BTreeMap<EntityId, Vec<DeclarationId>>,
 }
 impl<'a> Context<'a> {
-    fn error(&self, kind: ErrorKind, message: &'static str) -> Error {
+    fn error(&self, kind: ErrorKind, message: impl Into<String>) -> Error {
         Error {
             kind,
             entity: self.entity,
             attribute: self.attribute,
             source: self.source,
-            message,
+            message: message.into(),
         }
     }
     fn tick(&mut self) -> Result<(), Error> {
         if self.work >= self.limits.max_work {
-            return Err(self.error(ErrorKind::ResourceLimit, "schema decoding work budget"));
+            return Err(self.error(
+                ErrorKind::ResourceLimit,
+                format!(
+                    "schema decoding work budget exceeded (max_work {})",
+                    self.limits.max_work
+                ),
+            ));
         }
         self.work += 1;
         Ok(())

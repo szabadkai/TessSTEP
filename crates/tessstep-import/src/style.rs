@@ -84,9 +84,16 @@ pub fn import_appearance(
 ) -> Result<ImportedAppearance, Error> {
     let mut work = options.import.max_work;
     let mut charge = |n: usize| -> Result<(), Error> {
-        work = work
-            .checked_sub(n)
-            .ok_or_else(|| style_error(ErrorKind::ResourceLimit, None, "style work budget"))?;
+        work = work.checked_sub(n).ok_or_else(|| {
+            style_error(
+                ErrorKind::ResourceLimit,
+                None,
+                &format!(
+                    "style work budget exceeded (max_work {})",
+                    options.import.max_work
+                ),
+            )
+        })?;
         Ok(())
     };
     let scene = assembly.scene();

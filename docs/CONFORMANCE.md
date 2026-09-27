@@ -17,7 +17,7 @@ standard or future semantic layer has been certified. No AP conformance is claim
 | numeric bounds | implemented | numeric_boundaries_and_underflow | i64/u64/f64 representation limits |
 | headers and DATA sections | implemented | required_header_order_and_shape | header structure checked; implementation-level/schema-population semantics deferred |
 | reader chunks and source spans | implemented | every_reader_chunk_size_has_identical_result | byte offsets; spans always retained |
-| resource budgets | implemented | every_resource_budget_is_enforced | finite logical budgets; not an exact RSS cap |
+| resource budgets | implemented | every_resource_budget_is_enforced | finite logical budgets; not an exact RSS cap; each failure names the budget and its configured value; stepdump sets each budget as --max-<name>=N |
 | generic storage / duplicate IDs | implemented | duplicate_ids_never_overwrite_even_across_sections_or_namespaces | dense records, sparse ordered index |
 | reference collection | implemented | unresolved_uses_retain_owner_and_exact_parameter_span | existence only; schema reference compatibility deferred |
 | anchors and external declarations | syntax only | anchor_parameters_differ_from_entity_parameters | URI lexical checks; no fetching or anchor dereferencing |

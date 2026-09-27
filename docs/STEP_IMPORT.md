@@ -148,6 +148,18 @@ plane UVs are metres; angles are radians. The source unit scale is a required
 separate argument. Zero budgets mean zero. `max_work` limits stages independently,
 not total wall-clock time or memory; underlying hard limits still apply.
 
+The Rust defaults (`max_work` 5,000,000 logical units, `max_records` 100,000) suit
+documents of up to about ten thousand entities; a root whose reference closure spans
+a 400,000-entity exporter file needs roughly 130 to 250 work units per entity to
+decode. `ImportOptions::for_document` sizes the budgets from the parsed document:
+`max_work` is at least `WORK_PER_ENTITY` (512) per entity and `max_records` at least
+one per entity, with the default floors and the topology ceiling of one million
+records unchanged. The returned values are explicit and are what the corpus runner
+uses. C callers apply the same rule themselves from `ts_document_info.entity_count`;
+`ts_parse_options_init` and the C import option initializers are unchanged. Every
+budget failure is a `ResourceLimit` whose message names the budget and its configured
+value, for example `schema decoding work budget exceeded (max_work 5000000)`.
+
 ## Evidence and limits
 
 `python3 scripts/check_geometry.py` verifies generated profile reproducibility and

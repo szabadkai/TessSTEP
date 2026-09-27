@@ -125,7 +125,7 @@ impl<R: BufRead> Parser<R> {
             let span = self.peek()?.source;
             Err(Diagnostic::error(
                 DiagnosticCode::LimitExceeded,
-                format!("{name} budget exceeded"),
+                format!("{name} budget exceeded (limit {maximum})"),
                 span,
             ))
         } else {
@@ -139,7 +139,7 @@ impl<R: BufRead> Parser<R> {
         if self.symbols.len() >= self.limits.max_symbols {
             return Err(Diagnostic::error(
                 DiagnosticCode::LimitExceeded,
-                "symbol budget exceeded",
+                format!("symbol budget exceeded (limit {})", self.limits.max_symbols),
                 span,
             ));
         }
@@ -453,7 +453,10 @@ impl<R: BufRead> Parser<R> {
                         if self.sections >= self.limits.max_sections {
                             return Err(Diagnostic::error(
                                 DiagnosticCode::LimitExceeded,
-                                "section budget exceeded",
+                                format!(
+                                    "section budget exceeded (limit {})",
+                                    self.limits.max_sections
+                                ),
                                 signature.source,
                             ));
                         }

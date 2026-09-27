@@ -617,15 +617,22 @@ interfaces cover the whole import path. Items carry the counts from the reviewed
 2026-09-27 baseline (1,197 shape roots, 577 meshed); each one lands with reviewed
 baseline movements, never a refreshed baseline.
 
-- **22.1 Parse budgets and deadlines.** The defaults (4M values, 1M entities, 2M
-  records) reject well-formed exports of a few tens of megabytes (11 `profile:
-  resource_limit` roots). Size the defaults against realistic industrial files or
-  derive them from input size, keep every budget explicit, name the exceeded limit
-  and its configured value in the diagnostic, and expose the budgets in `stepdump`
-  and the corpus runner. Changes to `ts_parse_options_init` defaults are documented
-  behaviour changes. Acceptance: no corpus input fails on a default budget without
-  the diagnostic naming the budget, and the largest clean input's budget use is
-  recorded.
+- **22.1 Parse and import budgets — delivered 2026-09-27.** The corpus showed the
+  physical parse defaults were not the limit: every well-formed input up to 30.7 MB
+  and 413,209 entities parses within them (the larger files are rejected for invalid
+  UTF-8 or hexadecimal, not budgets), while the import work budget (5M units) rejected
+  the 11 `profile:resource_limit` roots, whose closures need 130 to 250 units per
+  entity. `ImportOptions::for_document` sizes `max_work` (512 per entity) and
+  `max_records` (one per entity) from the document with the default floors; the
+  survey and corpus runner use it and record the budgets per file, with
+  `--geometry-max-work` / `--geometry-max-records` overrides. Every parse, decode,
+  adapter, discovery, assembly, style, pcurve and mesh budget failure names the
+  budget and its configured value; `stepdump --max-<budget>=N` sets each parse
+  budget and `--help` prints the defaults. `ts_parse_options_init` and the C import
+  initializers are unchanged; C callers apply the sizing rule from
+  `entity_count`. Evidence: `every_resource_budget_is_enforced`,
+  `import_budgets_are_sized_by_the_document_and_named_in_diagnostics`, the reviewed
+  corpus movement in [VALIDATION.md](VALIDATION.md).
 - **22.2 Curvature-anisotropic refinement and tessellation budgets.** Longest-edge
   bisection in a length metric with Lawson flips walks slivers along tight torus
   and cylinder bands (24 `UnresolvedTolerance` and 25 `ResourceLimit` faces; the

@@ -187,9 +187,13 @@ Useful options:
 ```sh
 python3 scripts/corpus.py --corpus /path/to/step-corpus --timeout 60
 python3 scripts/corpus.py --output reports/experiment --baseline corpus/baseline.json
+python3 scripts/corpus.py --geometry-max-work 50000000 --geometry-max-records 200000
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
+The geometry stage sizes its import budgets from each document's entity count
+(`ImportOptions::for_document`) and records them per file; `--geometry-max-work` and
+`--geometry-max-records` replace that rule with one explicit budget for every root.
 `TESSSTEP_CORPUS` also overrides the default corpus location. Alternate or
 partial corpora should use a separate output directory and baseline. The large
 external corpus is not required for ordinary `cargo test --workspace` runs.

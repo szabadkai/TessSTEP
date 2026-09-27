@@ -1,3 +1,36 @@
+# Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
+
+Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh
+budget failure names the budget and its configured value; `ImportOptions::for_document`
+sizes `max_work` (512 units per entity) and `max_records` (one per entity) with the
+default floors; `stepdump --max-<budget>=N`; survey `--max-work=N` / `--max-records=N`
+and corpus `--geometry-max-work` / `--geometry-max-records`, with the budgets used
+recorded per file in the corpus report.
+
+Measurement first: the physical parse defaults never limited a corpus file. Every
+well-formed input up to 30.7 MB and 413,209 entities (`bug31711.stp`) parses within
+them; the larger files (59 MB, 24 MB, 10 MB, 7.7 MB) are rejected for invalid UTF-8
+or hexadecimal, not budgets. The 11 `profile:resource_limit` roots all failed the
+import work budget of 5,000,000 units during closure decoding. Single-root closures
+need between 128 and 256 units per entity (`bug31711` 413k entities: 128× fails,
+256× passes in 10 s; `tr9_r1001-ec` 112k: 64× fails, 128× passes; `OCC8228` 92k:
+128× passes; `bug24055` 91k: 128× fails, 256× passes), so the rule uses 512.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets) | passed, including `every_resource_budget_is_enforced` (message names the limit) and `import_budgets_are_sized_by_the_document_and_named_in_diagnostics` |
+| `check_geometry.py`, `check_cli.py`, `conformance.py --check`, script unit tests (45) | passed |
+| `corpus.py --check` with the AP validator | 3,227 compatible, 10 changed, no regressions |
+
+Reviewed movements, all from `profile:resource_limit` to a later stage: `bug31711.stp`
+and `bug23202_Leuchte.stp` reach tessellation (`tessellation:invalid_geometry`);
+`bug24024_slow_import.stp`, `bug26689_nist_ctc_02_asme1_ap242-2.stp` and
+`bug29531_nist_ctc_02_asme1_ap242-2.stp` reach tessellation and hit its face budget
+(Milestone 22.2); `OCC5157.stp`, `OCC8228.stp` and `trj12_b3-tu-203.stp` fail geometry
+(`invalid_geometry`); `bug24055_8MTF-75LS05.step` and `tr9_r1001-ec.stp` name an
+unsupported entity. No meshed root was lost (577). The baseline was saved after this
+review.
+
 # CI repair: platform-independent fixtures and corpus deadline — 2026-09-27
 
 Main CI had failed on every push since 2026-09-26 while every check passed on the

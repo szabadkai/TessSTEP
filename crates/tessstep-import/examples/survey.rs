@@ -1,4 +1,4 @@
-//! Usage: cargo run -p tessstep-import --example survey -- FILE METRES_PER_UNIT [MAX_ROOTS]
+//! Usage: cargo run -p tessstep-import --example survey -- [--max-work=N] [--max-records=N] FILE METRES_PER_UNIT [MAX_ROOTS]
 //! Imports every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the
 //! matching selected-root profile, every shape tessellation root with the existing
 //! tessellation profile, and every tessellated annotation occurrence with the
@@ -9,7 +9,9 @@
 //! which applied, the declared uncertainty and the tolerance and chord it used, and
 //! whether representation selection (preferring exact B-reps) selected it or paired
 //! it as an alternative of another root. MAX_ROOTS bounds shape roots and, separately,
-//! annotation occurrences.
+//! annotation occurrences. Import budgets default to `ImportOptions::for_document`
+//! (sized by the document's entity count); `--max-work` and `--max-records` set them
+//! explicitly, and the output records the budgets used.
 #![forbid(unsafe_code)]
 use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
 use tessstep_import::*;
@@ -25,9 +27,22 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<_> = std::env::args().collect();
+    let (mut max_work, mut max_records) = (None, None);
+    let mut args = vec![String::new()];
+    for arg in std::env::args().skip(1) {
+        if let Some(value) = arg.strip_prefix("--max-work=") {
+            max_work = Some(value.parse::<usize>()?);
+        } else if let Some(value) = arg.strip_prefix("--max-records=") {
+            max_records = Some(value.parse::<usize>()?);
+        } else {
+            args.push(arg);
+        }
+    }
     if !(3..=4).contains(&args.len()) {
-        return Err("usage: survey FILE METRES_PER_UNIT [MAX_ROOTS]".into());
+        return Err(
+            "usage: survey [--max-work=N] [--max-records=N] FILE METRES_PER_UNIT [MAX_ROOTS]"
+                .into(),
+        );
     }
     let scale: f64 = args[2].parse()?;
     let unit = LengthUnit::metres_per_unit(scale)?;
@@ -47,14 +62,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
-    let roots = discover_solids(&doc, ImportOptions::default())?;
-    let tessellations = discover_tessellations(&doc, ImportOptions::default())?;
+    let mut options = ImportOptions::for_document(&doc);
+    if let Some(max_work) = max_work {
+        options.max_work = max_work;
+    }
+    if let Some(max_records) = max_records {
+        options.max_records = max_records;
+    }
+    write!(
+        out,
+        ",\"budgets\":{{\"max_work\":{},\"max_records\":{},\"entities\":{}}}",
+        options.max_work,
+        options.max_records,
+        doc.entities().len()
+    )?;
+    let roots = discover_solids(&doc, options)?;
+    let tessellations = discover_tessellations(&doc, options)?;
     let choices = select_representations(
         &doc,
         &roots,
         &tessellations,
         RepresentationPreference::Exact,
-        ImportOptions::default(),
+        options,
     )?;
     // Each root's selection status and the entity IDs of its group's other members.
     let entity = |r: &RootRef| match *r {
@@ -111,9 +140,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let distance = declared.unwrap_or(1e-7).max(1e-7);
         let model = ModelTolerance::new(Length::metres(distance)?, Angle::radians(1e-8)?)?;
         let imported = if faceted {
-            import_faceted_solid(&doc, id, length, model, ImportOptions::default())
+            import_faceted_solid(&doc, id, length, model, options)
         } else {
-            import_brep_solid(&doc, id, length, angle, model, ImportOptions::default())
+            import_brep_solid(&doc, id, length, angle, model, options)
         };
         // Chord 1e-3 of the solid's vertex bounding-box diagonal, within 1e-6..1e-3 m.
         let mut chord = 1e-6;
@@ -178,7 +207,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             &doc,
             root.entity,
             length,
-            ImportOptions::default(),
+            options,
             tessstep_mesh::Limits::default(),
         );
         if index > 0 || !roots.is_empty() {
@@ -209,7 +238,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
     }
     out.push(']');
-    presentations(&mut out, &doc, unit, max_roots)?;
+    presentations(&mut out, &doc, unit, max_roots, options)?;
     out.push('}');
     println!("{out}");
     Ok(())
@@ -290,8 +319,9 @@ fn presentations(
     doc: &Document,
     unit: LengthUnit,
     max_roots: usize,
+    options: ImportOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let roots = discover_presentations(doc, ImportOptions::default())?;
+    let roots = discover_presentations(doc, options)?;
     let mut outcomes = std::collections::BTreeMap::new();
     let (mut accepted, mut polylines, mut triangles, mut points, mut zero_area) = (0, 0, 0, 0, 0);
     let mut failures = String::new();
@@ -302,7 +332,7 @@ fn presentations(
             doc,
             root.entity,
             length,
-            ImportOptions::default(),
+            options,
             PresentationLimits::default(),
         ) {
             Ok(p) => {

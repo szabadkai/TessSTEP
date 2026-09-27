@@ -54,7 +54,7 @@
       "feature": "resource budgets",
       "status": "implemented",
       "test": "every_resource_budget_is_enforced",
-      "limitations": "finite logical budgets; not an exact RSS cap"
+      "limitations": "finite logical budgets; not an exact RSS cap; each failure names the budget and its configured value; stepdump sets each budget as --max-<name>=N"
     },
     {
       "feature": "generic storage / duplicate IDs",

@@ -112,6 +112,7 @@ pub fn import_brep_solid(
         edges: BTreeMap::new(),
         edge_entities: BTreeMap::new(),
         remaining: options.max_work,
+        max_work: options.max_work,
         max_records: options.max_records.min(1_000_000),
         records: 0,
         current: root,
@@ -1186,7 +1187,10 @@ impl Builder {
                     "{name} pcurve did not meet the model tolerance within the subdivision limit"
                 ),
             ),
-            PcurveError::Limit => (ErrorKind::ResourceLimit, "pcurve work budget".to_string()),
+            PcurveError::Limit => (
+                ErrorKind::ResourceLimit,
+                format!("pcurve work budget exceeded (max_work {})", c.max_work),
+            ),
             PcurveError::Geometry => (
                 ErrorKind::InvalidGeometry,
                 format!("{name} could not be mapped to the face surface"),

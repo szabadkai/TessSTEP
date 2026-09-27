@@ -381,6 +381,8 @@ struct Context<'d, 'a> {
     current: EntityId,
     remaining: usize,
     records: usize,
+    max_work: usize,
+    max_records: usize,
     unit: LengthUnit,
     mesh_limits: tessstep_mesh::Limits,
     /// Coordinate lists whose point count has been checked.
@@ -407,6 +409,8 @@ impl<'d, 'a> Context<'d, 'a> {
             current: root,
             remaining: options.max_work,
             records: options.max_records.min(1_000_000),
+            max_work: options.max_work,
+            max_records: options.max_records.min(1_000_000),
             unit,
             mesh_limits,
             lists: BTreeMap::new(),
@@ -439,19 +443,26 @@ impl<'d, 'a> Context<'d, 'a> {
         value.map_err(|e| self.error(ErrorKind::InvalidGeometry, e))
     }
     fn charge(&mut self, n: usize) -> Result<(), Error> {
-        self.remaining = self
-            .remaining
-            .checked_sub(n)
-            .ok_or_else(|| self.error(ErrorKind::ResourceLimit, "adapter work budget"))?;
+        self.remaining = self.remaining.checked_sub(n).ok_or_else(|| {
+            self.error(
+                ErrorKind::ResourceLimit,
+                format!("adapter work budget exceeded (max_work {})", self.max_work),
+            )
+        })?;
         Ok(())
     }
     /// One face, edge, vertex or coordinate list against the record budget.
     fn record(&mut self) -> Result<(), Error> {
         self.charge(1)?;
-        self.records = self
-            .records
-            .checked_sub(1)
-            .ok_or_else(|| self.error(ErrorKind::ResourceLimit, "tessellation record budget"))?;
+        self.records = self.records.checked_sub(1).ok_or_else(|| {
+            self.error(
+                ErrorKind::ResourceLimit,
+                format!(
+                    "tessellation record budget exceeded (max_records {})",
+                    self.max_records
+                ),
+            )
+        })?;
         Ok(())
     }
     fn is(&self, v: &EntityView<'_>, name: &str) -> bool {
@@ -601,11 +612,16 @@ impl<'d, 'a> Context<'d, 'a> {
             return Ok(id);
         }
         let id = self.data.positions.len();
-        if id >= self.mesh_limits.max_vertices {
-            return Err(self.error(ErrorKind::ResourceLimit, "mesh vertex budget"));
+        if id >= self.mesh_limits.max_vertices || u32::try_from(id).is_err() {
+            return Err(self.error(
+                ErrorKind::ResourceLimit,
+                format!(
+                    "mesh vertex budget exceeded (max_vertices {})",
+                    self.mesh_limits.max_vertices.min(u32::MAX as usize)
+                ),
+            ));
         }
-        let id = u32::try_from(id)
-            .map_err(|_| self.error(ErrorKind::ResourceLimit, "mesh vertex budget"))?;
+        let id = id as u32;
         let xyz = self.position(identity)?;
         self.data.positions.push(xyz);
         self.vertices.insert(identity, id);
@@ -800,7 +816,13 @@ impl<'d, 'a> Context<'d, 'a> {
         for t in &plan.triangles {
             self.charge(1)?;
             if self.data.triangles.len() >= self.mesh_limits.max_triangles {
-                return Err(self.error(ErrorKind::ResourceLimit, "mesh triangle budget"));
+                return Err(self.error(
+                    ErrorKind::ResourceLimit,
+                    format!(
+                        "mesh triangle budget exceeded (max_triangles {})",
+                        self.mesh_limits.max_triangles
+                    ),
+                ));
             }
             let mut corners = [0; 3];
             for (corner, &k) in corners.iter_mut().zip(t) {

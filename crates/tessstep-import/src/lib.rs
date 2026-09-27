@@ -123,6 +123,26 @@ impl Default for ImportOptions {
         }
     }
 }
+impl ImportOptions {
+    /// Logical work units allowed per document entity by [`Self::for_document`].
+    pub const WORK_PER_ENTITY: usize = 512;
+    /// The default budgets, raised so that a root whose reference closure spans the
+    /// whole document decodes and adapts: `max_work` is at least
+    /// [`Self::WORK_PER_ENTITY`] per entity and `max_records` at least one per
+    /// entity (the topology ceiling of one million records still applies). The
+    /// budgets stay explicit in the returned options and are never derived again.
+    pub fn for_document(document: &Document) -> Self {
+        let entities = document.entities().len();
+        let defaults = Self::default();
+        Self {
+            max_work: defaults
+                .max_work
+                .max(entities.saturating_mul(Self::WORK_PER_ENTITY)),
+            max_records: defaults.max_records.max(entities),
+            strict: defaults.strict,
+        }
+    }
+}
 /// Owned validated geometry and the physical STEP identity of each model-local face.
 #[derive(Clone, Debug)]
 pub struct ImportedSolid {
@@ -330,6 +350,7 @@ fn import_solid(
         edges: BTreeMap::new(),
         edge_entities: BTreeMap::new(),
         remaining: options.max_work,
+        max_work: options.max_work,
         max_records: options.max_records.min(1_000_000),
         records: 0,
         current: root,
@@ -460,6 +481,7 @@ struct Context<'d, 'a> {
     edges: BTreeMap<(VertexId, VertexId), EdgeId>,
     edge_entities: BTreeMap<EntityId, (EdgeId, bool)>,
     remaining: usize,
+    max_work: usize,
     max_records: usize,
     records: usize,
     current: EntityId,
@@ -485,16 +507,24 @@ impl<'d, 'a> Context<'d, 'a> {
         value.map_err(|e| self.error(ErrorKind::InvalidGeometry, e))
     }
     fn charge(&mut self, n: usize) -> Result<(), Error> {
-        self.remaining = self
-            .remaining
-            .checked_sub(n)
-            .ok_or_else(|| self.error(ErrorKind::ResourceLimit, "adapter work budget"))?;
+        self.remaining = self.remaining.checked_sub(n).ok_or_else(|| {
+            self.error(
+                ErrorKind::ResourceLimit,
+                format!("adapter work budget exceeded (max_work {})", self.max_work),
+            )
+        })?;
         Ok(())
     }
     fn record(&mut self) -> Result<(), Error> {
         self.charge(1)?;
         if self.records >= self.max_records {
-            return Err(self.error(ErrorKind::ResourceLimit, "topology record budget"));
+            return Err(self.error(
+                ErrorKind::ResourceLimit,
+                format!(
+                    "topology record budget exceeded (max_records {})",
+                    self.max_records
+                ),
+            ));
         }
         self.records += 1;
         Ok(())

@@ -326,6 +326,11 @@ fn every_resource_budget_is_enforced() {
             DiagnosticCode::LimitExceeded,
             "{limits:?}: {error}"
         );
+        // Every budget diagnostic names the exceeded budget and its configured value.
+        assert!(
+            error.message.contains("budget exceeded (limit "),
+            "{limits:?}: {error}"
+        );
     }
     let limits = ParseLimits {
         max_input_bytes: input.len() as u64,

@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "run_id": "2026-09-27T05-44-10-497189Z",
-  "source_fingerprint": "2dc5c10ae87029e2a4b7a5d29edc59c8525aa8d11c2dbb1e7bb204a115f6655f",
+  "run_id": "2026-09-27T07-04-00-693179Z",
+  "source_fingerprint": "a414f58aa4901bd1e6b2f5bfbf82dc2e6a587f3a7647ca6298ef24800b2241ab",
   "cases": [
     {
       "sha256": "e486bfb50625f5270d2b239c004c61f30c9f2fd8f230e395a8c10cbb8c45cb09",
@@ -126691,7 +126691,7 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "resource_limit",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -126835,7 +126835,7 @@
         "references": "resolved",
         "schema": "accepted",
         "product": "accepted",
-        "geometry": "resource_limit",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -127977,8 +127977,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "resource_limit",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 27630,
@@ -128056,8 +128056,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "resource_limit",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 76212,
@@ -128120,7 +128120,7 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "resource_limit",
+        "geometry": "unsupported",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -131389,8 +131389,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "resource_limit",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 413209,
@@ -132908,8 +132908,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "resource_limit",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 48665,
@@ -133126,8 +133126,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "resource_limit",
-        "tessellation": "not_run"
+        "geometry": "accepted",
+        "tessellation": "resource_limit"
       },
       "diagnostic_counts": {},
       "entity_count": 48665,
@@ -135267,7 +135267,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "resource_limit",
+        "geometry": "unsupported",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},
@@ -135606,7 +135606,7 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "resource_limit",
+        "geometry": "rejected",
         "tessellation": "not_run"
       },
       "diagnostic_counts": {},

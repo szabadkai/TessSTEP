@@ -68,7 +68,14 @@ records share a record budget. Tags and complex components have aggregate budget
 Comments consume the input budget without token-sized allocation. Logical allocation
 budgets do not constitute an exact process RSS cap; deployments handling hostile input
 should choose budgets to fit their memory allowance. Allocation failure is not recoverable
-through Rust's standard allocation APIs in this implementation.
+through Rust's standard allocation APIs in this implementation. Every budget failure is a
+`LimitExceeded` diagnostic naming the budget and its configured value, for example
+`record budget exceeded (limit 2000000)`. `stepdump` accepts each budget as
+`--max-<name>=N` (`--max-input-bytes`, `--max-token-bytes`, `--max-string-bytes`,
+`--max-entities`, `--max-nesting-depth`, `--max-aggregate-elements`,
+`--max-total-values`, `--max-symbols`, `--max-records`, `--max-sections`); `--help`
+prints the defaults. The largest corpus input that parses cleanly (30.7 MB, 413,209
+entities) uses about a fifth of the default record and value budgets.
 
 Both lexer and parser stop after their first error. The parser is a fused iterator.
 Tolerant recovery is deliberately not provided yet; a fatal parse yields no complete
