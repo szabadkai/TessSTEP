@@ -466,7 +466,7 @@ def main():
     parser.add_argument("--expectations", type=Path, help="Reviewed per-path expected observations JSON")
     parser.add_argument("--repeat", type=int, default=1, help="Repeat physical parsing to check byte-identical JSON (1–5)")
     parser.add_argument("--check", action="store_true", help="Exit 1 for compatibility regressions, removed inputs, or runner failures")
-    parser.add_argument("--timeout", type=float, default=30, help="Seconds per unique input (default: 30)")
+    parser.add_argument("--timeout", type=float, default=120, help="Seconds per unique input (default: 120; the slowest corpus input takes about 13 s locally and hosted CI runners have crossed 30 s)")
     parser.add_argument("--schema-validator", type=Path, help="Compiled expressc --validator executable")
     parser.add_argument("--schema-name", help="Explicit schema for the configured validator (every input)")
     parser.add_argument("--schema-map", type=Path, help="JSON table selecting each input's validator schema from its declared FILE_SCHEMA name, with validator arguments")

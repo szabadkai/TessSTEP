@@ -39,7 +39,7 @@ shared copies do not inflate unique coverage.
 | `reference_errors` | Physical syntax accepted; some references are missing |
 | `rejected` | Parser returned a structured diagnostic, including resource limits |
 | `crash` | Process terminated by signal or Rust panic |
-| `timeout` | Process exceeded the per-input deadline (30 seconds by default) |
+| `timeout` | Process exceeded the per-input deadline (120 seconds by default; the slowest input takes about 13 s locally, and hosted runners crossed 30 s) |
 | `runner_error` | I/O, CLI, output protocol or output budget failure |
 | `nondeterministic` | Repeated physical parsing produced different JSON bytes |
 

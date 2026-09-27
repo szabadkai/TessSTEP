@@ -16,10 +16,12 @@ OUTPUT = HERE
 
 
 def num(x):
+    """Format a real with 15 significant digits so that one-ulp differences between
+    platform libm results (for example ``tan``) never change the fixture bytes."""
     if abs(x) < 5e-16:
         x = 0.0
-    text = repr(float(x))
-    return text if ("." in text or "e" in text) else text + "."
+    text = repr(float(f"{float(x):.15g}")).replace("e", "E")
+    return text if ("." in text or "E" in text) else text + "."
 
 
 class Step:
@@ -89,7 +91,7 @@ class Step:
             "DATA;",
         ]
         text = "\n".join(header + self.lines + ["ENDSEC;", "END-ISO-10303-21;", ""])
-        (OUTPUT / name).write_text(text)
+        (OUTPUT / name).write_text(text, newline="\n")
 
 
 def context(length="(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))", degrees=False,
@@ -383,7 +385,7 @@ def fixtures():
     body[at:at] = extra
     body[2] = "FILE_DESCRIPTION(('Original 10 mm B-spline cube whose top edges carry supplied pcurves on the B-spline face'),'2;1');"
     body[3] = body[3].replace("brep-bspline-cube.step", "brep-pcurve-bspline-cube.step")
-    (OUTPUT / "brep-pcurve-bspline-cube.step").write_text("\n".join(body) + "\n")
+    (OUTPUT / "brep-pcurve-bspline-cube.step").write_text("\n".join(body) + "\n", newline="\n")
 
     # 10 mm cubes whose top face and top edges use implicit-knot forms. Piecewise
     # Bezier: two quadratic segments per direction (interior knot multiplicity 2) and

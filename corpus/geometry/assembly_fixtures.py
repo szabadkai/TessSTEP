@@ -204,7 +204,7 @@ def main():
     for name, (description, build) in FIXTURES.items():
         w = build()
         text = HEADER.format(description=description, name=name) + "\n".join(w.lines) + "\nENDSEC;\nEND-ISO-10303-21;\n"
-        (args.output / name).write_text(text, encoding="ascii")
+        (args.output / name).write_text(text, encoding="ascii", newline="\n")
 
 
 if __name__ == "__main__":

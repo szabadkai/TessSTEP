@@ -1,3 +1,23 @@
+# CI repair: platform-independent fixtures and corpus deadline — 2026-09-27
+
+Main CI had failed on every push since 2026-09-26 while every check passed on the
+macOS development machine. Two causes, both in the test infrastructure:
+
+- `check_geometry.py` requires regenerated fixtures to be byte-identical to
+  `corpus/geometry/*.step`. On Linux `brep-cone.step` differed by one ulp in
+  `10 + 10 * tan(radians(30))` (libm), and on Windows every generated fixture differed
+  because `write_text` translated `\n` to CRLF. `num()` in `brep_fixtures.py` now
+  rounds to 15 significant digits before `repr`, and both generators write with
+  `newline="\n"`. Thirteen fixtures changed only in their last one or two digits
+  (`corpus/manifest.json` hashes updated); `check_geometry.py` still passes its 83
+  reviewed outcomes, and `cargo test --workspace` (266 tests) and the script unit tests
+  (44) pass.
+- The corpus runner's default per-input deadline was 30 s. `bug33261.stp` and
+  `trj3_s1-id-203.stp` take 13 s and 12 s here but crossed 30 s on hosted runners in
+  consecutive runs, each reported as a regression. The default is now 120 s; the local
+  `corpus.py --check` with the AP validator reports 3,227 compatible inputs and no
+  baseline change.
+
 # Milestone 21 completion: assemblies, colours, supplied pcurves, C/C++ — 2026-09-27
 
 Delivered: assembly linking and import (`link_assembly`, `import_assembly`), surface
