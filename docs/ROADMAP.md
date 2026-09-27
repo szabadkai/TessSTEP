@@ -302,7 +302,7 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   explicit-outer rule. Evidence:
   `brep_elementary_surfaces_close_with_expected_volumes` (washer) and
   `brep_rejections_are_typed_and_located`.
-- **Default parse budgets.** The defaults (4M total values, 1M entities, 2M records)
+- **Default parse budgets — Milestone 22.1.** The defaults (4M total values, 1M entities, 2M records)
   reject well-formed exports of a few tens of megabytes. Size defaults against
   realistic industrial files, or derive them from input size, while keeping every
   budget explicit. Expose them in `stepdump` and the corpus runner, and name the
@@ -313,7 +313,7 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   outside the profile, and says "outside the selected import profile" rather than
   "unknown to the schema". Evidence:
   `planar_unsupported_entities_are_named_as_outside_the_profile`.
-- **Disconnected closed shells.** Some exporters write `CLOSED_SHELL`s whose faces
+- **Disconnected closed shells — Milestone 22.5.** Some exporters write `CLOSED_SHELL`s whose faces
   share no edges or vertices. Strict rejection stays the default. Any sewing must be
   an explicit, opt-in, tolerance-bounded repair stage whose repairs are reported.
   Reports should classify this defect separately from other open-shell failures.
@@ -362,7 +362,7 @@ redistributable Onshape export with these features as a hash-pinned exporter fil
   0.25 mm) imports as a spindle torus whose `select_outer` part is the closed v domain
   with the two axis points as singular points. Evidence: `brep-spindle-apple.step`,
   `brep-spindle-lemon.step`, `analytic_spindle_torus_parts_end_at_the_axis_points`.
-- **Remaining Onshape blocker — tessellation refinement, 2026-09-27.** With
+- **Remaining Onshape blocker — tessellation refinement, Milestone 22.2.** With
   degenerate tori, seam placement between holes and tangent edges, tolerance-consistent
   sampling and trimming and sliver-face collapse, the whole 149-face B-rep now passes
   profile, geometry and topology. Tessellation fails on a torus band (face #2168,
@@ -608,19 +608,96 @@ conformance rows for AP242/AP214/AP203 move to "structural subset implemented",
 with limits. EXPRESS rules, functions and WHERE clauses are not evaluated, so no AP
 conformance is claimed.
 
-Deferred to Milestone 22 (industrial hardening), from the backlog above: default
-parse budgets; surface models (`SHELL_BASED_SURFACE_MODEL`) as shell meshes; mapped-item
-assembly placements; C0 creases at B-spline knots of multiplicity equal to the degree
-(tessellation reaches its budget there); tolerated exporter unit deviations such as
-explicit dimensions on SI units; opt-in sewing and orientation repair (124 `OpenShell`, 38
-`BrokenWire` and 35 `InconsistentOrientation` roots in the latest run); tolerance
-handling for edges off their surface (70) and endpoints off their curves (22);
-tessellation budgets and anisotropic refinement (42 resource-limit roots, and the
-walking-sliver refinement failure on torus bands diagnosed on the Onshape export
-above: refinement must split along the direction of surface-normal turn and flips
-must respect it, which longest-edge bisection in a length metric with Lawson flips
-does not); a document-level import session and scaling benchmark; extended fuzzing.
-Whether v1.0 needs evaluated EXPRESS rules is an open decision.
+**Milestone 22 — industrial hardening (planned 2026-09-27).**
+
+Goal: the importers behave predictably on large and imperfect industrial exports.
+Every budget is explicit and sized for real files, every repair is opt-in and
+reported, every remaining corpus failure is a named outcome, and the public C/C++
+interfaces cover the whole import path. Items carry the counts from the reviewed
+2026-09-27 baseline (1,197 shape roots, 577 meshed); each one lands with reviewed
+baseline movements, never a refreshed baseline.
+
+- **22.1 Parse budgets and deadlines.** The defaults (4M values, 1M entities, 2M
+  records) reject well-formed exports of a few tens of megabytes (11 `profile:
+  resource_limit` roots). Size the defaults against realistic industrial files or
+  derive them from input size, keep every budget explicit, name the exceeded limit
+  and its configured value in the diagnostic, and expose the budgets in `stepdump`
+  and the corpus runner. Changes to `ts_parse_options_init` defaults are documented
+  behaviour changes. Acceptance: no corpus input fails on a default budget without
+  the diagnostic naming the budget, and the largest clean input's budget use is
+  recorded.
+- **22.2 Curvature-anisotropic refinement and tessellation budgets.** Longest-edge
+  bisection in a length metric with Lawson flips walks slivers along tight torus
+  and cylinder bands (24 `UnresolvedTolerance` and 25 `ResourceLimit` faces; the
+  Onshape torus band, face #2168). Refine along the direction of surface-normal
+  turn and make flips respect it; then raise the planar work budget so the 36-hole
+  cylinder face (#2164) meshes. Acceptance: the Onshape export imports as a closed
+  solid, the 51 `tessellation:resource_limit` roots either mesh or name a budget,
+  and the adaptive regression tests still hold their sampled bounds.
+- **22.3 Tolerance policy for edges off their surfaces.** 71 roots fail because an
+  `EDGE_CURVE` lies farther from its face surface than the model tolerance, 19
+  because an edge crosses a surface singularity, and 22 because vertices lie off
+  their curves. Define one documented policy: accept within a stated multiple of the
+  model tolerance as a counted adaptation, project or reject beyond it, and report
+  the measured distance. Acceptance: each of the three kinds is either meshed with a
+  reported adaptation or a typed rejection naming the distance and the tolerance.
+- **22.4 UV loop validity.** 34 `SelfIntersection`, 21 `DegenerateLoop` and 19
+  trim-`Limit` faces fail after topology passes. Classify each by cause (seam
+  choice, pcurve fit, collapsed edges, chart limits) with authored fixtures, fix the
+  causes that are ours, and name the rest. Acceptance: no face fails with an
+  unclassified polygon error in the baseline.
+- **22.5 Opt-in sewing and orientation repair.** 123 `OpenShell`, 38 `BrokenWire`
+  and 35 `InconsistentOrientation` roots. Strict rejection stays the default. Add an
+  explicit, tolerance-bounded repair stage that sews coincident edges and vertices,
+  reorients shells and classifies disconnected `CLOSED_SHELL`s apart from other open
+  shells; every repair is counted in the result and shown in the corpus report.
+  Most of these roots are synthetic `dodgy-step-files`; acceptance is measured on
+  the exporter files and on authored fixtures for each repair.
+- **22.6 Surface models as shell meshes.** `SHELL_BASED_SURFACE_MODEL` (4,127 roots,
+  2,539 in 108 OpenCASCADE files) imports as open or closed shell meshes through
+  `tessellate_shell`, reported as shells and never as solids. The corpus runner
+  surveys them as a separate root class with their own baseline outcomes.
+- **22.7 Mapped-item placements and tolerated unit encodings.** Link assemblies whose
+  occurrences are placed by `MAPPED_ITEM` or Cartesian transformation operators (9
+  shape roots are unplaced today) and tolerate, as counted adaptations, the
+  exporter unit encodings that reject real files at the product stage: explicit
+  dimensions on SI units and untyped measures in selects. Synthetic five-parameter
+  `PRODUCT_DEFINITION`s (about 1,740 inputs) stay rejected.
+- **22.8 Document import session and scaling benchmark.** One parse and one decode
+  per document shared by every root, assembly and appearance import, so a document
+  costs its size once. Add a benchmark over the largest corpus inputs
+  (`bug33261.stp` takes 13 s locally) recording time and peak memory per stage, run
+  nightly with the existing benchmarks; set explicit per-stage budgets from it.
+- **22.9 Extended fuzzing.** Run the fifteen coverage-guided targets nightly with
+  sanitizers under a fixed time budget, seed them from the authored corpora, and turn
+  every minimized finding into a regression test. The report distinguishes
+  instrumented runs from driver smoke.
+- **22.10 Public interfaces.** Single-root curved import, root and unit discovery,
+  representation selection and import options (strictness, budgets, tolerance
+  policy, repair opt-in) in C and C++, under installed-consumer tests; static
+  linkage in the CMake package. After this item the C ABI export set is frozen for
+  v1.0.
+- **22.11 Release engineering.** Cut a tagged pre-release from green CI to exercise
+  the release workflow, the four packaging targets and the installed-package gate;
+  then set the v1.0 version, changelog and ABI freeze. The corpus baseline at the
+  tag is the compatibility record for that release.
+
+Decision to record here before v1.0: EXPRESS rules, functions and WHERE clauses stay
+unevaluated, so v1.0 claims structural AP242/AP214/AP203 coverage and no AP
+conformance. Evaluating rules is post-1.0 work unless a consumer requires it.
+
+Order: 22.11's pre-release tag first, as soon as CI is green; 22.1 and 22.8 together
+(budgets need the session's measurements); 22.2, 22.3 and 22.4 next, since they hold
+the most exporter roots and the Onshape file; then 22.5, 22.6 and 22.7 in parallel;
+22.9 runs throughout; 22.10 accompanies each public operation and closes last.
+
+Exit criteria: CI is green on all four targets and the release workflow has produced
+a reviewed pre-release. The Onshape export imports as a closed solid. Every corpus
+root has a named outcome; no root fails on an unclassified polygon error, an
+unnamed budget or an unnamed entity. Every repair and tolerance adaptation is
+opt-in or counted, and reported per root. Surface models import as shells. The C
+ABI covers discovery, curved import and import options, and its export set is
+frozen with the consumer tests passing on the installed package.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
