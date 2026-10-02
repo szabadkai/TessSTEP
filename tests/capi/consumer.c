@@ -402,7 +402,179 @@ static void presentation_contract(void) {
     assert(ts_presentation_retain(NULL) == TS_INVALID_ARGUMENT);
     ts_presentation_release(NULL);
 }
+static void import_options_contract(void) {
+    _Static_assert(sizeof(ts_import_options) == TS_IMPORT_OPTIONS_SIZE_1, "import options revision 1");
+    _Static_assert(sizeof(ts_import_options) == 96, "import options layout");
+    _Static_assert(offsetof(ts_import_options, max_work) == 16, "import budgets offset");
+    _Static_assert(offsetof(ts_import_options, model_distance_m) == 32, "model tolerance offset");
+    _Static_assert(offsetof(ts_import_options, max_tessellation_work) == 64, "tessellation budgets offset");
+    _Static_assert(offsetof(ts_import_options, max_triangles) == 88, "import options tail");
+    ts_import_options options;
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    assert(options.struct_size == sizeof options && options.abi_version == TS_ABI_VERSION && options.flags == 0);
+    assert(options.max_work == 5000000 && options.max_records == 100000);
+    assert(options.model_distance_m == 1e-7 && options.chord_m == 1e-4 && options.normal_angle_rad == 0.1);
+    assert(options.max_tessellation_work == 50000000 && options.max_vertices == 1000000);
+    /* Unknown revision sizes write nothing. */
+    options.max_work = 7;
+    assert(ts_import_options_init(&options, sizeof options - 8) == TS_INVALID_ARGUMENT && options.max_work == 7);
+    assert(ts_import_options_init(&options, sizeof options + 8) == TS_INVALID_ARGUMENT && options.max_work == 7);
+    assert(ts_import_options_init(NULL, sizeof options) == TS_INVALID_ARGUMENT);
+    ts_document *doc = load("cylinder.step");
+    assert(ts_import_options_for_document(doc, &options, sizeof options) == TS_OK);
+    assert(options.struct_size == sizeof options && options.max_work == 5000000 && options.max_records == 100000);
+    ts_document_release(doc);
+    assert(ts_import_options_for_document(NULL, &options, sizeof options) == TS_INVALID_ARGUMENT);
+    assert(options.struct_size == 0 && options.max_work == 0);
+}
+static void solid_contract(void) {
+    _Static_assert(sizeof(ts_solid_info) == TS_SOLID_INFO_SIZE_1, "solid info revision 1");
+    _Static_assert(offsetof(ts_solid_info, root_id) == 16, "solid info root offset");
+    _Static_assert(offsetof(ts_solid_info, inferred_outer_bounds) == 40, "solid adaptations offset");
+    ts_document *doc = load("cylinder.step");
+    ts_import_options options;
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    options.chord_m = 1e-6;
+    ts_mesh *mesh = NULL, *failed = NULL;
+    ts_solid_info info;
+    info.struct_size = (uint32_t)sizeof info;
+    ts_import_error error;
+    assert(ts_document_import_solid(doc,1000,0.001,1.0,&options,&mesh,&info,&error) == TS_OK);
+    assert(error.stage == TS_IMPORT_STAGE_NONE && info.abi_version == TS_ABI_VERSION);
+    assert(info.kind == TS_ROOT_MANIFOLD_SOLID_BREP && info.root_id == 1000 && info.face_count == 3);
+    assert(info.shell_count == 1 && info.inserted_seams == 1 && info.split_edges == 0);
+    options.max_vertices = 0;
+    failed = mesh;
+    assert(ts_document_import_solid(doc,1000,0.001,1.0,&options,&failed,&info,&error) == TS_RESOURCE_LIMIT);
+    assert(!failed && info.struct_size == sizeof info && info.kind == 0 && error.stage == TS_IMPORT_STAGE_TESSELLATION);
+    options.max_vertices = 1000000;
+    options.flags = 2u;
+    assert(ts_document_import_solid(doc,1000,0.001,1.0,&options,&failed,&info,&error) == TS_INVALID_ARGUMENT);
+    assert(!failed && error.stage == TS_IMPORT_STAGE_NONE);
+    info.struct_size = 8;
+    info.root_id = 5;
+    assert(ts_document_import_solid(doc,1000,0.001,1.0,NULL,&failed,&info,&error) == TS_INVALID_ARGUMENT);
+    assert(!failed && info.root_id == 5);
+    assert(ts_document_import_solid(doc,1000,0.,1.0,NULL,&failed,NULL,&error) == TS_INVALID_ARGUMENT && !failed);
+    assert(ts_document_import_solid(doc,9999,0.001,1.0,NULL,&failed,NULL,&error) == TS_NOT_FOUND);
+    assert(!failed && error.entity_id == 9999);
+    assert(ts_document_import_solid(NULL,1000,0.001,1.0,NULL,&failed,NULL,&error) == TS_INVALID_ARGUMENT);
+    ts_document_release(doc);
+    ts_mesh_view view;
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK);
+    assert(view.vertex_count == 512 && view.boundary_edges == 0 && view.components == 1);
+    const double exact = 3.141592653589793 * 2e-6;
+    assert(view.signed_volume > exact * (1 - 2e-4) && view.signed_volume < exact * (1 + 2e-4));
+    for (size_t i = 0; i < view.triangle_count; ++i)
+        assert(view.face_ids[i] == 28 || view.face_ids[i] == 37 || view.face_ids[i] == 46);
+    ts_mesh_release(mesh);
+
+    /* The plane-angle unit scales the 30 degree cone semi-angle. */
+    doc = load("cone.step");
+    info.struct_size = (uint32_t)sizeof info;
+    assert(ts_document_import_solid(doc,1000,0.001,0.017453292519943295,NULL,&mesh,&info,NULL) == TS_OK);
+    assert(info.inserted_seams == 1);
+    ts_mesh_release(mesh);
+    assert(ts_document_import_solid(doc,1000,0.001,1.0,NULL,&failed,NULL,&error) != TS_OK);
+    assert(!failed && error.stage == TS_IMPORT_STAGE_GEOMETRY);
+    ts_document_release(doc);
+
+    /* A BREP_WITH_VOIDS cavity is a second, inward component. */
+    doc = load("cavity.step");
+    assert(ts_document_import_solid(doc,1000,0.001,1.0,NULL,&mesh,&info,NULL) == TS_OK);
+    assert(info.kind == TS_ROOT_BREP_WITH_VOIDS && info.shell_count == 2);
+    ts_document_release(doc);
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK && view.components == 2 && view.boundary_edges == 0);
+    ts_mesh_release(mesh);
+}
+static void discovery_contract(void) {
+    _Static_assert(sizeof(ts_discovery_info) == 48, "discovery info layout");
+    _Static_assert(sizeof(ts_context_units) == 40, "context units layout");
+    _Static_assert(sizeof(ts_discovered_root) == 112, "discovered root layout");
+    _Static_assert(offsetof(ts_discovered_root, units) == 40, "discovered root units offset");
+    _Static_assert(offsetof(ts_discovered_root, error) == 80, "discovered root error offset");
+    _Static_assert(sizeof(ts_discovered_presentation) == 120, "discovered presentation layout");
+    _Static_assert(offsetof(ts_discovered_presentation, units) == 48, "presentation units offset");
+    _Static_assert(sizeof(ts_representation_choice) == 32, "choice layout");
+    ts_document *doc = load("selection.step");
+    ts_discovery *discovery = NULL, *failed = NULL;
+    ts_import_error error;
+    assert(ts_document_discover(doc,TS_PREFER_EXACT,NULL,&discovery,&error) == TS_OK);
+    ts_discovery_info info;
+    assert(ts_discovery_get_info(discovery,&info) == TS_OK);
+    assert(info.root_count == 5 && info.solid_count == 2 && info.tessellation_count == 3);
+    assert(info.presentation_count == 0 && info.choice_count == 3 && info.preference == TS_PREFER_EXACT);
+    const uint64_t ids[] = {1000, 11000, 21000, 31000, 40002};
+    const uint32_t kinds[] = {TS_ROOT_MANIFOLD_SOLID_BREP, TS_ROOT_FACETED_BREP, TS_ROOT_TESSELLATED_SOLID,
+        TS_ROOT_TESSELLATED_SHELL, TS_ROOT_TESSELLATED_SURFACE_SET};
+    ts_discovered_root root;
+    for (size_t i = 0; i < info.root_count; ++i) {
+        assert(ts_discovery_root_at(discovery,i,&root) == TS_OK);
+        assert(root.root_id == ids[i] && root.kind == kinds[i] && root.status == TS_OK);
+        assert(root.units.metres_per_unit == 0.001 && root.units.radians_per_unit == 1.0);
+        assert(root.units.has_distance_uncertainty == 1 && root.units.distance_uncertainty_m > 0.99e-8);
+        assert(root.representation_count == 1 && root.representations[0] != 0);
+    }
+    assert(ts_discovery_root_at(discovery,2,&root) == TS_OK && root.link_id == 1000);
+    assert(ts_discovery_root_at(discovery,5,&root) == TS_NOT_FOUND && !root.representations && root.root_id == 0);
+    ts_representation_choice choice;
+    assert(ts_discovery_choice_at(discovery,0,&choice) == TS_OK && choice.selected == 0);
+    assert(choice.pairing == TS_PAIRING_LINK && choice.alternative_count == 1 && choice.alternatives[0] == 2);
+    assert(ts_discovery_choice_at(discovery,1,&choice) == TS_OK && choice.pairing == TS_PAIRING_RELATIONSHIP);
+    assert(ts_discovery_choice_at(discovery,2,&choice) == TS_OK && choice.selected == 4);
+    assert(choice.pairing == TS_PAIRING_NONE && choice.alternative_count == 0 && !choice.alternatives);
+    assert(ts_discovery_choice_at(discovery,3,&choice) == TS_NOT_FOUND && choice.selected == 0);
+    /* Import the selected solid and its tessellated alternative with discovered units. */
+    ts_mesh *mesh = NULL;
+    ts_mesh_view view;
+    assert(ts_discovery_root_at(discovery,0,&root) == TS_OK);
+    assert(ts_document_import_solid(doc,root.root_id,root.units.metres_per_unit,root.units.radians_per_unit,
+        NULL,&mesh,NULL,NULL) == TS_OK);
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK && view.signed_volume > 0.000005999 && view.signed_volume < 0.000006001);
+    ts_mesh_release(mesh);
+    assert(ts_discovery_root_at(discovery,2,&root) == TS_OK);
+    assert(ts_document_import_tessellated(doc,root.root_id,root.units.metres_per_unit,NULL,&mesh,NULL,NULL) == TS_OK);
+    ts_mesh_release(mesh);
+    ts_import_options options;
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    options.max_work = 10;
+    failed = discovery;
+    assert(ts_document_discover(doc,TS_PREFER_EXACT,&options,&failed,&error) == TS_RESOURCE_LIMIT);
+    assert(!failed && error.stage == TS_IMPORT_STAGE_PROFILE);
+    assert(ts_document_discover(doc,0,NULL,&failed,&error) == TS_INVALID_ARGUMENT && !failed);
+    ts_discovery *tessellated = NULL;
+    assert(ts_document_discover(doc,TS_PREFER_TESSELLATED,NULL,&tessellated,NULL) == TS_OK);
+    ts_document_release(doc);
+    assert(ts_discovery_choice_at(tessellated,0,&choice) == TS_OK && choice.selected == 2);
+    assert(choice.alternative_count == 1 && choice.alternatives[0] == 0);
+    ts_discovery_release(tessellated);
+    /* The discovery and its borrowed arrays outlive the document. */
+    assert(ts_discovery_retain(discovery) == TS_OK);
+    ts_discovery_release(discovery);
+    assert(ts_discovery_root_at(discovery,4,&root) == TS_OK && root.representations[0] != 0);
+    ts_discovery_release(discovery);
+
+    doc = load("presentation.step");
+    assert(ts_document_discover(doc,TS_PREFER_EXACT,NULL,&discovery,NULL) == TS_OK);
+    ts_document_release(doc);
+    ts_discovered_presentation presentation;
+    assert(ts_discovery_presentation_at(discovery,0,&presentation) == TS_OK);
+    assert(presentation.occurrence_id == 300 && presentation.status == TS_OK);
+    assert(presentation.container_count == 1 && presentation.containers[0] == 310);
+    assert(presentation.representation_count == 2 && presentation.units.metres_per_unit == 0.001);
+    assert(ts_discovery_presentation_at(discovery,1,&presentation) == TS_OK);
+    assert(presentation.occurrence_id == 301 && presentation.status == TS_UNSUPPORTED);
+    assert(presentation.error.stage == TS_IMPORT_STAGE_PROFILE && presentation.error.entity_id == 301);
+    assert(!presentation.containers && presentation.units.metres_per_unit == 0);
+    ts_discovery_release(discovery);
+    assert(ts_discovery_get_info(NULL,&info) == TS_INVALID_ARGUMENT && info.root_count == 0);
+    assert(ts_discovery_retain(NULL) == TS_INVALID_ARGUMENT);
+    ts_discovery_release(NULL);
+}
 int main(void) {
+    import_options_contract();
+    solid_contract();
+    discovery_contract();
     assembly_contract();
     tessellated_contract();
     presentation_contract();

@@ -11,7 +11,9 @@ reduced [B-rep profile](../corpus/geometry/brep.exp) supplies generated metadata
 named-attribute decoding of the selected root's local reference closure only.
 Callers pass the root, a length unit, a plane-angle unit and a model tolerance
 explicitly; [`discover_solids`](#root-and-unit-discovery) reads them from the file.
-Rust is the only interface so far; C/C++ entry points are pending.
+C and C++ expose single-root import as `ts_document_import_solid` /
+`Document::import_solid` and discovery as `ts_document_discover` /
+`Document::discover` ([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210-first-pass)).
 
 ## Supported input
 

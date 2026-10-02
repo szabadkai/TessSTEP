@@ -343,7 +343,7 @@ impl From<tessstep_import::ImportedPresentation> for TsPresentation {
     }
 }
 /// NULL for empty arrays, so C callers never receive dangling non-NULL pointers.
-fn array<T>(values: &[T]) -> *const T {
+pub(crate) fn array<T>(values: &[T]) -> *const T {
     if values.is_empty() {
         ptr::null()
     } else {

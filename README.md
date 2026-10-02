@@ -13,7 +13,7 @@ mesh assets across nested placements and support explicit appearance overrides.
 **STEP-to-mesh supports explicit solid profiles and assemblies.** The importers accept
 a selected `FACETED_BREP` with polygon boundaries, a `MANIFOLD_SOLID_BREP` with straight
 edges (Rust, C and C++), or a `MANIFOLD_SOLID_BREP` / `BREP_WITH_VOIDS` on elementary,
-B-spline and swept surfaces with supplied or computed pcurves (Rust). Whole assemblies
+B-spline and swept surfaces with supplied or computed pcurves (Rust, C and C++). Whole assemblies
 import as scenes: every shape root in its context units, placed by the product
 structure's occurrences and coloured by its surface styles (Rust, C and C++).
 The AP242, AP214 and AP203 long forms compile and validate corpus files structurally,
@@ -31,10 +31,10 @@ claimed; successful parsing does not establish schema or CAD validity.
 | Topology and trimming | Structural B-rep validation, UV reconstruction with periodic chart and hole placement, and canonical shared-edge sampling | No automatic healing or general volume-validity proof; pcurves are computed by the STEP importer |
 | Tessellation | Planar and regular curved-face refinement, owned shell/solid meshes, and manifold closure checks | Constructed B-reps; sampled error checks, no certified continuous bounds, singularity repair, or self-intersection proof |
 | Planar STEP import | Faceted and edge-based solids converted to owned meshes with original STEP face IDs | One closed shell; planar polygon or LINE/EDGE_LOOP boundaries; explicit root, units and tolerances |
-| Curved STEP import | Elementary, B-spline and swept B-rep solids with cavities, poles, verified supplied or computed pcurves, inferred outer bounds and inserted seams; root and context-unit discovery | No healing or surface models; rare geometry is a named rejection; single-root import is Rust only ([CURVED_IMPORT.md](docs/CURVED_IMPORT.md)) |
+| Curved STEP import | Elementary, B-spline and swept B-rep solids with cavities, poles, verified supplied or computed pcurves, inferred outer bounds and inserted seams; root and context-unit discovery | No healing or surface models; rare geometry is a named rejection ([CURVED_IMPORT.md](docs/CURVED_IMPORT.md)) |
 | Existing STEP tessellations | Tessellated solids, shells and triangulated surface sets imported as owned meshes without retessellation; tessellated annotations as placed polylines, points and fills; root discovery and B-rep/tessellation representation selection | Triangulated faces, strips, fans, edges and connecting edges; coordinate-index identity; annotation graphics are not meshes and styles are not interpreted |
 | Mesh scenes and appearance | Shared assets, nested affine instances, explicit baking, linear RGBA palettes, inherited style overrides, and STEP surface colours and transparency on solids and faces | No curve, point or occurrence-specific STEP styles, world-space tolerance guarantee, textures, or rendering |
-| C and C++ | Document inspection, schema selection, planar/faceted STEP tessellation, existing-tessellation and annotation import, assembly import with imported colours, triangle-buffer import, retained mesh and annotation views, scenes, and appearance | Shared ABI 1 library and C++17 RAII; general schema decoding, discovery and single-root curved B-rep import remain Rust APIs |
+| C and C++ | Document inspection, schema selection, root and unit discovery with representation selection, single-root planar, faceted and curved solid import, existing-tessellation and annotation import, assembly import with imported colours, extensible import options, triangle-buffer import, retained mesh and annotation views, scenes, and appearance | Shared and static ABI 1 library and C++17 RAII; general schema decoding remains a Rust API; the export set is frozen after the remaining Milestone 22 items ([C_API.md](docs/C_API.md)) |
 
 The [STEP import guide](docs/STEP_IMPORT.md) documents the first end-to-end slice;
 [existing tessellations](docs/EXISTING_TESSELLATIONS.md) documents direct mesh and annotation import.
@@ -152,18 +152,21 @@ The [C++17 wrapper](include/tessstep/tessstep.hpp) provides move-only RAII owner
 and typed results for documents, meshes, annotation graphics, scenes, and appearance
 layers.
 
-Supported operations include physical-document inspection and diagnostics, selected
-planar/faceted STEP tessellation, existing-tessellation and annotation import,
+Supported operations include physical-document inspection and diagnostics, root and
+unit discovery with representation selection, selected planar, faceted and curved
+solid import, existing-tessellation and annotation import, assembly import,
 triangle-buffer import, immutable mesh queries, assembly
 scene construction and instance baking, and appearance queries. C++ `MeshView`
 retains the mesh, so its zero-copy buffers remain valid after the originating
 `Mesh` is destroyed. Raw pointers remain borrowed from the view.
 
-Use `ts_document_tessellate_faceted` in C or `Document::tessellate_faceted` in C++
-with an explicit root entity and unit scale. The result owns its mesh independently
-of the source document. General schema decoding, product adaptation, and constructed
-B-rep tessellation are not exposed through the native interfaces. Shared linkage
-is supported; static linkage is not provided.
+Use `ts_document_discover` / `Document::discover` to find each solid root and its
+context units, then `ts_document_import_solid` / `Document::import_solid` with that
+root and units (or `ts_document_tessellate_faceted` for the faceted profile alone).
+The result owns its mesh independently of the source document. General schema
+decoding and product adaptation are not exposed through the native interfaces.
+`TessSTEP::TessSTEP` links the shared library and `TessSTEP::TessSTEP_static` the
+static one.
 
 Building the package from source requires Rust, **CMake 3.20 or later**, and a
 **C11/C++17 toolchain**:

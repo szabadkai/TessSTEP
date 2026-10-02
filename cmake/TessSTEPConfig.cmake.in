@@ -5,6 +5,9 @@ if(DEFINED CMAKE_SIZEOF_VOID_P AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(TessSTEP_NOT_FOUND_MESSAGE "TessSTEP ABI 1 requires a 64-bit consumer")
     return()
 endif()
+# TessSTEP::TessSTEP links the shared library. TessSTEP::TessSTEP_static links the
+# same ABI statically, with the Rust standard library and the system libraries it
+# needs; request it with COMPONENTS static to require the archive.
 if(NOT TARGET TessSTEP::TessSTEP)
     add_library(TessSTEP::TessSTEP SHARED IMPORTED)
     set_target_properties(TessSTEP::TessSTEP PROPERTIES
@@ -19,4 +22,26 @@ if(NOT TARGET TessSTEP::TessSTEP)
             IMPORTED_LOCATION "@PACKAGE_CMAKE_INSTALL_LIBDIR@/@TS_LIBRARY@")
     endif()
 endif()
+if(NOT TARGET TessSTEP::TessSTEP_static)
+    add_library(TessSTEP::TessSTEP_static STATIC IMPORTED)
+    set_target_properties(TessSTEP::TessSTEP_static PROPERTIES
+        IMPORTED_LOCATION "@PACKAGE_CMAKE_INSTALL_LIBDIR@/@TS_STATIC_LIBRARY@"
+        IMPORTED_LINK_INTERFACE_LANGUAGES "C"
+        INTERFACE_INCLUDE_DIRECTORIES "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@"
+        INTERFACE_COMPILE_DEFINITIONS "TESSSTEP_STATIC"
+        INTERFACE_COMPILE_FEATURES "cxx_std_17"
+        INTERFACE_LINK_LIBRARIES "@TS_STATIC_DEPENDENCIES@")
+endif()
+if(WIN32)
+    set(_tessstep_shared "@PACKAGE_CMAKE_INSTALL_BINDIR@/@TS_LIBRARY@")
+else()
+    set(_tessstep_shared "@PACKAGE_CMAKE_INSTALL_LIBDIR@/@TS_LIBRARY@")
+endif()
+if(EXISTS "${_tessstep_shared}")
+    set(TessSTEP_shared_FOUND TRUE)
+endif()
+if(EXISTS "@PACKAGE_CMAKE_INSTALL_LIBDIR@/@TS_STATIC_LIBRARY@")
+    set(TessSTEP_static_FOUND TRUE)
+endif()
+unset(_tessstep_shared)
 check_required_components(TessSTEP)

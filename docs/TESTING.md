@@ -105,7 +105,12 @@ public symbols. Packaging invokes these tests on every CI/release target.
 
 Use `--library-dir target/release` to reuse a release build and `--sanitizers` to
 instrument native consumers with ASan/UBSan (Linux/macOS CI). Rust-library sanitizer
-instrumentation, static packages and mesh-view tests are not claimed by this slice.
+instrumentation is not claimed. Since Milestone 22.10 the same consumers are also built
+in Release with `TessSTEP::TessSTEP_static` against a copy of the package without the
+shared library or its `bin` directory on PATH, and on Linux and macOS the archive must
+define exactly the exported C symbols; Debug static builds and sanitizers on static
+consumers are not run. `cargo test -p tessstep-capi --test discovery` covers the
+import-option revisions, solid import and discovery records.
 
 ## Milestone 4 structural completion
 

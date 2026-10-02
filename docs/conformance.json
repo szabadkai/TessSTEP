@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated and presentation tessellation import with discovery, representation selection and C/C++ entry points (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery",
+  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated and presentation tessellation import with discovery, representation selection and C/C++ entry points (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery; C/C++ discovery, representation selection, single-root solid import, extensible import options and static linkage (Milestone 22.10 first pass)",
   "features": [
     {
       "feature": "streaming lexer",
@@ -208,15 +208,33 @@
     },
     {
       "feature": "public C ABI",
-      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar import, existing/presentation tessellation import, schema selection and assembly import implemented",
+      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, existing/presentation tessellation import, schema selection, assembly import, discovery and import options implemented",
       "test": "c_abi_document_and_diagnostic_contract",
-      "limitations": "additive ABI 1 (64 exports); physical documents, triangle meshes, explicit scenes and appearance; selected faceted/planar solid import, existing tessellation import, presentation graphics, schema selection and assembly import with imported colours; single-root curved B-rep, discovery and general schema/B-rep APIs pending"
+      "limitations": "additive ABI 1 (74 exports); physical documents, triangle meshes, explicit scenes and appearance; selected faceted, planar and curved solid import, existing tessellation import, presentation graphics, schema selection, assembly import with imported colours, root and unit discovery with representation selection, extensible import options; tolerance-policy, repair, surface-model and session entry points pending; export set not yet frozen; general schema decoding pending"
     },
     {
       "feature": "public C++ wrapper / CMake package",
-      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar import, existing/presentation tessellation import, schema selection and assembly import implemented",
+      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, existing/presentation tessellation import, schema selection, assembly import, discovery and import options implemented",
       "test": "tests/capi/consumer.cpp",
-      "limitations": "C++17 RAII for documents/meshes/scenes/appearance/presentations/assemblies, retained zero-copy mesh and presentation views and typed results; installed TessSTEP::TessSTEP target; static linkage pending; single-root curved B-rep, discovery and broader schema/B-rep APIs pending"
+      "limitations": "C++17 RAII for documents/meshes/scenes/appearance/presentations/assemblies/discoveries, retained zero-copy mesh and presentation views and typed results; installed TessSTEP::TessSTEP (shared) and TessSTEP::TessSTEP_static targets, static consumers tested in Release only; broader schema/B-rep APIs pending"
+    },
+    {
+      "feature": "C/C++ extensible import options",
+      "status": "implemented",
+      "test": "c_abi_import_options_revisions_defaults_and_document_sizing",
+      "limitations": "struct_size names a published revision (96-byte revision 1); strict flag, budgets, model and tessellation tolerances; document sizing as ImportOptions::for_document; unknown sizes rejected without writing; tolerance-policy and repair fields pending"
+    },
+    {
+      "feature": "C/C++ single-root solid import",
+      "status": "implemented",
+      "test": "c_abi_solid_import_reports_curved_adaptations_units_and_cavities",
+      "limitations": "MANIFOLD_SOLID_BREP/BREP_WITH_VOIDS through the curved profile, FACETED_BREP through the faceted profile; explicit length and plane-angle units; owned mesh with STEP face IDs; adaptation counts in the extensible solid info; installed C/C++ consumers"
+    },
+    {
+      "feature": "C/C++ root discovery and representation selection",
+      "status": "implemented",
+      "test": "c_abi_discovery_selects_representations_and_reports_units",
+      "limitations": "retained read-only handle; solid, tessellation and annotation roots with zero-copy representation and container arrays, context units and uncertainty or located per-root unit errors; exact or tessellated preference; nothing imported; surface-model roots pending"
     },
     {
       "feature": "Generated schema validator and corpus stage",
@@ -654,7 +672,7 @@
       "feature": "Curved B-rep STEP solid import",
       "status": "implemented",
       "test": "brep_elementary_surfaces_close_with_expected_volumes",
-      "limitations": "MANIFOLD_SOLID_BREP on plane/cylinder/cone/sphere/ring torus/B-spline surfaces with line/conic/B-spline edges (also as SURFACE_CURVE 3D curves); explicit length and angle units; Rust only"
+      "limitations": "MANIFOLD_SOLID_BREP on plane/cylinder/cone/sphere/ring torus/B-spline surfaces with line/conic/B-spline edges (also as SURFACE_CURVE 3D curves); explicit length and angle units; Rust, C and C++"
     },
     {
       "feature": "Computed pcurves",

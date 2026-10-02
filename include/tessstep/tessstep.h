@@ -4,11 +4,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#if defined(_WIN32)
+/* TESSSTEP_STATIC (defined by TessSTEP::TessSTEP_static) selects the static library. */
+#if defined(_WIN32) && !defined(TESSSTEP_STATIC)
 #define TS_API __declspec(dllimport)
-#define TS_CALL __cdecl
 #else
 #define TS_API
+#endif
+#if defined(_WIN32)
+#define TS_CALL __cdecl
+#else
 #define TS_CALL
 #endif
 #ifdef __cplusplus
@@ -17,7 +21,8 @@ extern "C" {
 
 /* ABI 1: C11, 64-bit platforms. All layouts and numeric values below are frozen.
  * Future incompatible records/functions get new names; existing records do not
- * grow. No Rust representation is part of this protocol. */
+ * grow, except the extensible records of Milestone 22 (see ts_import_options).
+ * No Rust representation is part of this protocol. */
 #define TS_ABI_VERSION 1u
 typedef uint32_t ts_status;
 #define TS_OK 0u
@@ -594,6 +599,159 @@ TS_API ts_status TS_CALL ts_assembly_get_style_info(const ts_assembly *assembly,
 TS_API ts_status TS_CALL ts_assembly_get_scene(const ts_assembly *assembly, ts_scene **out);
 TS_API ts_status TS_CALL ts_assembly_get_appearance(const ts_assembly *assembly,
     ts_appearance **out);
+
+/* Milestone 22: import options, root discovery, representation selection and
+ * single-root solid import.
+ *
+ * Extensible records. ts_import_options and ts_solid_info are the only ABI 1 records
+ * that grow. struct_size names the revision a caller was compiled with (its sizeof);
+ * a later revision only appends fields. The library accepts every published revision
+ * size (TS_*_SIZE_1, ...) and reads or writes exactly that many bytes: an input's
+ * fields beyond its revision take their initializer defaults, an output's are not
+ * written. Any other size is TS_INVALID_ARGUMENT; abi_version must be 1. Every
+ * other record keeps the exact-size rule. */
+#define TS_IMPORT_OPTIONS_SIZE_1 96u
+typedef struct ts_import_options {
+    uint32_t struct_size, abi_version;
+    uint32_t flags, reserved; /* TS_IMPORT_STRICT; other bits and nonzero reserved rejected */
+    uint64_t max_work, max_records; /* profile decoding, adapter and discovery budgets */
+    double model_distance_m, model_angle_rad; /* B-rep model tolerance */
+    double chord_m, normal_angle_rad; /* tessellation tolerance */
+    uint64_t max_tessellation_work, max_evaluations; /* shared by a solid's faces */
+    uint64_t max_vertices, max_triangles; /* mesh output */
+} ts_import_options;
+/* Write the defaults of the revision struct_size names (pass sizeof *out) into
+ * exactly struct_size bytes: flags 0, max_work 5,000,000, max_records 100,000, model
+ * tolerance 1e-7 m and 1e-8 rad, chord 1e-4 m, normal angle 0.1 rad, tessellation
+ * work 50,000,000, evaluations 10,000,000, 1,000,000 vertices, 2,000,000 triangles.
+ * Each discovery pass and import stage has its own max_work; per-face polygon,
+ * trimming and sampling budgets keep library defaults capped by the tessellation
+ * fields. Zero budgets mean zero. NULL or an unknown size writes nothing and
+ * returns TS_INVALID_ARGUMENT. NULL options in the entry points below mean these
+ * defaults. */
+TS_API ts_status TS_CALL ts_import_options_init(ts_import_options *out, size_t struct_size);
+/* ts_import_options_init with max_work and max_records sized for this document as
+ * Rust ImportOptions::for_document sizes them: at least 512 work units and one
+ * record per entity (the one-million topology record ceiling still applies). A NULL
+ * document zero-fills a valid record (struct_size 0) and returns TS_INVALID_ARGUMENT. */
+TS_API ts_status TS_CALL ts_import_options_for_document(const ts_document *document,
+    ts_import_options *out, size_t struct_size);
+
+/* Single-root solid import: a selected MANIFOLD_SOLID_BREP or BREP_WITH_VOIDS through
+ * the curved profile (planes, cylinders, cones, spheres, tori, B-spline and swept
+ * surfaces; line, conic and B-spline edges; supplied or computed pcurves; see
+ * docs/CURVED_IMPORT.md), or a FACETED_BREP through the faceted profile, chosen by
+ * the root's physical record. Units are explicit and finite > 0: metres_per_unit
+ * scales lengths, radians_per_unit plane angles (cone semi-angles and supplied
+ * pcurve parameters), for example from ts_discovery_root_at. No unit inference,
+ * healing or welding. Representation adaptations (none changes geometry) are counted
+ * in info; faceted roots report none. flags TS_IMPORT_STRICT rejects $ in derived
+ * ORIENTED_EDGE endpoint slots. Additive ABI 1 record: 104-byte info revision 1. */
+#define TS_SOLID_INFO_SIZE_1 104u
+typedef struct ts_solid_info {
+    uint32_t struct_size, abi_version;
+    uint32_t kind, reserved; /* TS_ROOT_MANIFOLD_SOLID_BREP, _BREP_WITH_VOIDS, _FACETED_BREP */
+    uint64_t root_id, face_count, shell_count; /* shells: the outer one and each cavity */
+    uint64_t inferred_outer_bounds, inserted_seams, split_edges, recharted_spheres;
+    uint64_t collapsed_edges, collapsed_faces, supplied_pcurves, rejected_pcurves;
+} ts_solid_info;
+/* Document, ownership, output-clearing and error contract of
+ * ts_document_import_tessellated; success transfers one mesh acquisition whose
+ * face_ids are the STEP face IDs. info is optional: when non-NULL the caller sets
+ * info->struct_size to a published revision (sizeof *info); an unknown size returns
+ * TS_INVALID_ARGUMENT without writing info, otherwise the rest of that revision is
+ * zeroed (abi_version 1) before validation and filled on success. */
+TS_API ts_status TS_CALL ts_document_import_solid(const ts_document *document,
+    uint64_t entity_id, double metres_per_unit, double radians_per_unit,
+    const ts_import_options *options, ts_mesh **out, ts_solid_info *info,
+    ts_import_error *error);
+
+/* Root and unit discovery with representation selection. Finds every
+ * MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP (solids), then every
+ * TESSELLATED_SOLID, TESSELLATED_SHELL and triangulated surface set that is directly
+ * a representation item (tessellations), the shape representations containing each
+ * and their context's length and plane-angle units and length uncertainty; and every
+ * TESSELLATED_ANNOTATION_OCCURRENCE with the callouts and annotation planes holding
+ * it and their representations. Missing or conflicting units are per-root errors,
+ * never defaults. Selection groups a solid with the tessellations linked to it
+ * (GEOMETRIC_LINK, TOPOLOGICAL_LINK) or related by an untransformed representation
+ * relationship between representations holding only one root each, and selects the
+ * solid (TS_PREFER_EXACT) or the first tessellation (TS_PREFER_TESSELLATED). Every
+ * shape root is the selection or an alternative of exactly one choice; alternatives
+ * are for a failed selection. Physical records are read; nothing is imported.
+ * Options: flags and max_work (each pass has its own budget); the other fields are
+ * validated. Additive ABI 1 records: 48-byte info, 40-byte units, 112-byte root,
+ * 120-byte presentation and 32-byte choice. */
+typedef struct ts_discovery ts_discovery;
+#define TS_PREFER_EXACT 1u
+#define TS_PREFER_TESSELLATED 2u
+#define TS_PAIRING_NONE 0u
+#define TS_PAIRING_LINK 1u
+#define TS_PAIRING_RELATIONSHIP 2u
+typedef struct ts_discovery_info {
+    uint64_t root_count, solid_count, tessellation_count, presentation_count, choice_count;
+    uint32_t preference, reserved;
+} ts_discovery_info;
+/* distance_uncertainty_m is valid when has_distance_uncertainty is 1: the measure
+ * named DISTANCE_ACCURACY_VALUE, else the context's smallest length uncertainty. */
+typedef struct ts_context_units {
+    uint64_t context_id;
+    double metres_per_unit, radians_per_unit, distance_uncertainty_m;
+    uint32_t has_distance_uncertainty, reserved;
+} ts_context_units;
+/* Shape roots in order: solids (index below solid_count) in document order, then
+ * tessellations. kind is a TS_ROOT_* value. link_id is a tessellation's
+ * GEOMETRIC_LINK or TOPOLOGICAL_LINK (zero when absent and for solids). status is
+ * TS_OK with units, or the unit failure with zero units and a located error.
+ * representations is borrowed from the discovery until its last release, and NULL
+ * exactly when representation_count is zero (as for every array below). */
+typedef struct ts_discovered_root {
+    uint64_t root_id;
+    uint32_t kind, status;
+    uint64_t link_id;
+    const uint64_t *representations;
+    size_t representation_count;
+    ts_context_units units;
+    ts_import_error error;
+} ts_discovered_root;
+typedef struct ts_discovered_presentation {
+    uint64_t occurrence_id;
+    uint32_t status, reserved;
+    const uint64_t *containers; /* *_CALLOUT and ANNOTATION_PLANE records, nested too */
+    size_t container_count;
+    const uint64_t *representations;
+    size_t representation_count;
+    ts_context_units units;
+    ts_import_error error;
+} ts_discovered_presentation;
+/* One shape: shape-root indices for ts_discovery_root_at. pairing is TS_PAIRING_NONE
+ * for a shape with a single representation, else how it was recognized (LINK when
+ * any member is linked). Solids' choices come first, in solid order. */
+typedef struct ts_representation_choice {
+    size_t selected;
+    uint32_t pairing, reserved;
+    const size_t *alternatives;
+    size_t alternative_count;
+} ts_representation_choice;
+/* preference is TS_PREFER_EXACT or TS_PREFER_TESSELLATED. Output/error contract of
+ * ts_document_import_tessellated: budget failures return TS_RESOURCE_LIMIT. Success
+ * transfers one discovery acquisition, independent of the document, released with
+ * ts_discovery_release. */
+TS_API ts_status TS_CALL ts_document_discover(const ts_document *document,
+    uint32_t preference, const ts_import_options *options, ts_discovery **out,
+    ts_import_error *error);
+TS_API ts_status TS_CALL ts_discovery_retain(const ts_discovery *discovery);
+TS_API void TS_CALL ts_discovery_release(const ts_discovery *discovery);
+/* Scalar copies and borrowed arrays; outputs are cleared on failure; out-of-range is
+ * TS_NOT_FOUND. Concurrent immutable queries are allowed while an acquisition lives. */
+TS_API ts_status TS_CALL ts_discovery_get_info(const ts_discovery *discovery,
+    ts_discovery_info *out);
+TS_API ts_status TS_CALL ts_discovery_root_at(const ts_discovery *discovery, size_t index,
+    ts_discovered_root *out);
+TS_API ts_status TS_CALL ts_discovery_presentation_at(const ts_discovery *discovery,
+    size_t index, ts_discovered_presentation *out);
+TS_API ts_status TS_CALL ts_discovery_choice_at(const ts_discovery *discovery, size_t index,
+    ts_representation_choice *out);
 
 #ifdef __cplusplus
 }

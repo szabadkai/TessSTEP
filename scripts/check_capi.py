@@ -34,6 +34,18 @@ SYMBOLS = {
     "ts_assembly_retain", "ts_assembly_release", "ts_assembly_get_info", "ts_assembly_node_at",
     "ts_assembly_product_at", "ts_assembly_root_at", "ts_assembly_excluded_at", "ts_assembly_unplaced_at",
     "ts_assembly_get_style_info", "ts_assembly_get_scene", "ts_assembly_get_appearance",
+    "ts_import_options_init", "ts_import_options_for_document", "ts_document_import_solid",
+    "ts_document_discover", "ts_discovery_retain", "ts_discovery_release", "ts_discovery_get_info",
+    "ts_discovery_root_at", "ts_discovery_presentation_at", "ts_discovery_choice_at",
+}
+# Authored fixtures copied beside the standalone consumers, by consumer file name.
+FIXTURES = {
+    "faceted.step": "box.step", "planar.step": "planar-box.step",
+    "placeholder.step": "planar-placeholder.step", "tessellated.step": "tessellated-connected.step",
+    "presentation.step": "presentation.step", "assembly.step": "assembly-nested.step",
+    "styled.step": "assembly-styled.step", "missing-placement.step": "assembly-missing-placement.step",
+    "cylinder.step": "brep-cylinder.step", "cone.step": "brep-cone.step",
+    "cavity.step": "brep-sphere-cavity.step", "selection.step": "tessellated-selection.step",
 }
 
 
@@ -84,14 +96,8 @@ def verify_installed(package, *, sanitizers=False):
         shutil.copytree(package, relocated)
         source = work / "consumer"
         shutil.copytree(ROOT / "tests/capi", source)
-        shutil.copy2(ROOT / "corpus/geometry/box.step", source / "faceted.step")
-        shutil.copy2(ROOT / "corpus/geometry/planar-box.step", source / "planar.step")
-        shutil.copy2(ROOT / "corpus/geometry/planar-placeholder.step", source / "placeholder.step")
-        shutil.copy2(ROOT / "corpus/geometry/tessellated-connected.step", source / "tessellated.step")
-        shutil.copy2(ROOT / "corpus/geometry/presentation.step", source / "presentation.step")
-        shutil.copy2(ROOT / "corpus/geometry/assembly-nested.step", source / "assembly.step")
-        shutil.copy2(ROOT / "corpus/geometry/assembly-styled.step", source / "styled.step")
-        shutil.copy2(ROOT / "corpus/geometry/assembly-missing-placement.step", source / "missing-placement.step")
+        for local, authored in FIXTURES.items():
+            shutil.copy2(ROOT / "corpus/geometry" / authored, source / local)
         external = Path(os.environ.get("TESSSTEP_CORPUS", str(Path.home() / "step-corpus"))) / "vendor/foxtrot/examples/cuboid.step"
         if external.is_file():
             expected = json.loads((ROOT / "corpus/geometry/external-planar.json").read_text())
@@ -108,7 +114,8 @@ def verify_installed(package, *, sanitizers=False):
             stub = guards / (tool + (".cmd" if os.name == "nt" else ""))
             stub.write_text("@exit /b 99\n" if os.name == "nt" else "#!/bin/sh\nexit 99\n", encoding="utf-8")
             stub.chmod(0o755)
-        env["PATH"] = os.pathsep.join([str(guards), str(relocated / "bin"), env.get("PATH", "")])
+        system_path = env.get("PATH", "")
+        env["PATH"] = os.pathsep.join([str(guards), str(relocated / "bin"), system_path])
         env.pop("CARGO_HOME", None)
         env.pop("RUSTUP_HOME", None)
         for config, c_only in (("Debug", False), ("Release", False), ("Release", True)):
@@ -127,7 +134,43 @@ def verify_installed(package, *, sanitizers=False):
                         linked = subprocess.check_output(["otool", "-L", str(build / app)], text=True)
                         if "@rpath/libtessstep_capi.dylib" not in linked or str(ROOT) in linked:
                             raise RuntimeError(f"Consumer can load a build-tree library: {linked}")
-    print("C/C++ installed package: relocation, Debug/Release, ABI, ownership and concurrent consumers passed", flush=True)
+        # Static consumers build and run against a copy of the package without the
+        # shared library (or its import library), and without its bin directory on
+        # PATH, so any dependency on it fails to link or load. Sanitizers add nothing
+        # here: the consumer sources are those instrumented above.
+        static_package = work / "static package"
+        shutil.copytree(relocated, static_package)
+        for shared in list(static_package.rglob("*tessstep_capi*")):
+            if shared.suffix in {".dll", ".dylib", ".so"} or shared.name.endswith(".dll.lib"):
+                shared.unlink()
+        check_static_archive(static_package)
+        static_env = dict(env, PATH=os.pathsep.join([str(guards), system_path]))
+        build = work / "Release-static"
+        run(["cmake", "-S", source, "-B", build, f"-DCMAKE_PREFIX_PATH={static_package}",
+             "-DCMAKE_BUILD_TYPE=Release", "-DTESSSTEP_LINK_STATIC=ON"], env=static_env, cwd=work)
+        run(["cmake", "--build", build, "--config", "Release"], env=static_env, cwd=work)
+        run(["ctest", "--test-dir", build, "-C", "Release", "--output-on-failure"], env=static_env, cwd=work)
+    print("C/C++ installed package: relocation, Debug/Release, shared and static linkage, ABI, ownership and concurrent consumers passed", flush=True)
+
+
+def check_static_archive(package):
+    """The archive defines exactly the ABI's C symbols; Rust symbols stay mangled."""
+    archives = [p for p in package.rglob("*tessstep_capi*") if p.suffix in {".a", ".lib"}]
+    if len(archives) != 1:
+        raise RuntimeError(f"Expected exactly one static ABI library: {archives}")
+    if os.name == "nt":
+        # The static MSVC consumers above link every symbol; dumpbin is not used.
+        print(f"Static ABI archive: {archives[0].name}", flush=True)
+        return
+    flags = ["-gUj"] if sys.platform == "darwin" else ["-g", "--defined-only", "--format=posix"]
+    # Members without symbols may be reported on stderr; the exact set decides.
+    output = subprocess.run(["nm", *flags, str(archives[0])], stdout=subprocess.PIPE, text=True).stdout
+    names = {line.split()[0].removeprefix("_") if sys.platform == "darwin" else line.split()[0]
+             for line in output.splitlines() if line.strip() and not line.endswith(":")}
+    defined = {name for name in names if re.fullmatch(r"ts_[a-z0-9_]+", name)}
+    if defined != SYMBOLS:
+        raise RuntimeError(f"Static ABI mismatch: missing={SYMBOLS-defined}, extra={defined-SYMBOLS}")
+    print(f"Static ABI archive: exactly {len(SYMBOLS)} C symbols defined", flush=True)
 
 
 def install_package(build_dir, prefix, *, library_dir=None, target=None):

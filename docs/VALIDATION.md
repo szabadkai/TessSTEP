@@ -1,3 +1,27 @@
+# Milestone 22.10 first pass: discovery, solid import, import options, static linkage — 2026-10-02
+
+Delivered: the extensible `ts_import_options` (revision 1, 96 bytes) with
+`ts_import_options_init` and `ts_import_options_for_document`;
+`ts_document_import_solid` (curved or faceted profile, explicit length and plane-angle
+units, extensible 104-byte `ts_solid_info`); `ts_document_discover` and the retained
+`ts_discovery` with root, presentation and choice queries; their C++ RAII wrappers;
+and the `TessSTEP::TessSTEP_static` package target. Ten new functions: 74 C exports.
+Import behaviour is unchanged (no `tessstep-import` code changed), so the external
+corpus was not rerun.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), `cargo doc -D warnings` | passed (273 tests), including the six new `tessstep-capi --test discovery` contract tests |
+| `check_capi.py --library-dir target/release` (no sanitizers; local ASan hang) | passed: Debug, Release and C-only shared consumers, exactly 74 exports, and Release C and C++ consumers linked with `TessSTEP::TessSTEP_static` against a package copy without the shared library; the archive defines exactly the 74 C symbols |
+| `check_capi.py` building the package from source through Cargo | passed |
+| `package_release.py --target aarch64-apple-darwin` | passed; the archive ships `libtessstep_capi.a` (23 MB) beside the 2.5 MB dylib, 8.9 MB compressed |
+| `check_architecture.py`, `conformance.py --check`, script unit tests (45) | passed |
+
+Static link dependencies come from `rustc --print native-static-libs` at configure
+time: `c;m` here (libSystem omitted, the Apple driver links it). The Linux and Windows
+lists, the Windows static consumers and the sanitizer runs are CI-only; this
+validation is macOS arm64.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

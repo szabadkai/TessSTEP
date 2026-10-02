@@ -550,3 +550,18 @@ Root discovery decodes representation contexts with its own bounded profile rath
 than the Milestone 5 test schema, whose physical layout differs from exported files.
 No new crate edge, unsafe code or production dependency is introduced; C/C++ entry
 points for curved import and discovery are pending under [C_API.md](C_API.md).
+
+## Milestone 22.10 public-interface review (first pass)
+
+The new C entry points live in three `tessstep-capi` modules (`options`, `solid`,
+`discovery`) and call only existing `tessstep-import` functions; no kernel or importer
+API changed. `ts_import_options` and `ts_solid_info` are the first records that grow:
+the bridge reads or writes exactly the published revision a caller names, and fills
+later fields with defaults, so the C contract can follow the Milestone 22 Rust items
+without new entry points or breaking older callers. Discovery results are copied once
+into private owned records; their ID arrays are lent to C as zero-copy borrowed
+arrays, and the C++ wrapper copies them into owned vectors, as it does for strings.
+The crate now also builds a `staticlib`; the CMake package probes rustc for the
+standard library's system dependencies of the target and declares them on
+`TessSTEP::TessSTEP_static`, so static consumers need no Rust knowledge either. No new
+crate edge or production dependency is introduced.

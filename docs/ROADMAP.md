@@ -679,11 +679,32 @@ baseline movements, never a refreshed baseline.
   sanitizers under a fixed time budget, seed them from the authored corpora, and turn
   every minimized finding into a regression test. The report distinguishes
   instrumented runs from driver smoke.
-- **22.10 Public interfaces.** Single-root curved import, root and unit discovery,
-  representation selection and import options (strictness, budgets, tolerance
-  policy, repair opt-in) in C and C++, under installed-consumer tests; static
-  linkage in the CMake package. After this item the C ABI export set is frozen for
-  v1.0.
+- **22.10 Public interfaces — first pass delivered 2026-10-02.** Single-root curved
+  import, root and unit discovery, representation selection and import options
+  (strictness, budgets, tolerance policy, repair opt-in) in C and C++, under
+  installed-consumer tests; static linkage in the CMake package. After this item the
+  C ABI export set is frozen for v1.0. Delivered: the extensible `ts_import_options`
+  (strict flag, budgets, model and tessellation tolerances; published revision sizes
+  so later fields append without breaking callers) with `ts_import_options_init` and
+  `ts_import_options_for_document` (the `ImportOptions::for_document` rule);
+  `ts_document_import_solid` (curved or faceted profile by the root's record, explicit
+  length and plane-angle units, owned mesh and an extensible `ts_solid_info` with the
+  adaptation counts); `ts_document_discover` with a retained `ts_discovery` (solid,
+  tessellation and annotation roots, containing representations as zero-copy arrays,
+  context units and uncertainty or located per-root unit errors, and representation
+  choices for the exact or tessellated preference); C++ `ImportOptions`,
+  `Document::import_options`, `import_solid`, `discover` and `Discovery`; and the
+  `TessSTEP::TessSTEP_static` target with the system libraries rustc reports, linked
+  and run by the installed consumers in Release. 74 exports ([C API](C_API.md)).
+  Evidence: `c_abi_solid_import_reports_curved_adaptations_units_and_cavities`,
+  `c_abi_discovery_selects_representations_and_reports_units`,
+  `c_abi_import_options_revisions_defaults_and_document_sizing`, the installed
+  C/C++ consumers. Remaining before the freeze: C/C++ surfaces for the tolerance
+  policy (22.3) and the repair opt-in (22.5) as options and solid-info revisions, shell
+  import and surface-model roots in discovery (22.6), the document import session
+  (22.8), and an assembly import taking `ts_import_options`; then freeze the export set
+  ([C API](C_API.md#remaining-for-the-abi-freeze)). Debug static consumers are not
+  tested.
 - **22.11 Release engineering.** Cut a tagged pre-release from green CI to exercise
   the release workflow, the four packaging targets and the installed-package gate;
   then set the v1.0 version, changelog and ABI freeze. The corpus baseline at the
@@ -720,8 +741,10 @@ mesh views as the mesh pipeline becomes available. Design storage with that
 contract in mind. C/C++ installed-package consumer tests and ABI containment are
 release gates, not optional bindings work. See [C_API.md](C_API.md). This contract
 also applies as product and geometry operations become public. The first physical-document
-slice now implements both interfaces, typed results and the shared CMake package;
-mesh import and retained read-only views, selected faceted/planar solid import and
-existing-tessellation and presentation import are now implemented. Public schema
-decoding, B-rep construction, curved tessellation and discovery entry points remain
-pending.
+slice now implements both interfaces, typed results and the shared and static CMake
+package targets; mesh import and retained read-only views, selected faceted/planar
+solid import, existing-tessellation and presentation import, assembly import, root
+and unit discovery with representation selection, single-root curved solid import and
+extensible import options are now implemented. Public schema decoding and B-rep
+construction remain Rust-only; the tolerance-policy, repair, surface-model and
+session entry points follow their Milestone 22 items, before the export set is frozen.

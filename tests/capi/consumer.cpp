@@ -260,7 +260,91 @@ static void assembly_contract() {
     assert(!missing && missing.error().code == ErrorCode::invalid_geometry);
     assert(missing.error().import_failure.stage == ImportStage::product);
 }
+static void discovery_contract() {
+    static_assert(!std::is_copy_constructible_v<Discovery>);
+    static_assert(std::is_nothrow_move_constructible_v<Discovery>);
+    static_assert(std::is_nothrow_move_assignable_v<Discovery>);
+    static_assert(std::is_nothrow_destructible_v<Discovery>);
+    auto owned = [] {
+        auto parsed = Document::parse(read_file("selection.step")); assert(parsed);
+        auto options = parsed.value().import_options(); assert(options);
+        assert(options.value().struct_size == sizeof(ImportOptions) && options.value().max_work == 5000000);
+        auto found = parsed.value().discover(Preference::exact, &options.value()); assert(found);
+        auto choice = found.value().choice_at(0).value();
+        assert(choice.selected == 0 && choice.alternatives == std::vector<size_t>{2});
+        assert(choice.pairing == Pairing::link);
+        auto root = found.value().root_at(choice.selected).value();
+        assert(root.root_id == 1000 && root.kind == RootKind::manifold_solid_brep && root.units);
+        assert(root.units.value().metres_per_unit == 0.001 && root.units.value().distance_uncertainty_m);
+        auto solid = parsed.value().import_solid(root, &options.value()); assert(solid);
+        assert(solid.value().kind() == RootKind::manifold_solid_brep && solid.value().info.face_count == 6);
+        assert(solid.value().info.struct_size == sizeof(SolidInfo));
+        auto tessellated = parsed.value().discover(Preference::tessellated); assert(tessellated);
+        auto first = tessellated.value().choice_at(0).value();
+        assert(first.selected == 2 && first.alternatives == std::vector<size_t>{0});
+        Discovery moved = std::move(found).value();
+        assert(!found.value().info() && found.value().info().error().code == ErrorCode::invalid_argument);
+        return std::pair{std::move(moved), std::move(solid).value().mesh};
+    }(); // The document is gone; the discovery and mesh are independent.
+    Discovery& discovery = owned.first;
+    Mesh& mesh = owned.second;
+    auto read = [&discovery] {
+        for (int i = 0; i < 100; ++i) {
+            auto root = discovery.root_at(3).value();
+            assert(root.kind == RootKind::tessellated_shell && root.link_id == 30021);
+            assert(root.representations.size() == 1);
+        }
+    };
+    auto first = std::async(std::launch::async, read), second = std::async(std::launch::async, read);
+    first.get(); second.get();
+    assert(discovery.info().value().choice_count == 3);
+    assert(discovery.choice_at(1).value().pairing == Pairing::relationship);
+    assert(discovery.choice_at(3).error().code == ErrorCode::not_found);
+    auto volume = mesh.view().value().data().signed_volume;
+    assert(volume > 0.000005999 && volume < 0.000006001);
+    {
+        auto parsed = Document::parse(read_file("presentation.step")); assert(parsed);
+        auto found = parsed.value().discover(); assert(found);
+        auto note = found.value().presentation_at(0).value();
+        assert(note.occurrence_id == 300 && note.containers == std::vector<uint64_t>{310});
+        assert(note.representations.size() == 2 && note.units);
+        auto orphan = found.value().presentation_at(1).value();
+        assert(!orphan.units && orphan.units.error().code == ErrorCode::unsupported);
+        assert(orphan.units.error().import_failure.entity_id == 301);
+        auto options = default_import_options();
+        options.max_work = 10;
+        auto limited = parsed.value().discover(Preference::exact, &options);
+        assert(!limited && limited.error().code == ErrorCode::resource_limit);
+        assert(limited.error().import_failure.stage == ImportStage::profile);
+    }
+    {
+        // A root without units propagates its typed error; explicit units import it.
+        auto parsed = Document::parse(read_file("cavity.step")); assert(parsed);
+        auto root = parsed.value().discover().value().root_at(0).value();
+        assert(root.kind == RootKind::brep_with_voids && !root.units);
+        auto missing = parsed.value().import_solid(root);
+        assert(!missing && missing.error().code == ErrorCode::unsupported);
+        assert(missing.error().import_failure.entity_id == 1000);
+        auto solid = parsed.value().import_solid(1000, 0.001, 1.0); assert(solid);
+        assert(solid.value().kind() == RootKind::brep_with_voids && solid.value().info.shell_count == 2);
+        assert(solid.value().mesh.view().value().data().components == 2);
+    }
+    auto parsed = Document::parse(read_file("cylinder.step")); assert(parsed);
+    auto options = default_import_options();
+    assert(options.struct_size == TS_IMPORT_OPTIONS_SIZE_1 && options.chord_m == 1e-4);
+    auto cylinder = parsed.value().import_solid(1000, 0.001, 1.0, &options); assert(cylinder);
+    assert(cylinder.value().info.inserted_seams == 1 && cylinder.value().info.face_count == 3);
+    options.flags = 2u;
+    assert(parsed.value().import_solid(1000, 0.001, 1.0, &options).error().code == ErrorCode::invalid_argument);
+    options = default_import_options();
+    options.max_vertices = 0;
+    auto limited = parsed.value().import_solid(1000, 0.001, 1.0, &options);
+    assert(!limited && limited.error().code == ErrorCode::resource_limit);
+    assert(limited.error().import_failure.stage == ImportStage::tessellation);
+    assert(parsed.value().import_solid(1000, 0., 1.0).error().code == ErrorCode::invalid_argument);
+}
 int main(int argc, char** argv) {
+    discovery_contract();
     assembly_contract();
     tessellated_contract();
     planar_contract("planar.step",1000,0.001,6e-6,0.01,0.02,0.03);

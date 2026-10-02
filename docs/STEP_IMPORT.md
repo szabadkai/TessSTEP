@@ -155,8 +155,11 @@ decode. `ImportOptions::for_document` sizes the budgets from the parsed document
 `max_work` is at least `WORK_PER_ENTITY` (512) per entity and `max_records` at least
 one per entity, with the default floors and the topology ceiling of one million
 records unchanged. The returned values are explicit and are what the corpus runner
-uses. C callers apply the same rule themselves from `ts_document_info.entity_count`;
-`ts_parse_options_init` and the C import option initializers are unchanged. Every
+uses. In C, `ts_import_options_for_document` applies it to the extensible
+`ts_import_options` of discovery and `ts_document_import_solid`
+([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210-first-pass));
+for the per-profile records callers apply it from `ts_document_info.entity_count`.
+`ts_parse_options_init` and the per-profile initializers are unchanged. Every
 budget failure is a `ResourceLimit` whose message names the budget and its configured
 value, for example `schema decoding work budget exceeded (max_work 5000000)`.
 

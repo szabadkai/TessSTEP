@@ -3,6 +3,7 @@
 
 #include "tessstep.h"
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -143,10 +144,20 @@ using AssemblyOptions = ts_assembly_options;
 inline AssemblyOptions default_assembly_options() noexcept {
     AssemblyOptions options{}; ts_assembly_options_init(&options); return options;
 }
+// Extensible options for discovery and solid import: strictness (flags |=
+// TS_IMPORT_STRICT), budgets and the model and tessellation tolerances.
+using ImportOptions = ts_import_options;
+inline ImportOptions default_import_options() noexcept {
+    ImportOptions options{}; ts_import_options_init(&options, sizeof options); return options;
+}
+enum class Preference : uint32_t { exact = TS_PREFER_EXACT, tessellated = TS_PREFER_TESSELLATED };
 class Mesh;
 struct TessellatedImport;
+struct SolidImport;
+struct DiscoveredRoot;
 class Presentation;
 class Assembly;
+class Discovery;
 class Document {
     std::unique_ptr<ts_document, detail::DocumentDeleter> handle_;
     explicit Document(ts_document* handle) noexcept : handle_(handle) {}
@@ -189,6 +200,23 @@ public:
     // Every shape root imported in its context units, linked to the product
     // structure and coloured by its surface styles. The result survives this document.
     Result<Assembly> import_assembly(const AssemblyOptions* options = nullptr) const;
+    // Every solid, shape tessellation and annotation root with its context units, and
+    // one representation choice per shape. The result survives this document.
+    Result<Discovery> discover(Preference preference = Preference::exact,
+        const ImportOptions* options = nullptr) const;
+    // A MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS (curved profile) or FACETED_BREP root with
+    // explicit units, or the units discovery found for it. The mesh survives this document.
+    Result<SolidImport> import_solid(uint64_t entity_id, double metres_per_unit,
+        double radians_per_unit, const ImportOptions* options = nullptr) const;
+    Result<SolidImport> import_solid(const DiscoveredRoot& root,
+        const ImportOptions* options = nullptr) const;
+    // Default options with max_work and max_records sized for this document.
+    Result<ImportOptions> import_options() const {
+        ImportOptions options{};
+        const auto status = ts_import_options_for_document(handle_.get(), &options, sizeof options);
+        if (status != TS_OK) return detail::error(status);
+        return options;
+    }
     Result<SchemaInfo> schema() const {
         ts_schema_info info{};
         const auto status = ts_document_get_schema(handle_.get(), &info);
@@ -636,6 +664,122 @@ inline Result<Assembly> Document::import_assembly(const AssemblyOptions* options
     Assembly assembly(raw);
     if (status != TS_OK) return detail::import_error(status, failure);
     return assembly;
+}
+
+// info.struct_size names the revision this header was compiled with.
+using SolidInfo = ts_solid_info;
+struct SolidImport {
+    Mesh mesh;
+    SolidInfo info;
+    RootKind kind() const noexcept { return static_cast<RootKind>(info.kind); }
+};
+enum class Pairing : uint32_t {
+    none = TS_PAIRING_NONE, link = TS_PAIRING_LINK, relationship = TS_PAIRING_RELATIONSHIP
+};
+using DiscoveryInfo = ts_discovery_info;
+struct ContextUnits {
+    uint64_t context_id = 0;
+    double metres_per_unit = 0, radians_per_unit = 0;
+    std::optional<double> distance_uncertainty_m; // in metres, when the context assigns one
+};
+// Owned copies; units holds the context units or the typed, located reason none apply.
+struct DiscoveredRoot {
+    uint64_t root_id = 0;
+    RootKind kind = RootKind::manifold_solid_brep;
+    uint64_t link_id = 0;
+    std::vector<uint64_t> representations;
+    Result<ContextUnits> units;
+};
+struct DiscoveredPresentation {
+    uint64_t occurrence_id = 0;
+    std::vector<uint64_t> containers, representations;
+    Result<ContextUnits> units;
+};
+// Shape-root indices for Discovery::root_at; alternatives are for a failed selection.
+struct RepresentationChoice {
+    size_t selected = 0;
+    std::vector<size_t> alternatives;
+    Pairing pairing = Pairing::none;
+};
+namespace detail {
+struct DiscoveryDeleter { void operator()(ts_discovery* p) const noexcept { ts_discovery_release(p); } };
+inline Result<ContextUnits> units(ts_status status, const ts_context_units& u, const ts_import_error& e) {
+    if (status != TS_OK) return import_error(status, e);
+    ContextUnits result{u.context_id, u.metres_per_unit, u.radians_per_unit, std::nullopt};
+    if (u.has_distance_uncertainty) result.distance_uncertainty_m = u.distance_uncertainty_m;
+    return result;
+}
+template<class T> std::vector<T> copy(const T* data, size_t count) {
+    return count ? std::vector<T>(data, data + count) : std::vector<T>();
+}
+}
+// Discovered roots, units and representation choices; independent of the document.
+class Discovery {
+    friend class Document;
+    std::unique_ptr<ts_discovery, detail::DiscoveryDeleter> handle_;
+    explicit Discovery(ts_discovery* raw) noexcept : handle_(raw) {}
+public:
+    Discovery(const Discovery&) = delete;
+    Discovery& operator=(const Discovery&) = delete;
+    Discovery(Discovery&&) noexcept = default;
+    Discovery& operator=(Discovery&&) noexcept = default;
+    ~Discovery() noexcept = default;
+    Result<DiscoveryInfo> info() const {
+        DiscoveryInfo info{}; auto status = ts_discovery_get_info(handle_.get(), &info);
+        if (status != TS_OK) return detail::error(status);
+        return info;
+    }
+    Result<DiscoveredRoot> root_at(size_t index) const {
+        ts_discovered_root r{}; auto status = ts_discovery_root_at(handle_.get(), index, &r);
+        if (status != TS_OK) return detail::error(status);
+        return DiscoveredRoot{r.root_id, static_cast<RootKind>(r.kind), r.link_id,
+            detail::copy(r.representations, r.representation_count),
+            detail::units(r.status, r.units, r.error)};
+    }
+    Result<DiscoveredPresentation> presentation_at(size_t index) const {
+        ts_discovered_presentation p{};
+        auto status = ts_discovery_presentation_at(handle_.get(), index, &p);
+        if (status != TS_OK) return detail::error(status);
+        return DiscoveredPresentation{p.occurrence_id, detail::copy(p.containers, p.container_count),
+            detail::copy(p.representations, p.representation_count),
+            detail::units(p.status, p.units, p.error)};
+    }
+    Result<RepresentationChoice> choice_at(size_t index) const {
+        ts_representation_choice c{}; auto status = ts_discovery_choice_at(handle_.get(), index, &c);
+        if (status != TS_OK) return detail::error(status);
+        return RepresentationChoice{c.selected, detail::copy(c.alternatives, c.alternative_count),
+            static_cast<Pairing>(c.pairing)};
+    }
+};
+
+inline Result<Discovery> Document::discover(Preference preference, const ImportOptions* options) const {
+    ts_discovery* raw = nullptr;
+    ts_import_error failure{};
+    const auto status = ts_document_discover(handle_.get(), static_cast<uint32_t>(preference),
+        options, &raw, &failure);
+    Discovery discovery(raw);
+    if (status != TS_OK) return detail::import_error(status, failure);
+    return discovery;
+}
+
+inline Result<SolidImport> Document::import_solid(uint64_t entity_id, double metres_per_unit,
+    double radians_per_unit, const ImportOptions* options) const {
+    ts_mesh* raw = nullptr;
+    SolidInfo info{};
+    info.struct_size = static_cast<uint32_t>(sizeof info);
+    ts_import_error failure{};
+    const auto status = ts_document_import_solid(handle_.get(), entity_id, metres_per_unit,
+        radians_per_unit, options, &raw, &info, &failure);
+    Mesh mesh(raw);
+    if (status != TS_OK) return detail::import_error(status, failure);
+    return SolidImport{std::move(mesh), info};
+}
+
+inline Result<SolidImport> Document::import_solid(const DiscoveredRoot& root,
+    const ImportOptions* options) const {
+    if (!root.units) return root.units.error();
+    const auto& units = root.units.value();
+    return import_solid(root.root_id, units.metres_per_unit, units.radians_per_unit, options);
 }
 
 }

@@ -6,8 +6,10 @@ API. This is a binding architectural requirement. The first implementation expor
 ABI 1 physical-document operations, a C++17 wrapper and a shared CMake package.
 Owned triangle-mesh import/read-only views, explicit assembly asset scenes and appearance layers are also implemented, as are
 existing-tessellation and presentation-graphics import from STEP documents (Milestone 20),
-and schema selection, assembly import and imported appearance (Milestone 21). Schema
-decoding, single-root curved B-rep import and root discovery are not exposed yet.
+schema selection, assembly import and imported appearance (Milestone 21), and
+extensible import options, root and unit discovery, representation selection,
+single-root curved solid import and a static library target (Milestone 22.10, first
+pass). General schema decoding is not exposed.
 The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
 The planar profile's conformance policy is a separate 16-byte `ts_import_policy`
 record with a flags word (`TS_IMPORT_STRICT`), passed to
@@ -34,10 +36,11 @@ find_package(TessSTEP 0.1 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE TessSTEP::TessSTEP)
 ```
 
-Prebuilt consumers need only CMake and their C/C++ toolchain, not Cargo. This slice
+Prebuilt consumers need only CMake and their C/C++ toolchain, not Cargo. The package
 supports shared linkage on 64-bit Linux (GCC/Clang), Windows (MSVC 2022), and macOS
 (Apple Clang). Debug and Release consumers link the same release ABI library; no
-CRT allocation ownership crosses the boundary. Static linkage is not provided.
+CRT allocation ownership crosses the boundary. `TessSTEP::TessSTEP_static` links the
+same ABI statically (see [static linkage](#static-linkage)).
 Windows applications must make the installed `bin` directory available to the DLL
 loader (for example through PATH, or by placing the DLL beside the executable).
 Package relocation and compiler/platform behavior are CI gates; local verification
@@ -60,9 +63,10 @@ auto report = document.diagnostics(); // Separate reference/trust analysis.
 document or a typed failure, and accepts explicit budgets initialized by
 `ts_parse_options_init`. Budget failures name the budget and its configured value in
 the diagnostic message. Import option initializers keep their documented defaults;
-for large documents, size `max_work` and `max_records` from
-`ts_document_info.entity_count` as the Rust `ImportOptions::for_document` rule does
-(at least 512 work units and one record per entity), see [STEP_IMPORT.md](STEP_IMPORT.md). `ts_document_get_info`, `ts_document_entity_at`, and
+for large documents, `ts_import_options_for_document` sizes `max_work` and
+`max_records` as the Rust `ImportOptions::for_document` rule does (at least 512 work
+units and one record per entity); for the per-profile option records, apply that
+rule from `ts_document_info.entity_count`, see [STEP_IMPORT.md](STEP_IMPORT.md). `ts_document_get_info`, `ts_document_entity_at`, and
 `ts_document_record_name` inspect counts, source-order IDs and component names.
 C names are borrowed without copying; C++ `record_name` explicitly returns owned
 text. Reference analysis returns an independent report that survives document
@@ -80,6 +84,8 @@ are independent of physical document parsing.
 ABI 1 freezes the header's fixed-width status values and record layouts. Options
 must have the exact size and ABI version initialized by the library; zero budgets
 mean zero. Future incompatible records receive new names, never appended fields.
+The two extensible records of Milestone 22 (`ts_import_options`, `ts_solid_info`)
+are the only exception: they grow by published revisions (see below).
 NULL, empty input, failure outputs, borrowed-text lifetimes and concurrent reads are
 specified in the header. C opaque handles never expose Rust storage layouts.
 Unwinding panics become internal failures; an unexpected panic payload is deliberately
@@ -312,7 +318,8 @@ for (size_t i = 0; i < view.value().data().polyline_count; ++i) { /* draw a poly
 Ten new functions bring the library to 50 C exports; the other new frozen layouts are
 the 80-byte tessellated info, 64-byte presentation info, 24-byte item and 104-byte
 view records on supported 64-bit targets. Existing ABI-1 records, symbols and statuses
-keep their contract. Discovery and representation selection remain Rust-only.
+keep their contract. Discovery and representation selection remained Rust-only until
+Milestone 22.10.
 
 ## Schema selection, assembly import and imported appearance (Milestone 21)
 
@@ -370,7 +377,155 @@ Fourteen new functions bring the library to 64 C exports; the new frozen layouts
 the 32-byte schema info, 72-byte assembly options and info, 40-byte node, 48-byte
 product, 56-byte root, 48-byte exclusion and 96-byte style info records on supported
 64-bit targets. Existing ABI-1 records, symbols and statuses keep their contract.
-Curved B-rep import of a single root remains Rust-only (curved-import follow-up).
+Curved B-rep import of a single root remained Rust-only until Milestone 22.10.
+
+## Import options, discovery and solid import (Milestone 22.10, first pass)
+
+**Extensible import options.** `ts_import_options` carries what the whole import path
+shares: `flags` (`TS_IMPORT_STRICT`; other bits and a nonzero `reserved` are rejected),
+the profile decoding, adapter and discovery budgets `max_work` / `max_records`, the
+B-rep model tolerance (`model_distance_m`, `model_angle_rad`), the tessellation
+tolerance (`chord_m`, `normal_angle_rad`), the budgets a solid's faces share
+(`max_tessellation_work`, `max_evaluations`) and the mesh output limits
+(`max_vertices`, `max_triangles`). Per-face polygon, trimming and sampling budgets keep
+the library defaults, capped by the tessellation fields, so lowering any field binds
+and zero means zero. `ts_import_options_init(&options, sizeof options)` writes the
+defaults (those of the Rust `ImportOptions`, the assembly import's tolerance and
+1e-7 m minimum model tolerance, and `TessellationOptions`; listed in the header);
+`ts_import_options_for_document` also sizes `max_work` (512 units per entity) and
+`max_records` (one per entity) as `ImportOptions::for_document` does, so C callers no
+longer apply that rule themselves. Every entry point validates every field.
+
+Unlike every earlier record, this one grows. `struct_size` names the revision a
+caller was compiled with (its `sizeof`); revision 1 is 96 bytes
+(`TS_IMPORT_OPTIONS_SIZE_1`), and a later revision only appends fields. The library
+accepts each published revision size, reads exactly that many bytes and gives the
+fields of later revisions their defaults, so a consumer built against this header
+keeps working when fields are added. The initializer takes the size instead of
+assuming the library's, so it never writes past an older caller's record; any other
+size returns `TS_INVALID_ARGUMENT` and writes nothing. A newer consumer on an older
+library is rejected the same way, never silently ignored. `ts_solid_info` follows the
+same rule for output: the caller sets `struct_size` (revision 1 is 104 bytes,
+`TS_SOLID_INFO_SIZE_1`) and the library writes only that revision.
+
+**Single-root solid import.** `ts_document_import_solid` / C++
+`Document::import_solid` imports a selected `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`
+through `tessstep_import::import_brep_solid` (the curved profile of
+[CURVED_IMPORT.md](CURVED_IMPORT.md)) or a `FACETED_BREP` through the faceted profile,
+chosen from the root's physical record, and tessellates it to an owned `ts_mesh` whose
+`face_ids` are the STEP face IDs. Units stay explicit arguments: `metres_per_unit` and
+`radians_per_unit` (cone semi-angles and supplied pcurve parameters), both finite and
+positive; tolerances come from the options. The optional `ts_solid_info` reports the
+root's kind, face and shell counts (outer shell plus cavities) and the eight
+representation adaptations of `Adaptations` (inferred outer bounds, inserted seams,
+split edges, re-charted spheres, collapsed edges and faces, supplied and rejected
+pcurves); none changes geometry. Output clearing, ownership, status mapping and the
+located `ts_import_error` follow `ts_document_import_tessellated`. C++ `SolidImport`
+holds the `Mesh` and the info; an overload takes a `DiscoveredRoot` and uses its
+discovered units, or returns the typed reason they are missing.
+
+**Discovery and representation selection.** `ts_document_discover` / C++
+`Document::discover` runs `discover_solids`, `discover_tessellations`,
+`select_representations` with the given preference (`TS_PREFER_EXACT` or
+`TS_PREFER_TESSELLATED`) and `discover_presentations`, each pass with its own
+`max_work`, and transfers one retained, read-only `ts_discovery` acquisition,
+independent of the document:
+
+- `ts_discovery_get_info` counts shape roots (solids first, then tessellations),
+  solids, tessellations, annotation occurrences and choices, and repeats the preference.
+- `ts_discovery_root_at` returns a root's ID, `TS_ROOT_*` kind, tessellation link, its
+  containing representations as a zero-copy array borrowed from the discovery, and
+  either its `ts_context_units` (context ID, metres and radians per unit, optional
+  length uncertainty in metres) with `TS_OK`, or the per-root unit failure status
+  with a located `ts_import_error`; units are never defaulted.
+- `ts_discovery_presentation_at` returns an annotation occurrence with its containing
+  callouts and annotation planes and representations (zero-copy) and units or error.
+- `ts_discovery_choice_at` returns one shape's selected shape-root index, its
+  alternative indices (zero-copy) and the pairing (`TS_PAIRING_NONE`, `_LINK`,
+  `_RELATIONSHIP`); an alternative is meant for a failed selection.
+
+Arrays are NULL exactly when their count is zero and stay valid until the last
+release of the discovery; concurrent immutable queries are allowed. C++ `Discovery` is
+move-only RAII and returns owned copies (`DiscoveredRoot`, `DiscoveredPresentation`,
+`RepresentationChoice`), with each root's units as a typed `Result<ContextUnits>`.
+
+```cpp
+auto parsed = tessstep::Document::parse(bytes);
+if (!parsed) return 1;
+auto options = parsed.value().import_options(); // budgets sized for this document
+auto discovery = parsed.value().discover(tessstep::Preference::exact, &options.value());
+if (!discovery) return 1;
+for (size_t i = 0; i < discovery.value().info().value().choice_count; ++i) {
+    auto choice = discovery.value().choice_at(i).value();
+    auto root = discovery.value().root_at(choice.selected).value();
+    if (root.kind == tessstep::RootKind::manifold_solid_brep) {
+        auto solid = parsed.value().import_solid(root, &options.value());
+        if (!solid) { /* solid.error(): typed code and located import_failure; try
+                         choice.alternatives */ }
+    }
+}
+```
+
+### Static linkage
+
+The installed package also provides `TessSTEP::TessSTEP_static`, an imported static
+library (`libtessstep_capi.a`; `tessstep_capi.lib` on Windows) of the same ABI. Its
+interface defines `TESSSTEP_STATIC`, which removes `__declspec(dllimport)` from the
+header on Windows, and declares the system libraries the embedded Rust standard
+library needs, exactly as rustc reports them (`--print native-static-libs`) for the
+package's target when the package is configured. The configure step prints the list
+(`TessSTEP static link dependencies`); on macOS it is `c;m` (libSystem, which rustc
+also names, is always linked by the Apple driver and is omitted to avoid a duplicate
+library warning). MSVC `/defaultlib:` directives are already embedded in the objects.
+`TessSTEP::TessSTEP` keeps its meaning (shared); a separate target rather than a
+switch keeps existing consumers' linkage unchanged and lets one build tree use both.
+`find_package(TessSTEP 0.1 CONFIG REQUIRED COMPONENTS static)` requires the archive.
+
+```cmake
+find_package(TessSTEP 0.1 CONFIG REQUIRED COMPONENTS static)
+target_link_libraries(my_app PRIVATE TessSTEP::TessSTEP_static)
+```
+
+The archive embeds the Rust standard library, so link at most one Rust static library
+into a final binary, or use the shared target. On MSVC it uses the release DLL CRT
+(`/MD`): Release consumers match it; Debug (`/MDd`) consumers link both CRTs (linker
+warning LNK4098) and, as with the shared library, no CRT object crosses the
+boundary. The installed-consumer gate links and runs the C and C++ consumers
+statically in Release, against a copy of the package without the shared library, and
+on Linux and macOS checks that the archive defines exactly the ABI's C symbols.
+Debug static consumers and sanitizers on static consumers are not tested.
+
+Ten new functions bring the library to 74 C exports. New layouts on supported 64-bit
+targets: 96-byte import options and 104-byte solid info (revision 1, extensible),
+48-byte discovery info, 40-byte context units, 112-byte discovered root, 120-byte
+discovered presentation and 32-byte choice (frozen). Existing ABI-1 records, symbols
+and statuses keep their contract.
+
+### Remaining for the ABI freeze
+
+The export set is not frozen yet. These items land in Rust first (Milestone 22, in
+parallel); each then needs its C/C++ surface, under installed-consumer tests, before
+the freeze:
+
+- **Tolerance policy for edges off their surfaces (22.3):** its multiple of the model
+  tolerance becomes a field of a `ts_import_options` revision; its counted adaptations
+  and measured distances become fields of a `ts_solid_info` revision.
+- **Opt-in sewing and orientation repair (22.5):** an opt-in flag bit and a repair
+  tolerance in an options revision; repair counts (and the separate disconnected-shell
+  classification) in a solid-info revision.
+- **Surface models as shell meshes (22.6):** a shell import entry point (open or closed
+  shells, never solids) with its own info record, and surface-model roots in discovery
+  (a new `TS_ROOT_*` kind, reported apart so existing root indices keep their meaning).
+- **Document import session (22.8):** a retained session handle created from a document
+  and options, with discovery, solid, tessellation and assembly import entry points
+  that share its parse and decode.
+- Assembly import taking `ts_import_options` (strictness, budgets and tolerances shared
+  with solid import, and the representation preference), next to the frozen
+  `ts_assembly_options` entry point.
+
+The freeze then covers the final export set (checked by `scripts/check_capi.py`), every
+published record layout and revision size, the status, stage, kind, flag and pairing
+values, the extensible-record rule above, and the shared and static CMake targets.
 
 ## Errors and panic containment
 
@@ -403,7 +558,8 @@ target_link_libraries(my_app PRIVATE TessSTEP::TessSTEP)
 
 The target supplies include paths, its required C++ language level, the C ABI
 library, and platform link dependencies transitively. Consumers of a prebuilt
-package do not need Cargo or knowledge of Rust linkage. Publish the supported
+package do not need Cargo or knowledge of Rust linkage. `TessSTEP::TessSTEP_static`
+is the static configuration ([static linkage](#static-linkage)). Publish the supported
 C/C++ compiler baseline and shared/static build configurations. Verify exported
 symbols, visibility, runtime dependencies, and Debug/Release configuration mapping
 on Linux, Windows and macOS.
@@ -423,10 +579,11 @@ parent destruction, and the absence of copies on documented zero-copy paths.
 Exercise relocation and `find_package` through `TessSTEP::TessSTEP` on all supported
 platforms, with sanitizer and ABI/layout checks where applicable.
 
-The document, mesh, scene, appearance, solid-import, tessellation and presentation subsets are exercised by `cargo test -p tessstep-capi` and
+The document, mesh, scene, appearance, solid-import, tessellation, presentation,
+assembly, import-option and discovery subsets are exercised by `cargo test -p tessstep-capi` and
 `python3 scripts/check_capi.py`. The latter installs and relocates the package,
 compiles/runs independent C11 and C++17 consumers in Debug/Release (plus a C-only
-CMake project) with Rust tool
+CMake project, and a Release build linked with `TessSTEP::TessSTEP_static`) with Rust tool
 invocations blocked, and verifies the exact exported symbol set. Release packaging
 runs those same consumers. Native consumer ASan/UBSan is available with
 `--sanitizers`; this does not instrument the Rust library. Mesh and presentation lifetime, pointer stability, ownership, failure and zero-copy

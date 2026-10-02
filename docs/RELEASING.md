@@ -60,7 +60,7 @@ on every PR and main push and is required again by the release workflow.
    packages, then publish the draft. Manual dispatch must select an existing
    matching tag; dispatching on a branch fails safely.
 
-Release assets contain `stepdump`, `expressc`, the shared ABI 1 library, C/C++
+Release assets contain `stepdump`, `expressc`, the shared and static ABI 1 libraries, C/C++
 headers, relocatable CMake package, documentation, MIT license, and authored examples. GitHub also provides the tagged source archive for Rust
 library consumers. This workflow does not publish crates to crates.io.
 
@@ -68,8 +68,10 @@ Packaging installs and relocates the C/C++ SDK, compiles/runs standalone C11/C++
 consumers in both Debug and Release, and checks the exact exported ABI symbol set.
 No Rust toolchain is used by those consumers. The existing Linux/Windows/macOS release
 matrix runs this gate before creating archives; Linux/macOS CI also instruments native
-consumers with ASan/UBSan. Shared linkage is the only packaged configuration. General schema and B-rep construction operations remain unavailable. Mesh views,
-scenes, appearance and selected faceted and edge-based planar STEP-to-mesh conversion are exposed. Local
+consumers with ASan/UBSan. The package ships the shared library and a static archive
+(`TessSTEP::TessSTEP_static`), and the gate also links and runs the consumers
+statically in Release. General schema and B-rep construction operations remain unavailable. Mesh views,
+scenes, appearance, discovery and selected faceted, planar and curved STEP-to-mesh conversion are exposed. Local
 verification does not substitute for the cross-platform CI results in `C_API.md`.
 
 Local equivalents:

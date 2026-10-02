@@ -12,7 +12,7 @@ import tempfile
 import tomllib
 import zipfile
 
-from check_capi import install_package, verify_installed
+from check_capi import SYMBOLS, install_package, verify_installed
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,12 +68,15 @@ def main():
         validator = subprocess.check_output([str(package / "bin" / ("expressc" + suffix)), "--validator", str(package / "examples/express/valid/base.exp")], cwd=temporary, stderr=subprocess.PIPE)
         if b"schema-structure" not in validator:
             raise ValueError("Packaged expressc failed validator generation smoke test")
-        install_package(Path(temporary) / "cmake-build", package, library_dir=build)
+        # The target also selects the system libraries the static library declares.
+        install_package(Path(temporary) / "cmake-build", package, library_dir=build, target=args.target)
         verify_installed(package)
         (package / "PACKAGE.json").write_text(json.dumps({"version": version, "target": args.target,
             "commit": os.environ.get("GITHUB_SHA", "local"), "tools": ["stepdump", "expressc"],
-            "c_abi": {"version": 1, "scope": "documents_meshes_scenes_appearance_planar_import", "linkage": "shared"},
-            "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP"}, "tessellation": "planar_and_faceted_brep_explicit_root_and_units"}, indent=2) + "\n", encoding="utf-8")
+            "c_abi": {"version": 1, "exports": len(SYMBOLS), "linkage": ["shared", "static"],
+                      "scope": "documents_meshes_scenes_appearance_solid_tessellated_presentation_assembly_import_discovery"},
+            "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP", "static_target": "TessSTEP::TessSTEP_static"},
+            "tessellation": "planar_faceted_and_curved_brep_explicit_root_and_units"}, indent=2) + "\n", encoding="utf-8")
         if suffix:
             archive = output / (name + ".zip")
             with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as stream:

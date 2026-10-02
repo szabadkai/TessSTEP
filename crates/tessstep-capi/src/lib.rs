@@ -8,8 +8,14 @@ mod appearance;
 pub use appearance::*;
 mod assembly;
 pub use assembly::*;
+mod discovery;
+pub use discovery::*;
 mod mesh;
+mod options;
+pub use options::*;
 mod scene;
+mod solid;
+pub use solid::*;
 mod tessellated;
 pub use mesh::*;
 pub use scene::*;
@@ -473,5 +479,6 @@ mod tests {
         check::<TsDiagnostics>();
         check::<TsScene>();
         check::<TsAppearance>();
+        check::<TsDiscovery>();
     }
 }
