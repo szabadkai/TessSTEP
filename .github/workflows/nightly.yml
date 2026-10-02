@@ -1,42 +1,155 @@
 name: Extended validation
 on:
   workflow_dispatch:
+    inputs:
+      budget:
+        description: Seconds of instrumented fuzzing per target (1-900)
+        type: number
+        default: 240
+      targets:
+        description: Comma-separated fuzz targets; empty runs every target in fuzz/Cargo.toml
+        type: string
+        default: ''
   schedule:
     - cron: '31 2 * * *'
 permissions:
   contents: read
 jobs:
-  fuzz:
+  # Build every fuzz/Cargo.toml target once with AddressSanitizer, libFuzzer coverage
+  # and debug assertions; the matrix below runs the binaries in parallel.
+  fuzz-build:
+    name: Build instrumented fuzz targets
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+      budget: ${{ steps.plan.outputs.budget }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Select targets from fuzz/Cargo.toml and the time budget
+        id: plan
+        shell: bash
+        env:
+          ONLY: ${{ inputs.targets }}
+          BUDGET: ${{ inputs.budget }}
+        run: python scripts/fuzz_seeds.py --plan --only "$ONLY" --budget "$BUDGET" | tee -a "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Require an up-to-date fuzz lockfile
+        run: cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version 1 > /dev/null
+      - name: Build every target with AddressSanitizer, coverage and debug assertions
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+        run: cargo fuzz build --sanitizer address --debug-assertions
+      - name: Collect the target binaries
+        shell: bash
+        run: |
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          mkdir fuzz-bin
+          for target in $(python scripts/fuzz_seeds.py --list); do
+            cp "fuzz/target/$host/release/$target" fuzz-bin/
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-binaries
+          path: fuzz-bin/
+          retention-days: 1
+          if-no-files-found: error
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    needs: fuzz-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.fuzz-build.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fuzz-binaries
+          path: fuzz-bin
+      - name: Fuzz for the time budget, minimize and replay any failing input
+        env:
+          TARGET: ${{ matrix.target }}
+          BUDGET: ${{ needs.fuzz-build.outputs.budget }}
+        run: |
+          chmod +x "fuzz-bin/$TARGET"
+          python scripts/fuzz_report.py run --target "$TARGET" --binary "fuzz-bin/$TARGET" --seconds "$BUDGET" \
+            --require-instrumented --build "cargo +nightly fuzz build --sanitizer address --debug-assertions"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: fuzz-report-${{ matrix.target }}
+          path: reports/fuzz/
+          retention-days: 14
+          if-no-files-found: warn
+  fuzz-smoke:
+    name: Stable fuzz driver smoke and finding replay
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
-          toolchain: nightly
-      - run: cargo install cargo-fuzz --locked
-      - run: cargo fuzz run part21_parser corpus/part21/valid corpus/part21/invalid -- -max_total_time=120 -max_len=65536
-      - run: cargo fuzz run part21_lexer corpus/part21/valid corpus/part21/invalid -- -max_total_time=120 -max_len=65536
-      - run: cargo fuzz run entity_database corpus/part21/valid corpus/part21/invalid -- -max_total_time=120 -max_len=65536
-      - run: cargo fuzz run express_frontend corpus/express/valid corpus/express/invalid -- -max_total_time=120 -max_len=8192
-      - run: cargo fuzz run schema_codegen corpus/express/valid corpus/express/invalid -- -max_total_time=120 -max_len=8192
-      - run: cargo fuzz run schema_decoder corpus/schema -- -max_total_time=120 -max_len=65536
-      - run: cargo fuzz run brep_pipeline -- -max_total_time=120 -max_len=96
-      - run: cargo fuzz run nurbs_curves -- -max_total_time=120 -max_len=128
-      - run: cargo fuzz run surface_evaluators -- -max_total_time=120 -max_len=128
-      - run: cargo fuzz run tessellated_import corpus/geometry -- -max_total_time=120 -max_len=65536
-      - run: cargo fuzz run presentation_import corpus/geometry -- -max_total_time=120 -max_len=65536
-      - run: cargo fuzz run analytic_curves -- -max_total_time=120 -max_len=128
-      - run: cargo fuzz run math_primitives -- -max_total_time=120 -max_len=144
-      - run: cargo fuzz run product_adapter corpus/product -- -max_total_time=120 -max_len=65536
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: failure()
+          toolchain: stable
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          name: fuzz-artifacts
-          path: fuzz/artifacts
-          retention-days: 7
+          python-version: '3.12'
+      - run: python scripts/fuzz_report.py smoke
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: fuzz-report-smoke
+          path: reports/fuzz/
+          retention-days: 14
+          if-no-files-found: warn
+  fuzz-report:
+    name: Fuzz report
+    needs: [fuzz-build, fuzz, fuzz-smoke]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        continue-on-error: true
+        with:
+          pattern: fuzz-report-*
+          path: reports/fuzz
+          merge-multiple: true
+      - name: Summarize instrumented runs and driver smoke
+        env:
+          EXPECTED: ${{ needs.fuzz-build.outputs.targets }}
+          BUILD: ${{ needs.fuzz-build.result }}
+        run: python scripts/fuzz_report.py summary --expected "$EXPECTED" --build-result "$BUILD"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: fuzz-summary
+          path: reports/fuzz-summary/
+          retention-days: 14
+          if-no-files-found: warn
   regression-and-benchmark:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

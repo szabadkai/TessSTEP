@@ -22,6 +22,53 @@ time: `c;m` here (libSystem omitted, the Apple driver links it). The Linux and W
 lists, the Windows static consumers and the sanitizer runs are CI-only; this
 validation is macOS arm64.
 
+# Milestone 22.9: extended fuzzing — 2026-10-02
+
+Delivered: a nightly matrix that builds the fifteen `fuzz/Cargo.toml` targets once with
+AddressSanitizer, coverage and debug assertions and fuzzes each for a fixed budget
+(240 s, `workflow_dispatch` adjustable) with per-target limits; deterministic seed
+assembly (`scripts/fuzz_seeds.py`); minimization and replay of every failing input, a
+per-target and aggregated report that marks instrumented runs and stable driver smoke
+(`scripts/fuzz_report.py`); and committed findings under `fuzz/regressions/<target>/`
+replayed on stable by `cargo test -p tessstep --test fuzz_regressions`. It replaces the
+14 sequential 120 s sessions, which did not run `brep_import` and gave the five binary
+harnesses no seeds. The six targets whose bodies were inline (`part21_lexer`,
+`part21_parser`, `product_adapter`, `tessellated_import`, `presentation_import`,
+`brep_import`) now share them through `fuzz/support/`, so every target body is compiled
+and linted by the workspace build.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked`, fmt, Clippy (`-D warnings`, all targets) | passed (270 tests), including `every_fuzz_target_has_a_stable_replay`, `committed_fuzz_findings_replay_without_failure` (one finding) and `regression_replay_names_every_failing_finding_and_unknown_target` |
+| Script unit tests (67; 22 new in `test_fuzz.py`) | passed; the PyYAML structure check is skipped without PyYAML, and the workflow was parsed with Ruby's YAML loader instead |
+| `check_architecture.py`, `conformance.py --check`, `check_corpus.py` | passed |
+| Fuzz package in an unnested copy: `cargo check --locked`, Clippy `-D warnings`, fmt | passed after refreshing `fuzz/Cargo.lock`, which lacked the `tessstep-ap242` and `tessstep-product` edges of `tessstep-import`, so `--locked` failed at the previous commit; the nightly build now requires a current lockfile |
+| `fuzz_report.py smoke` | 14 of 14 stable smoke tests passed |
+| `fuzz_report.py run` with all fifteen stable-built drivers (2 s each) | every report `instrumented: false`; 14 clean, `brep_import` one finding (below), clean after the fix with all 61 geometry seeds |
+| Crash, minimization and replay with real libFuzzer (a throwaway stable-built probe target) | a 42-byte crash was minimized to 4 bytes and reproduced; the report named the panic location and message |
+
+Observed with libfuzzer-sys 0.4.13: `-minimize_crash` combined with `-max_len` aborts on
+libFuzzer's `MaxInputLen == 0` assertion and writes an empty "minimized" file, so
+minimization and replay run without `-max_len` (as `cargo fuzz tmin` does), and a
+minimized input that does not fail again is discarded. A stable-built driver logs no
+`inline 8-bit counters` line and no `cov:`/`ft:` fields, and its binary contains neither
+`__asan_init` nor the ASan runtime's `heap-buffer-overflow` string. The report needs
+both kinds of evidence to mark a run `instrumented: true`.
+
+First finding, from stable driver smoke rather than an instrumented run: the
+`brep_import` target asserted `require_solid()`, which demands one mesh component, but a
+`BREP_WITH_VOIDS` cavity meshes as an inward component
+(`brep_cavity_shells_mesh_as_inward_components`), so the authored
+`brep-sphere-cavity.step` seed failed it. The oracle now requires a watertight mesh with
+positive volume and one component per shell. The input is committed as
+`fuzz/regressions/brep_import/sphere-cavity-second-component.step`; the replay test
+failed on it, naming the file, before the fix, and passes after it. No library code
+changed.
+
+Not observed here: the instrumented nightly matrix (no nightly toolchain or cargo-fuzz
+locally), so no coverage, feature or execution figures are claimed yet. The MSRV 1.85
+compile of the bodies now in `fuzz/support/` was not run locally.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

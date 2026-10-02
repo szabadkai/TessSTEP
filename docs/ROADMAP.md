@@ -675,10 +675,30 @@ baseline movements, never a refreshed baseline.
   costs its size once. Add a benchmark over the largest corpus inputs
   (`bug33261.stp` takes 13 s locally) recording time and peak memory per stage, run
   nightly with the existing benchmarks; set explicit per-stage budgets from it.
-- **22.9 Extended fuzzing.** Run the fifteen coverage-guided targets nightly with
-  sanitizers under a fixed time budget, seed them from the authored corpora, and turn
-  every minimized finding into a regression test. The report distinguishes
-  instrumented runs from driver smoke.
+- **22.9 Extended fuzzing — delivered 2026-10-02.** The nightly workflow builds the
+  fifteen `fuzz/Cargo.toml` targets once with AddressSanitizer, coverage and debug
+  assertions and fuzzes each in its own matrix job for a fixed budget (240 s;
+  `workflow_dispatch` takes a budget and a target subset) with per-target `-max_len`,
+  `-timeout`, `-rss_limit_mb` and `-malloc_limit_mb`. It replaces the 14 sequential
+  120 s sessions, which missed `brep_import` and gave the binary harnesses no seeds.
+  `scripts/fuzz_seeds.py` derives the matrix from `fuzz/Cargo.toml` and assembles
+  deterministic seeds from the authored corpora, generated layouts for the binary
+  harnesses and committed findings. Each failing input is minimized with libFuzzer's
+  `-minimize_crash` loop (as `cargo fuzz tmin`) and replayed. `scripts/fuzz_report.py`
+  reports per target executions, coverage and features, corpus, duration and findings,
+  marked `instrumented: true` only on evidence (coverage counters in the log, the
+  AddressSanitizer runtime in the binary), and the stable `fuzz_smoke` tests as
+  `instrumented: false`. Minimized findings are committed under
+  `fuzz/regressions/<target>/` and replayed through each target's exercise function in
+  normal CI; the six targets whose bodies were inline now share them through
+  `fuzz/support/`. The first finding came from stable driver smoke over the new seeds,
+  not an instrumented run: `brep_import` required one mesh component, but a
+  `BREP_WITH_VOIDS` cavity meshes as an inward component, so the authored sphere cavity
+  failed it; the oracle now requires one component per shell and the input is the first
+  committed regression. Evidence: `scripts/test_fuzz.py`,
+  `every_fuzz_target_has_a_stable_replay`, `committed_fuzz_findings_replay_without_failure`,
+  `regression_replay_names_every_failing_finding_and_unknown_target`, and
+  [VALIDATION.md](VALIDATION.md). Not yet observed: an instrumented nightly run.
 - **22.10 Public interfaces — first pass delivered 2026-10-02.** Single-root curved
   import, root and unit discovery, representation selection and import options
   (strictness, budgets, tolerance policy, repair opt-in) in C and C++, under

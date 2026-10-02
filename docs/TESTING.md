@@ -16,6 +16,7 @@ python3 scripts/check_express.py
 python3 scripts/conformance.py --check
 cargo test -p tessstep-model --test fuzz_smoke -- --nocapture
 cargo test -p tessstep-express --test fuzz_smoke -- --nocapture
+cargo test -p tessstep --test fuzz_regressions -- --nocapture
 ```
 
 Tests cover every value family, scalar boundaries, all supported page encodings,
@@ -35,13 +36,14 @@ requires documented permission, license, and exporter/version provenance.
 `fuzz_smoke` shares bounded exercise code with libFuzzer. It replays all committed files,
 every prefix, seven byte replacements at each offset, and seeded arbitrary-byte inputs.
 It is deterministic and runs in normal stable CI. This is useful regression evidence,
-not an exhaustive security result. The separate `fuzz` package provides lexer, parser,
-and entity-database targets. Nightly cargo-fuzz adds coverage and sanitizer instrumentation;
-see `fuzz/README.md`. Save a minimized failure as a reproducible regression.
+not an exhaustive security result. The separate `fuzz` package provides fifteen
+coverage-guided targets. Nightly cargo-fuzz adds coverage and sanitizer instrumentation;
+see `fuzz/README.md` and the extended fuzzing section below. Commit a minimized failure
+under `fuzz/regressions/<target>/`, where `fuzz_regressions` replays it.
 
 PR CI covers stable Linux/Windows/macOS, the MSRV, parser/property/corpus tests, architecture,
 format/lint, conformance generation, JSON determinism, dependency policy and advisory checks.
-Scheduled CI runs release tests, benchmarks, and short instrumented fuzz sessions.
+Scheduled CI runs release tests, benchmarks, and the instrumented fuzz matrix.
 Benchmarks run automatically only there (artifact `benchmark-results`); the
 `cargo bench` targets named below are not part of local verification. Longer
 runs for memory profiling, huge datasets, CAD differential testing and cross-platform
@@ -246,3 +248,25 @@ the selection survey and five hash-pinned exporter files. The corpus runner surv
 every shape tessellation root and annotation occurrence. Fuzz targets are
 `tessellated_import` and `presentation_import`; the nightly
 `cargo bench -p tessstep-import --bench tessellated` run measures both imports.
+
+## Extended fuzzing (Milestone 22.9)
+
+The nightly workflow builds all fifteen `fuzz/Cargo.toml` targets once with
+AddressSanitizer, libFuzzer coverage and debug assertions, then runs each in its own
+matrix job for a fixed budget (240 s by default; `workflow_dispatch` takes `budget` and
+a `targets` subset). The matrix comes from `fuzz/Cargo.toml` through
+`scripts/fuzz_seeds.py --plan`. Seeds are assembled deterministically from the authored
+corpora, generated layouts for the binary harnesses and `fuzz/regressions/`. Failing
+inputs are minimized (`-minimize_crash`, as `cargo fuzz tmin`) and replayed. A separate
+stable job runs the `fuzz_smoke` tests and the replay. The `fuzz-summary` artifact and
+the job summary list each target's executions, coverage and features, corpus, duration
+and findings with `instrumented: true`, and the stable smoke with `instrumented: false`.
+A run counts as instrumented only when its log shows coverage counters and its binary
+contains the AddressSanitizer runtime.
+
+`cargo test -p tessstep --test fuzz_regressions` compiles every target's exercise
+function on stable, checks the table against `fuzz/Cargo.toml`, and replays every file
+under `fuzz/regressions/<target>/`, naming each one that fails. `scripts/test_fuzz.py`
+covers seed assembly, the plan, libFuzzer log parsing, the run, minimization and replay
+flow against a stand-in driver, the summary and the workflow's structure. See
+`fuzz/README.md` for the procedure that turns a finding into a regression.

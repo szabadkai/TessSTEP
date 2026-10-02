@@ -2,3 +2,5 @@
 *.step text eol=lf
 *.rs text eol=lf
 *.json text eol=lf
+# Minimized fuzz findings are replayed byte for byte.
+fuzz/regressions/** -text
