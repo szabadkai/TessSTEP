@@ -23,7 +23,9 @@ not AP conformance.
   only within the tolerance are regular chart sides.
 - UV loop failures name their `EDGE_CURVE`s, vertex or loop and a cause class; the
   importer's chart causes (boundary resolution, polygon-check cost, `.U.` closure,
-  sphere charts and others) are fixed.
+  sphere charts and others) are fixed, and the triangulator bridges holes at the copy
+  of a repeated vertex that faces them, so no root fails on an unclassified polygon
+  error.
 - Opt-in, tolerance-bounded sewing and orientation repair (`ImportOptions::repair`)
   with a per-solid `RepairReport`; strict rejection stays the default and classifies
   unsewn closed shells.
@@ -39,8 +41,8 @@ not AP conformance.
   (strictness, budgets, tolerance policy, repair), import sessions with failure text,
   assembly import options and adaptations, and a static library target
   (`TessSTEP::TessSTEP_static`). Consumers now require `find_package(TessSTEP 1.0)`.
-- Corpus baseline at 1.0.0: 3,227 compatible inputs, 742 meshed shape roots of 1,197
-  (577 at 0.1.0), 799 past geometry and topology, 1,127 meshed surface models and 596
+- Corpus baseline at 1.0.0: 3,227 compatible inputs, 762 meshed shape roots of 1,197
+  (577 at 0.1.0), 799 past geometry and topology, 1,128 meshed surface models and 596
   accepted product structures.
 
 ## 0.1.0 — 2026-09-27 (pre-release)

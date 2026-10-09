@@ -274,7 +274,7 @@ pole seams, `VERTEX_LOOP`s, full spheres), with polar-wedge tessellation at pole
 copies, exact meridian pcurves and one-sided pole limits. Swept surfaces (exact
 elementary charts or exact NURBS, with STEP normal orientation), `TRIMMED_CURVE`
 bases and `BREP_WITH_VOIDS` cavity shells followed the same day. C/C++ entry points
-and anisotropic refinement remain pending.
+and anisotropic refinement remained pending (delivered by Milestones 22.10 and 22.2).
 
 **Import hardening backlog — observed on third-party CAD exports.**
 
@@ -333,7 +333,7 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   bounded context profile. Missing or conflicting units are per-root errors, never
   defaults. Milestone 20 applies the same rules to shape tessellations and annotation
   occurrences. Linking roots to product definitions and placements (Milestone 5
-  graphs) remains. Evidence: `discovery_reads_context_units_and_uncertainty`,
+  graphs) remained (delivered by Milestone 21.7). Evidence: `discovery_reads_context_units_and_uncertainty`,
   `presentation_discovery_follows_callouts_into_draughting_models`.
 - **Corpus geometry stage — delivered 2026-09-26.** The corpus runner imports every
   solid root and reports per-root outcomes grouped by stage and error category; see
@@ -599,7 +599,7 @@ entities), `data/ap203e2/ap203e2_mim_lf.exp` (1,006) and `data/ap203/ap203.exp` 
   nodes, root outcomes, typed exclusions, style counts, scene and appearance
   acquisitions), C++ `Document::schema`, `Document::import_assembly` and `Assembly`;
   64 exports under installed-consumer tests ([C API](C_API.md)). The single-root curved
-  import C entry point remains with the curved-import follow-up.
+  import C entry point followed in Milestone 22.10.
 
 Result (2026-09-27): every exit criterion below is met, with the scope decisions
 recorded above; the reviewed corpus baseline holds 577 meshed roots and 585 accepted
@@ -944,8 +944,8 @@ ABI covers discovery, curved import and import options, and its export set is
 frozen with the consumer tests passing on the installed package.
 
 Result (2026-10-10): every item is delivered and integrated on `main` with reviewed
-corpus movements, and the 1.0.0 baseline is saved: 742 of 1,197 shape roots mesh (577
-before), 1,127 surface models mesh as shells, no input times out, and no file lost a
+corpus movements, and the 1.0.0 baseline is saved: 762 of 1,197 shape roots mesh (577
+before), 1,128 surface models mesh as shells, no input times out, and no file lost a
 meshed root ([VALIDATION.md](VALIDATION.md)). Exit criteria met locally: the Onshape
 export imports as a closed solid; every repair and tolerance adaptation is opt-in or
 counted and reported per root; surface models import as shells; every budget failure

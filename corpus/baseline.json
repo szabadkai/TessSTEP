@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "run_id": "2026-10-09T23-07-28-752978Z",
-  "source_fingerprint": "33f49b51c3cad9655e41bf42f64382313afdee1e2439520f599df82afe001667",
+  "run_id": "2026-10-09T23-46-22-154489Z",
+  "source_fingerprint": "d8e898fb3511d1af4e5f0deed37f828c45293e5309b65281eb8fc09ce4e9492c",
   "cases": [
     {
       "sha256": "e486bfb50625f5270d2b239c004c61f30c9f2fd8f230e395a8c10cbb8c45cb09",
@@ -156380,7 +156380,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -156418,7 +156418,7 @@
           "unordered_complex": 0
         }
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 663,
         "AXIS2_PLACEMENT_3D": 1205,
@@ -156479,7 +156479,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -156510,7 +156510,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 139,
         "AXIS2_PLACEMENT_3D": 245,
@@ -156546,7 +156546,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -156582,7 +156582,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 517,
         "AXIS2_PLACEMENT_3D": 940,
@@ -156882,7 +156882,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -156918,7 +156918,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 270,
         "AXIS2_PLACEMENT_3D": 550,
@@ -157032,7 +157032,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -157063,7 +157063,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 214,
         "AXIS2_PLACEMENT_3D": 467,
@@ -157325,7 +157325,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -157356,7 +157356,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 139,
         "AXIS2_PLACEMENT_3D": 245,
@@ -157392,7 +157392,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -157428,7 +157428,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 405,
         "AXIS2_PLACEMENT_3D": 832,
@@ -157637,7 +157637,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -157673,7 +157673,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 635,
         "AXIS2_PLACEMENT_3D": 1135,
@@ -158370,7 +158370,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -158406,7 +158406,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 264,
         "AXIS2_PLACEMENT_3D": 480,
@@ -158703,7 +158703,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -158734,7 +158734,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 270,
         "AXIS2_PLACEMENT_3D": 596,
@@ -161143,7 +161143,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -161174,7 +161174,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 772,
         "AXIS2_PLACEMENT_3D": 1488,
@@ -163220,7 +163220,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -163251,7 +163251,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 313,
         "AXIS2_PLACEMENT_3D": 581,
@@ -163902,7 +163902,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -163938,7 +163938,7 @@
         "unplaced_roots": 1,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 204,
         "AXIS2_PLACEMENT_3D": 338,
@@ -165624,7 +165624,7 @@
         "product": "accepted",
         "geometry": "accepted",
         "tessellation": "partial",
-        "surface_model": "partial"
+        "surface_model": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 77956,
@@ -165695,7 +165695,7 @@
         "VERTEX_POINT": 2740
       },
       "presentation_accepted": null,
-      "surface_model_accepted_roots": 3,
+      "surface_model_accepted_roots": 4,
       "surface_model_closure_types": {
         "ADVANCED_FACE": 403,
         "AXIS2_PLACEMENT_3D": 446,
@@ -166678,7 +166678,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -166709,7 +166709,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 671,
         "AXIS2_PLACEMENT_3D": 1103,
@@ -166753,7 +166753,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -166789,7 +166789,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 517,
         "AXIS2_PLACEMENT_3D": 819,
@@ -166919,7 +166919,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -166950,7 +166950,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 671,
         "AXIS2_PLACEMENT_3D": 1103,
@@ -167815,7 +167815,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -167851,7 +167851,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 517,
         "AXIS2_PLACEMENT_3D": 517,
@@ -169653,7 +169653,7 @@
         "schema": "not_configured",
         "product": "not_configured",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -169666,7 +169666,7 @@
         "declared": "CCD_CLA_GVP_AST"
       },
       "product_result": null,
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 696,
         "AXIS2_PLACEMENT_3D": 660,
@@ -175047,7 +175047,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 10,
+      "geometry_accepted_roots": 11,
       "geometry_closure_types": {
         "ADVANCED_FACE": 801,
         "AXIS1_PLACEMENT": 5,
@@ -179781,7 +179781,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 9,
+      "geometry_accepted_roots": 10,
       "geometry_closure_types": {
         "ADVANCED_FACE": 801,
         "AXIS1_PLACEMENT": 5,
