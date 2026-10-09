@@ -127,7 +127,10 @@ impl ImportedSurfaceModel {
 /// orientations, and two uses of every edge when closed. No solid is built, so no
 /// volume or outward orientation is required. Each shell is then kept as its own
 /// validated B-rep. VERTEX_SHELL and WIRE_SHELL boundaries are outside the profile.
-/// Shells keep their EDGE_CURVE and VERTEX_POINT identities; nothing is sewn.
+/// Shells keep their EDGE_CURVE and VERTEX_POINT identities; nothing is sewn: the
+/// opt-in repair stage (`options.repair`) does not apply, since sewing could join
+/// declared shells. The tolerance policy (`options.deviation_factor`) does, and each
+/// shell is validated at the working tolerance it implies.
 pub fn import_surface_model(
     document: &Document,
     root: EntityId,
@@ -136,6 +139,10 @@ pub fn import_surface_model(
     tolerance: ModelTolerance,
     options: ImportOptions,
 ) -> Result<ImportedSurfaceModel, Error> {
+    let options = ImportOptions {
+        repair: RepairOptions::default(),
+        ..options
+    };
     let mut declared = Vec::new();
     let imported = import_shells(
         document,
@@ -146,6 +153,22 @@ pub fn import_surface_model(
         options,
         Some(&mut declared),
     )?;
+    // Accepted deviations widen the validation of every shell, as for solids.
+    let working = imported.brep().model_tolerance();
+    let tolerance = if working > tolerance.distance().as_metres() {
+        Length::metres(working)
+            .ok()
+            .and_then(|distance| ModelTolerance::new(distance, tolerance.angle()).ok())
+            .ok_or_else(|| Error {
+                kind: ErrorKind::InvalidGeometry,
+                stage: Stage::Topology,
+                entity: Some(root),
+                source: None,
+                message: format!("working tolerance {working:e} m is not a valid model tolerance"),
+            })?
+    } else {
+        tolerance
+    };
     let mut shells = Vec::new();
     for (index, (entity, closed)) in declared.into_iter().enumerate() {
         let (raw, faces) = extract(&imported, index);

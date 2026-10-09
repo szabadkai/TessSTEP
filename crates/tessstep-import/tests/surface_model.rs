@@ -407,3 +407,35 @@ fn surface_model_unmodified_catia_surface_export() {
         assert!(!mesh.is_watertight());
     }
 }
+
+#[test]
+fn surface_models_ignore_the_opt_in_repair_stage() {
+    // Sewing could join declared shells, so repair options leave a surface model as
+    // declared: the open patches keep their boundary and every shell its faces.
+    let repaired = ImportOptions {
+        repair: RepairOptions::enabled(),
+        ..ImportOptions::default()
+    };
+    for (text, root) in [(OPEN, 1000), (CLOSED, 1000)] {
+        let plain = import(text, root);
+        let with_repair = import_with(text, root, repaired);
+        let summary = |m: &Result<ImportedSurfaceModel, Error>| {
+            m.as_ref()
+                .map(|m| {
+                    m.shells()
+                        .iter()
+                        .map(|s| {
+                            (
+                                s.entity(),
+                                s.closed(),
+                                s.face_entities().len(),
+                                s.boundary_edges(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .map_err(|e| (e.stage, e.kind, e.message.clone()))
+        };
+        assert_eq!(summary(&plain), summary(&with_repair));
+    }
+}

@@ -462,8 +462,11 @@ orientation (an `ORIENTED_CLOSED_SHELL(.F.)` facing inward is accepted as a shel
 per shell and fails with the first failing shell; each shell has the full tessellation
 budgets. Profile, geometry, topology and tessellation errors are typed as for solids,
 located at the failing entity, the model root (model topology) or the shell
-(per-shell topology and tessellation). Rust is the only interface so far; C/C++
-exposure of surface models is a follow-up to Milestone 22.10.
+(per-shell topology and tessellation). The [tolerance policy](#tolerance-policy)
+applies, and each shell is validated at the working tolerance it implies; the opt-in
+[topology repair](#opt-in-topology-repair) does not, since sewing could join declared
+shells (`surface_models_ignore_the_opt_in_repair_stage`). C and C++ import surface
+models through `ts_document_import_surface_model` ([C API](C_API.md)).
 
 Evidence: `tests/surface_model.rs` and
 [`surface_fixtures.py`](../corpus/geometry/surface_fixtures.py): an open shell of a
