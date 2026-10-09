@@ -1,8 +1,10 @@
 //! Usage: cargo run -p tessstep-import --example brep -- FILE ROOT_ID METRES_PER_UNIT
 //!     [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict] [--repair]
+//!     [--deviation-factor F]
 //! Imports one MANIFOLD_SOLID_BREP with the curved B-rep profile and reports
 //! profile/geometry/tessellation stages independently as JSON. Plane angles are
-//! radians unless --degrees is given; the model tolerance defaults to 1e-8 m.
+//! radians unless --degrees is given; the model tolerance defaults to 1e-8 m and the
+//! tolerance policy multiple to `ImportOptions::DEVIATION_FACTOR`.
 //! --repair enables the opt-in sewing and orientation repair at the default sewing
 //! tolerance; the repair counts are reported either way.
 #![forbid(unsafe_code)]
@@ -40,8 +42,9 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     };
     let model_tolerance = value("--model-tolerance", 1e-8)?;
     let chord = value("--chord", 1e-6)?;
+    let deviation_factor = value("--deviation-factor", ImportOptions::DEVIATION_FACTOR)?;
     if args.len() != 3 {
-        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict] [--repair]".into());
+        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict] [--repair] [--deviation-factor F]".into());
     }
     let root = EntityId::new(args[1].parse()?).ok_or("root must be nonzero")?;
     let unit = LengthUnit::metres_per_unit(args[2].parse()?)?;
@@ -63,6 +66,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         } else {
             RepairOptions::default()
         },
+        deviation_factor,
         ..ImportOptions::default()
     };
     let imported = import_brep_solid(&doc, root, unit, angle, model, options);
@@ -71,10 +75,13 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         .map(|s| s.adaptations())
         .unwrap_or_default();
     let repairs = imported.as_ref().map(|s| s.repairs()).unwrap_or_default();
+    let (deviation, working) = imported.as_ref().map_or((0., model_tolerance), |s| {
+        (s.largest_deviation(), s.brep().model_tolerance())
+    });
     let result =
         imported.and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
     let adapted = format!(
-        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{},\"supplied_pcurves\":{},\"rejected_pcurves\":{}",
+        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{},\"supplied_pcurves\":{},\"rejected_pcurves\":{},\"off_surface_edges\":{},\"off_curve_vertices\":{},\"uncollapsed_sides\":{},\"largest_deviation_m\":{deviation:e},\"working_tolerance_m\":{working:e}",
         adaptations.inferred_outer_bounds,
         adaptations.inserted_seams,
         adaptations.split_edges,
@@ -82,7 +89,10 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         adaptations.collapsed_edges,
         adaptations.collapsed_faces,
         adaptations.supplied_pcurves,
-        adaptations.rejected_pcurves
+        adaptations.rejected_pcurves,
+        adaptations.off_surface_edges,
+        adaptations.off_curve_vertices,
+        adaptations.uncollapsed_sides
     ) + &format!(
         ",\"merged_vertices\":{},\"merged_edges\":{},\"max_merge_distance_m\":{:e},\"disconnected_shells\":{},\"flipped_faces\":{},\"reversed_loops\":{},\"reoriented_shells\":{},\"undecided_shells\":{}",
         repairs.merged_vertices,

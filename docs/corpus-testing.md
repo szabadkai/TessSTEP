@@ -95,7 +95,11 @@ its units with a 1e-7 m tolerance (`"context_units"`). When discovery finds no u
 (`"assumed"`). The chord tolerance is 1e-3 of the solid's vertex bounding-box
 diagonal, clamped to 1e-6..1e-3 m, with a 0.1 rad normal angle; each root records its
 units, declared uncertainty, tolerance and chord. These are measurement policies of the runner, not
-library defaults. Each report records the fallback assumption and the survey
+library defaults. Curved roots use the library's default
+[tolerance policy](CURVED_IMPORT.md#tolerance-policy) and, once imported, report
+`tolerance_adaptations` (off-surface edge uses, off-curve vertex ends, uncollapsed
+B-spline sides, the largest accepted deviation and the working tolerance; `null`
+when the import failed); the survey's `--deviation-factor=F` replaces the multiple. Each report records the fallback assumption and the survey
 executable hash.
 
 `geometry_result` keeps root counts (including existing-tessellation and

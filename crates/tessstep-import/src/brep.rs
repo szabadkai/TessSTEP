@@ -5,6 +5,7 @@ mod sewing;
 mod supplied;
 mod surface_model;
 mod swept;
+mod tolerance;
 use super::*;
 use crate::pcurve::{
     Chart, CurveShape, Frame, Inverter, PcurveError, Singular, V3, add, dot, nearest, norm, scale,
@@ -16,7 +17,8 @@ use tessstep_curves::spline::{NurbsCurve, SplineLimits};
 use tessstep_math::{Angle, AngleUnit, Length, ParameterSpace};
 use tessstep_surfaces::{NurbsSurface, Surface};
 
-/// Representation adaptations applied while importing. None changes geometry.
+/// Representation adaptations applied while importing. None changes geometry: the
+/// tolerance adaptations accept measured distances without moving any coordinate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Adaptations {
     /// Faces with several bounds and no FACE_OUTER_BOUND whose outer bound was
@@ -50,6 +52,21 @@ pub struct Adaptations {
     /// Supplied pcurves not used: outside the pcurve profile, or disagreeing with the
     /// 3D curve on their face; those uses receive a computed pcurve.
     pub rejected_pcurves: usize,
+    /// Edge uses on a face whose 3D curve lies farther than the model tolerance from
+    /// the face surface, within [`ImportOptions::deviation_factor`] times it. The
+    /// use receives the pcurve of the curve's surface projection; the mesh boundary
+    /// follows the 3D curve.
+    pub off_surface_edges: usize,
+    /// Edge ends whose vertex lies farther than the model tolerance from the edge
+    /// curve, within [`ImportOptions::deviation_factor`] times it. The edge is
+    /// bounded at the vertex's projection onto its curve; the vertex keeps its
+    /// position, which the mesh uses.
+    pub off_curve_vertices: usize,
+    /// B-spline surface sides that collapse to a point only within the model
+    /// tolerance (their points spread by more than a thousandth of it) and that an
+    /// edge of the face runs along: the face is charted with that side as a regular
+    /// boundary instead of a pole.
+    pub uncollapsed_sides: usize,
 }
 
 /// Import one selected MANIFOLD_SOLID_BREP (or BREP_WITH_VOIDS) whose faces lie on
@@ -64,6 +81,12 @@ pub struct Adaptations {
 /// curve. Representation adaptations (inferred outer bounds, inserted seams, split
 /// edges, re-charted spheres, collapsed edges and faces, supplied and rejected
 /// pcurves) are counted in [`ImportedSolid::adaptations`]; none changes geometry.
+///
+/// Edges farther than the model tolerance from their face surfaces and vertices
+/// farther than it from their edge curves are accepted up to
+/// `options.deviation_factor` times the model tolerance (none when strict), counted
+/// in the adaptations and reported by [`ImportedSolid::largest_deviation`]; farther
+/// ones are typed rejections naming the distance and the bound.
 ///
 /// `angle` scales plane-angle measures (cone semi-angles and conic and surface
 /// parameters of supplied pcurves). No unit inference is performed, and no topology is
@@ -162,6 +185,16 @@ pub(crate) fn adapt(
     mut surface: Option<&mut Vec<(EntityId, bool)>>,
 ) -> Result<ImportedSolid, Error> {
     let document = decoded.document();
+    let policy =
+        tolerance::Policy::new(tolerance.distance().as_metres(), options).map_err(|message| {
+            Error {
+                kind: ErrorKind::InvalidOptions,
+                stage: Stage::Profile,
+                entity: Some(root),
+                source: None,
+                message,
+            }
+        })?;
     let mut c = Context {
         decoded,
         raw: RawBrep::default(),
@@ -190,6 +223,8 @@ pub(crate) fn adapt(
         supplied: BTreeMap::new(),
         pcurve_uses: BTreeMap::new(),
         unreadable_pcurves: 0,
+        policy,
+        deviation: 0.,
     };
     // Supplied pcurves are retained as links on surface curves and decoded apart,
     // so a pcurve outside the profile never rejects the solid.
@@ -352,6 +387,9 @@ struct Builder {
     /// Whether each (edge, face) use with supplied pcurves used one.
     pcurve_uses: BTreeMap<(EntityId, EntityId), bool>,
     unreadable_pcurves: usize,
+    policy: tolerance::Policy,
+    /// The largest accepted distance beyond the model tolerance, in metres.
+    deviation: f64,
 }
 
 impl<'d, 'a> Context<'d, 'a> {
@@ -852,16 +890,19 @@ impl Builder {
         ))
     }
 
-    /// Curve parameter of a vertex. Closed B-splines resolve their shared end point
-    /// to the domain start or end as `at_end` requests.
+    /// Curve parameter of a vertex: the parameter of its projection onto the curve.
+    /// Closed B-splines resolve their shared end point to the domain start or end as
+    /// `at_end` requests. The vertex's distance from its projection is checked under
+    /// the tolerance policy.
     fn parameter(
-        &self,
+        &mut self,
         c: &Context<'_, '_>,
         curve: &CurveGeometry<ModelSpace, 3>,
         shape: &CurveShape,
-        p: V3,
+        vertex: VertexId,
         at_end: bool,
     ) -> Result<f64, Error> {
+        let p = c.raw.vertices[vertex.0].position.coordinates();
         let t = match shape {
             CurveShape::Line { origin, tangent } => {
                 dot(sub(p, *origin), *tangent) / dot(*tangent, *tangent)
@@ -891,13 +932,35 @@ impl Builder {
             }
         };
         let q = c.checked(curve.evaluate(t))?.position.coordinates();
-        if norm(sub(q, p)) > c.tolerance.distance().as_metres() {
+        self.vertex_deviation(c, vertex, norm(sub(q, p)))?;
+        Ok(t)
+    }
+
+    /// Accept, count or reject the distance between an edge end on its curve and the
+    /// edge's vertex there (the tolerance policy); `c.current` is the edge.
+    fn vertex_deviation(
+        &mut self,
+        c: &Context<'_, '_>,
+        vertex: VertexId,
+        distance: f64,
+    ) -> Result<(), Error> {
+        if distance <= self.policy.tolerance {
+            return Ok(());
+        }
+        if !self.policy.accepts(distance) {
             return Err(c.error(
                 ErrorKind::InvalidGeometry,
-                "EDGE_CURVE endpoint is off its declared curve",
+                format!(
+                    "VERTEX_POINT #{} of EDGE_CURVE #{} lies {distance:.3e} m from the edge curve, beyond {}",
+                    c.point_entities[vertex.0].get(),
+                    c.current.get(),
+                    self.policy.bound()
+                ),
             ));
         }
-        Ok(t)
+        self.adaptations.off_curve_vertices += 1;
+        self.deviation = self.deviation.max(distance);
+        Ok(())
     }
 
     fn edge<'d, 'a>(
@@ -919,15 +982,14 @@ impl Builder {
         c.current = edge.id;
         let (curve, shape) = self.curve(c, geometry)?;
         c.current = edge.id;
-        let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
         let closed = start == end;
         let range = match (&curve, &shape) {
             (_, CurveShape::Conic { .. }) => {
-                let ts = self.parameter(c, &curve, &shape, position(start), false)?;
+                let ts = self.parameter(c, &curve, &shape, start, false)?;
                 if closed {
                     [ts, ts + TAU]
                 } else {
-                    let te = self.parameter(c, &curve, &shape, position(end), true)?;
+                    let te = self.parameter(c, &curve, &shape, end, true)?;
                     let (a, b) = if same { (ts, te) } else { (te, ts) };
                     let span = (b - a).rem_euclid(TAU);
                     if span == 0. {
@@ -941,20 +1003,31 @@ impl Builder {
             }
             (CurveGeometry::Nurbs(n), _) if closed => {
                 let domain = n.knot_vector().domain();
-                self.parameter(c, &curve, &shape, position(start), false)?;
                 let ends = [domain[0], domain[1]].map(|t| curve.evaluate(t));
                 let [Ok(a), Ok(b)] = ends else {
                     return Err(c.error(ErrorKind::InvalidGeometry, "curve evaluation failed"));
                 };
-                let tol = c.tolerance.distance().as_metres();
                 let p = c.raw.vertices[start.0].position;
-                if c.checked(a.position.distance(p))? > tol
-                    || c.checked(b.position.distance(p))? > tol
-                {
+                let distances = [
+                    c.checked(a.position.distance(p))?,
+                    c.checked(b.position.distance(p))?,
+                ];
+                let farther = distances[0].max(distances[1]);
+                if !self.policy.accepts(farther) {
+                    // A vertex off the curve is rejected as such; one on it elsewhere
+                    // needs a reparameterized closed curve.
+                    self.parameter(c, &curve, &shape, start, false)?;
                     return Err(c.error(
                         ErrorKind::Unsupported,
-                        "closed B-spline edges must start and end at the curve domain ends",
+                        format!(
+                            "closed B-spline edges must start and end at the curve domain ends: VERTEX_POINT #{} lies {farther:.3e} m from them, beyond {}",
+                            c.point_entities[start.0].get(),
+                            self.policy.bound()
+                        ),
                     ));
+                }
+                for distance in distances {
+                    self.vertex_deviation(c, start, distance)?;
                 }
                 domain
             }
@@ -965,8 +1038,8 @@ impl Builder {
                         "an open curve cannot bound a closed edge",
                     ));
                 }
-                let ts = self.parameter(c, &curve, &shape, position(start), !same)?;
-                let te = self.parameter(c, &curve, &shape, position(end), same)?;
+                let ts = self.parameter(c, &curve, &shape, start, !same)?;
+                let te = self.parameter(c, &curve, &shape, end, same)?;
                 if (same && ts >= te) || (!same && ts <= te) {
                     return Err(c.error(
                         ErrorKind::InvalidGeometry,
@@ -1252,7 +1325,8 @@ impl Builder {
             } => (
                 ErrorKind::InvalidGeometry,
                 format!(
-                    "{name} lies {distance:.3e} m from the face surface at curve parameter {parameter}"
+                    "{name} lies {distance:.3e} m from the face surface at curve parameter {parameter}, beyond {}",
+                    self.policy.bound()
                 ),
             ),
             PcurveError::Singular { parameter } => (
@@ -1277,6 +1351,35 @@ impl Builder {
             ),
         };
         c.error(kind, message)
+    }
+
+    /// The typed rejection of an edge whose interior passes within the model
+    /// tolerance of a singular point of `face`'s chart at `parameter`, with the
+    /// measured distance and the singular line's extent.
+    fn crossing_error(
+        &self,
+        c: &Context<'_, '_>,
+        face: &FaceRecord,
+        edge: usize,
+        parameter: f64,
+    ) -> Error {
+        let e = &self.edges[edge];
+        let name = match e.entity {
+            Some(id) => format!("EDGE_CURVE #{}", id.get()),
+            None => "inserted seam".to_string(),
+        };
+        let tolerance = self.policy.tolerance;
+        let message = match tolerance::crossing(&face.chart, &face.surface, &e.curve, parameter) {
+            Some(x) if x.distance <= tolerance => format!(
+                "{name} crosses a singular point of the face surface at curve parameter {parameter}: it passes {:.3e} m from the point, whose singular line spans {:.3e} m, within the model tolerance {tolerance:.3e} m",
+                x.distance, x.extent
+            ),
+            // Inversion found no surface normal away from every singular line.
+            _ => format!(
+                "{name} meets a point where the face surface has no normal (a singular parameterization) at curve parameter {parameter}"
+            ),
+        };
+        c.error(ErrorKind::Unsupported, message)
     }
 
     /// `closed` holds the declared closure of each surface-model shell; a surface
@@ -1397,13 +1500,24 @@ impl Builder {
             });
         }
         let raw = std::mem::take(&mut c.raw);
+        // Accepted deviations widen every later check to the working tolerance (at
+        // least the sewing tolerance when opt-in sewing merged anything).
+        let working = self.policy.working(self.deviation);
+        let model = if working > tolerance {
+            c.checked(ModelTolerance::new(
+                c.checked(Length::metres(working))?,
+                c.tolerance.angle(),
+            ))?
+        } else {
+            c.tolerance
+        };
         let locator = crate::repair::Locator {
             document: c.decoded.document(),
             root,
             edges: self.edges.iter().map(|e| e.entity).collect(),
             vertices: Vec::new(),
         };
-        let (brep, repairs) = crate::repair::finish(raw, c.tolerance, options, repairs, &locator)?;
+        let (brep, repairs) = crate::repair::finish(raw, model, options, repairs, &locator)?;
         Ok(ImportedSolid {
             brep,
             faces: face_entities,
@@ -1419,6 +1533,11 @@ impl Builder {
                 vertices: std::mem::take(&mut c.point_entities),
             },
             repairs,
+            deviation: if self.deviation > tolerance {
+                self.deviation
+            } else {
+                0.
+            },
         })
     }
 }
@@ -1674,7 +1793,8 @@ impl Builder {
         tolerance: f64,
     ) -> Result<Planned, Error> {
         let Chart::Sphere(frame, radius) = face.chart else {
-            return self.plan_chart(c, face, tolerance, true);
+            let regular = self.uncollapse(c, face, tolerance)?;
+            return self.plan_chart(c, regular.as_ref().unwrap_or(face), tolerance, true);
         };
         let axes = self.sphere_axes(c, face, frame)?;
         let mut native = None;
@@ -1805,18 +1925,24 @@ impl Builder {
         }
         Ok(())
     }
-    fn snapshot(&self, c: &Context<'_, '_>) -> (usize, usize, Adaptations) {
-        (self.edges.len(), c.raw.vertices.len(), self.adaptations)
+    fn snapshot(&self, c: &Context<'_, '_>) -> (usize, usize, Adaptations, f64) {
+        (
+            self.edges.len(),
+            c.raw.vertices.len(),
+            self.adaptations,
+            self.deviation,
+        )
     }
     fn restore(
         &mut self,
         c: &mut Context<'_, '_>,
-        (edges, vertices, adaptations): (usize, usize, Adaptations),
+        (edges, vertices, adaptations, deviation): (usize, usize, Adaptations, f64),
     ) {
         self.edges.truncate(edges);
         c.raw.vertices.truncate(vertices);
         c.point_entities.truncate(vertices);
         self.adaptations = adaptations;
+        self.deviation = deviation;
     }
 
     /// Candidate sphere axes: directions to VERTEX_LOOP vertices (which then sit at a
@@ -1965,7 +2091,10 @@ impl Builder {
         let (Ok(pf), Ok(pt)) = (point(jf), point(jt)) else {
             return Ok(None);
         };
-        if norm(sub(pf, position(from))) > tolerance || norm(sub(pt, position(to))) > tolerance {
+        // Seam ends are chart points of loop edge ends, as far from their vertices as
+        // an accepted deviation.
+        let reach = self.policy.working(self.deviation).max(tolerance);
+        if norm(sub(pf, position(from))) > reach || norm(sub(pt, position(to))) > reach {
             return Ok(None);
         }
         let forward = jt > jf;
@@ -2068,17 +2197,27 @@ impl Builder {
         let mut pcurves = BTreeMap::new();
         for &edge in &edges {
             let e = &self.edges[edge];
-            let (p, source) = pcurve::pcurve_with(
+            let (p, source, off) = pcurve::pcurve_with(
                 &inverter,
                 &e.shape,
                 &e.curve,
                 e.range,
                 &mut self.work,
                 supplied.remove(&edge),
+                self.policy.allowance(),
             )
-            .map_err(|err| self.pcurve_error(c, edge, err))?;
+            .map_err(|err| match err {
+                PcurveError::Singular { parameter } => {
+                    self.crossing_error(c, face, edge, parameter)
+                }
+                err => self.pcurve_error(c, edge, err),
+            })?;
             if let (Some(entity), pcurve::Source::Supplied) = (e.entity, source) {
                 self.pcurve_uses.insert((entity, face.entity), true);
+            }
+            if off > tolerance {
+                self.adaptations.off_surface_edges += 1;
+                self.deviation = self.deviation.max(off);
             }
             pcurves.insert(edge, p);
         }
@@ -2778,8 +2917,10 @@ impl Builder {
                             continue;
                         };
                         let position = |v: VertexId| c.raw.vertices[v.0].position.coordinates();
-                        if norm(sub(pa, position(va))) > tolerance
-                            || norm(sub(pb, position(vb))) > tolerance
+                        // As far from their vertices as an accepted deviation.
+                        let reach = self.policy.working(self.deviation).max(tolerance);
+                        if norm(sub(pa, position(va))) > reach
+                            || norm(sub(pb, position(vb))) > reach
                         {
                             continue;
                         }

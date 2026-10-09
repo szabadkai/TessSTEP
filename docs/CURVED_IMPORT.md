@@ -42,9 +42,10 @@ conics as swept-surface profiles are unsupported.
 Vertex identity is `VERTEX_POINT` identity and edge identity is `EDGE_CURVE`
 identity; coincident distinct entities are never welded. Each vertex parameter is
 recovered on its edge curve (projection, conic angle or bounded NURBS Newton
-iteration) and must lie within the model tolerance. `same_sense` must agree with the
+iteration); the vertex's distance from that projection is checked under the
+[tolerance policy](#tolerance-policy). `same_sense` must agree with the
 parameter direction. Closed edges on conics span one period; closed B-spline edges
-must start and end at the curve's domain ends.
+must start and end at the curve's domain ends, within the same policy.
 
 `CONICAL_SURFACE` is moved to its apex, which the kernel cone requires; a semi-angle
 outside (0°, 90°) in the supplied angle unit is rejected. `DEGENERATE_TOROIDAL_SURFACE`
@@ -127,9 +128,9 @@ with any missing or rejected supplied pcurve is computed entirely.
   NURBS inversion. Curve knots and quarter periods seed spans; each span is
   subdivided until its lift agrees with the exact inverse to a quarter of the model
   tolerance at three probes. Control points are clamped to closed surface domains,
-  so the image stays inside them. A 3D curve farther than the model tolerance from
-  its surface, a crossing of a singular point (pole, apex) and an unresolved span
-  are typed errors.
+  so the image stays inside them. A 3D curve farther from its surface than the
+  [tolerance policy](#tolerance-policy) accepts, a crossing of a singular point
+  (pole, apex) and an unresolved span are typed errors.
 
 ## Face charts
 
@@ -210,15 +211,99 @@ Each loop is classified by its winding in the periodic surface axes.
 
   A `VERTEX_LOOP` away from every pole or apex, a winding loop with no singular point
   on its inner side, and a loop that doubles back along an edge away from a pole are
-  unsupported. Faces that wrap more than once and edges that cross a singular point
-  in their interior remain unsupported; singular sides of B-spline surfaces are not
-  yet recognized.
+  unsupported. Faces that wrap more than once remain unsupported, and so do edges
+  whose interior passes within the model tolerance of a pole, an apex or the point
+  of an exactly collapsed B-spline side; a B-spline side that collapses only within
+  the tolerance is a regular side when an edge runs along it
+  ([tolerance policy](#tolerance-policy)).
 
 `ImportedSolid::adaptations()` counts inferred outer bounds, inserted seams (annulus
-and pole seams), split edges, re-charted spheres and collapsed edges. All are
-representation choices, not repairs: no coordinate, curve or surface is modified and
-no topology is merged; the only inserted vertices are split points and poles that no
-`VERTEX_LOOP` names.
+and pole seams), split edges, re-charted spheres, collapsed edges and the tolerance
+adaptations below. All are representation choices, not repairs: no coordinate, curve
+or surface is modified and no topology is merged; the only inserted vertices are
+split points and poles that no `VERTEX_LOOP` names.
+
+## Tolerance policy
+
+Exporters write edges a little off their face surfaces and vertices a little off
+their edge curves, beyond the length uncertainty they declare. One policy (Milestone
+22.3, `crates/tessstep-import/src/brep/tolerance.rs`) covers both distances:
+
+* **Within the model tolerance** the geometry is consistent; nothing is counted.
+* **Above it and up to `deviation_factor` times it** the deviation is accepted and
+  counted. An edge use whose 3D curve lies off its face surface receives the pcurve
+  of the curve's surface projection (still fitted to a quarter of the model
+  tolerance) and counts in `Adaptations::off_surface_edges`; the mesh boundary follows
+  the 3D curve, so neighbouring faces stay watertight. An edge end whose vertex lies
+  off the curve is bounded at the vertex's projection onto the curve and counts in
+  `Adaptations::off_curve_vertices`; the vertex keeps its position, which the mesh
+  uses, because it is shared with other edges and cannot be moved onto all of them.
+  Closed B-spline edges compare the vertex with both domain ends (two edge ends).
+* **Beyond it** the import fails with a typed `InvalidGeometry` error at the geometry
+  stage naming the measured distance and the bound, for example `EDGE_CURVE #16 lies
+  5.000e-5 m from the face surface at curve parameter 0.00157, beyond the accepted
+  deviation 1.600e-5 m (16 × the model tolerance 1.000e-6 m)` or `VERTEX_POINT #4 of
+  EDGE_CURVE #16 lies 5.000e-5 m from the edge curve, beyond ...`; a closed B-spline
+  edge whose vertex lies on its curve but beyond the bound from its domain ends stays
+  `Unsupported` (`closed B-spline edges must start and end at the curve domain ends:
+  VERTEX_POINT #N lies ... m from them, beyond ...`).
+
+No coordinate is moved, so the deviation stays in the B-rep: every later stage uses
+the **working tolerance**, the model tolerance plus twice the largest accepted
+distance (a vertex and the edge end beside it may each deviate, on either side of a
+surface); `ImportedSolid::largest_deviation()` reports that distance and
+`brep().model_tolerance()` the working tolerance. A solid without deviations keeps
+the model tolerance, so its import is unchanged. Seams inserted between deviating
+loop ends accept the same working distance from their vertices. `tessellate` refuses
+a chord tolerance below the largest accepted deviation (`the largest accepted
+deviation ... exceeds the chord tolerance ...`), since its mesh could not stay within
+the chord of the surfaces. A vertex off its surface also tilts small facets: the
+normal-angle criterion needs facets around it larger than about the deviation over
+the angle, which a chord close to the deviation may not allow.
+
+Options (Rust `ImportOptions`, used only by `import_brep_solid` and the curved roots
+of `import_assembly`; the planar and faceted profiles ignore them). The C and C++
+import options do not expose them yet; the C assembly import uses the default and
+`TS_IMPORT_STRICT`:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `deviation_factor` | `f64` | Accepted multiple of the model tolerance. Finite and at least 1, otherwise `ErrorKind::InvalidOptions` at `Stage::Profile` before decoding; 1 accepts no deviation. Default `ImportOptions::DEVIATION_FACTOR` = 16; `for_document` keeps it. |
+| `strict` | `bool` | Existing field; additionally forces a factor of 1, so strict import rejects every deviation as before the policy. |
+
+Reported per solid (all zero for the planar and faceted profiles):
+
+| Result | Type | Meaning |
+| --- | --- | --- |
+| `Adaptations::off_surface_edges` | `usize` | Edge uses (edge-face pairs) accepted off their face surface |
+| `Adaptations::off_curve_vertices` | `usize` | Edge ends accepted off their curve (a closed edge has two) |
+| `Adaptations::uncollapsed_sides` | `usize` | B-spline sides charted as regular sides (below) |
+| `ImportedSolid::largest_deviation()` | `f64`, metres | Largest accepted distance; 0 without deviations |
+| `ImportedSolid::brep().model_tolerance()` | `f64`, metres | Working tolerance: the model tolerance, plus twice the largest deviation when one was accepted |
+
+The counters are planning-pass results: a rejected chart attempt (a sphere frame, a
+pass before edge splits) does not count. The corpus survey reports them per root as
+`tolerance_adaptations` (`null` when the import failed).
+
+The default 16 was chosen from the corpus distribution recorded in
+[VALIDATION.md](VALIDATION.md): exporter deviations cluster below 10 times the
+declared uncertainty (CATIA, SolidWorks, XStep, Alibre, Inventor and MicroStation
+roots mesh within it; the largest meshed one, a CATIA part, needs 15.9), the rejected
+exporter roots need 16.7 to about 100,000 times, and synthetic adversarial files place
+deviations at exactly 5, 10, 20 and 100 times the floored tolerance, on which a bound
+must not sit.
+
+**Singular crossings.** An edge whose interior passes within the model tolerance of a
+singular point of its face chart has no continuous pcurve. Every such corpus case
+with a measured singular point is a B-spline side whose points spread by less than
+the model tolerance but more than a thousandth of it (for example a 46 µm side under
+a 50.8 µm uncertainty), with a face edge running along it: an edge shorter than the
+tolerance, not a pole. Such a side is charted as a regular boundary and counted in
+`Adaptations::uncollapsed_sides`; this is a representation choice that strict import
+also makes. An edge through an analytic pole or apex or the point of an exactly
+collapsed side remains `Unsupported`, naming the curve parameter, the distance, the
+singular line's extent and the model tolerance; an inversion without a surface normal
+away from every singular line is named as a singular parameterization.
 
 ## UV loop failures
 
@@ -396,7 +481,8 @@ inside other curves are unsupported; topology repair is opt-in (above). `OFFSET_
 `OFFSET_CURVE_3D` and `PCURVE` or `DEGENERATE_PCURVE` used directly as edge geometry
 are rejected by name at the profile stage (`brep_rare_geometry_is_a_named_rejection`). Profile rejection is not an AP
 validity verdict. `ImportOptions::strict` rejects `$` in derived `ORIENTED_EDGE`
-endpoint slots; `max_work` separately bounds decoding, adapter and pcurve work.
+endpoint slots and every tolerance deviation; `max_work` separately bounds decoding,
+adapter and pcurve work.
 
 Authored fixtures are generated by
 [`brep_fixtures.py`](../corpus/geometry/brep_fixtures.py) and each has a closed-form
@@ -424,7 +510,14 @@ cap cut away whose STEP axis misses the cap (re-charted through the rim: a pole 
 and a collapsed edge). Negative fixtures cover an off-surface edge, a
 `VERTEX_LOOP` away from the apex, an ambiguous outer bound and a box whose pocket
 opening touches the top face's boundary at a vertex (a self-touching loop, rejected
-at tessellation). Cavity fixtures cover a cube
+at tessellation). Tolerance-policy
+fixtures under a 1 µm uncertainty are a cylinder whose top circle edge lies 3 µm off
+its side surface (accepted, one off-surface edge, a frustum volume), one 50 µm off
+(rejected with the distance and bound) and one whose top vertex lies 3 µm off its
+circle (accepted, one off-curve vertex); a tetrahedron whose B-spline base has a
+20 µm side along an edge under a 50 µm uncertainty is charted with a regular side
+(`tests/tolerance.rs`, which also covers strict import, narrower factors, invalid
+factors, the chord check and an exactly collapsed side's typed rejection). Cavity fixtures cover a cube
 with a cubical void and a cylinder with a spherical void bounded by a `VERTEX_LOOP`
 (each void an outward shell reversed by `ORIENTED_CLOSED_SHELL(.F.)`), and a cube whose
 void faces out of its cavity (rejected at tessellation). `tests/brep.rs` checks volumes against the

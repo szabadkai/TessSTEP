@@ -656,13 +656,42 @@ baseline movements, never a refreshed baseline.
   `pole_caps_keep_fans_monotone_beside_seams_and_holes`,
   `tessellation_budgets_are_named_in_diagnostics`, the existing adaptive and pole
   tests, the reviewed corpus movement in [VALIDATION.md](VALIDATION.md).
-- **22.3 Tolerance policy for edges off their surfaces.** 71 roots fail because an
-  `EDGE_CURVE` lies farther from its face surface than the model tolerance, 19
-  because an edge crosses a surface singularity, and 22 because vertices lie off
-  their curves. Define one documented policy: accept within a stated multiple of the
-  model tolerance as a counted adaptation, project or reject beyond it, and report
-  the measured distance. Acceptance: each of the three kinds is either meshed with a
-  reported adaptation or a typed rejection naming the distance and the tolerance.
+- **22.3 Tolerance policy for edges off their surfaces — delivered 2026-10-09.**
+  Measured first on the reviewed baseline: 77 roots had an edge farther than the model
+  tolerance from a face surface (30 synthetic `dodgy-step-files`, 47 from exporter
+  files), 20 an edge crossing a singular point (all on B-spline surfaces) and 20
+  a vertex off its edge curve (10 synthetic, 10 exporter); the distribution by
+  source and exporter is in [VALIDATION.md](VALIDATION.md). One policy covers both
+  distances ([curved import](CURVED_IMPORT.md#tolerance-policy)):
+  `ImportOptions::deviation_factor` (default 16; `strict` forces 1) accepts a
+  distance above the model tolerance up to that multiple as a counted adaptation
+  (`Adaptations::off_surface_edges`, `off_curve_vertices`), reports the largest in
+  `ImportedSolid::largest_deviation` and validates, trims and tessellates with the
+  model tolerance plus twice that distance; beyond it the import fails with a typed
+  `InvalidGeometry` naming the measured distance and the bound. No coordinate moves:
+  an off-surface edge receives the pcurve of its surface projection and the mesh
+  follows its 3D curve, and an edge is bounded at its vertex's projection onto the
+  curve (a shared vertex cannot be projected onto every edge). `tessellate` refuses a
+  chord tolerance below the accepted deviation. Every singular crossing with a
+  measured singular point was a B-spline side that collapses only within a large
+  declared uncertainty (46 µm under 50.8 µm, 0.10 mm under 0.127 mm, 5 µm under
+  10 µm, 0.39 mm under 1 mm) with an edge running along it; such a side is now a
+  regular chart side (`Adaptations::uncollapsed_sides`). Edges through analytic poles,
+  apices or exactly collapsed sides, and singular parameterizations, stay
+  `Unsupported`, naming the parameter, distance, side extent and tolerance.
+  Result: 11 more roots mesh (577 → 588) and 41 more pass geometry/topology
+  (745 → 786), none lost; every root of the three kinds now meshes with reported
+  adaptations, fails a later stage, or is a typed rejection naming distance and
+  bound. Remaining: 16 singular-crossing rejections (15 in one NX file whose edges
+  pass within its 50.8 µm uncertainty of exact poles, one singular parameterization),
+  deviations beyond 16 times, and newly geometry-accepted roots that fail tessellation
+  (Milestones 22.2 and 22.4); C/C++ exposure of the option and counters follows
+  22.10. Evidence: `tests/tolerance.rs`
+  (`deviations_within_the_policy_are_counted_and_widen_the_working_tolerance`,
+  `deviations_beyond_the_policy_are_typed_rejections_naming_distance_and_bound`,
+  `bspline_sides_collapsed_only_within_tolerance_are_regular_and_poles_are_rejected`),
+  the `brep-near-surface`, `brep-far-surface`, `brep-vertex-off-curve` and
+  `brep-short-side` fixtures in `check_geometry.py`, and the reviewed corpus movement.
 - **22.4 UV loop validity — delivered 2026-10-09.** The baseline had 92 roots whose
   first failure was an unlocated polygon error after topology passed: 34
   `SelfIntersection` and 21 `DegenerateLoop` at the mesh boundary, 22 trim `Limit`,

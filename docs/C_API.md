@@ -360,7 +360,11 @@ A missing or ambiguous occurrence placement fails with `TS_INVALID_GEOMETRY` at
 roots are reported, not placed. The 72-byte `ts_assembly_options` holds work, record,
 instance and depth budgets, the chord and angle tolerance, the minimum model tolerance
 and `flags` (`TS_IMPORT_STRICT`); zero or non-finite tolerances, unknown flags and
-nonzero reserved fields return `TS_INVALID_ARGUMENT` after clearing outputs.
+nonzero reserved fields return `TS_INVALID_ARGUMENT` after clearing outputs. Curved
+roots use the default tolerance policy (Milestone 22.3: deviations up to 16 times the
+model tolerance are accepted and counted, see
+[curved import](CURVED_IMPORT.md#tolerance-policy)); `TS_IMPORT_STRICT` keeps
+rejecting every deviation. The multiple is not yet a C option.
 
 ```cpp
 auto parsed = tessstep::Document::parse(bytes);

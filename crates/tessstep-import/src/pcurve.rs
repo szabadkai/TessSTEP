@@ -654,7 +654,7 @@ fn exact(
 /// of a singular point of the chart (a pole or apex), where no continuous pcurve
 /// exists. Each knot or quarter-period span is sampled and every local minimum of
 /// the distance is refined by golden-section search.
-fn singular_crossing(
+pub(crate) fn singular_crossing(
     chart: &Chart,
     curve: &CurveGeometry<ModelSpace, 3>,
     range: [f64; 2],
@@ -729,6 +729,11 @@ pub(crate) enum Source {
 /// the 3D curve when one exists; otherwise a verified `supplied`
 /// pcurve; otherwise a fitted image. Exact images are the same curve as a supplied
 /// one but free of its written rounding, so periodic joins stay exact.
+///
+/// A fitted image follows the surface projection of the 3D curve, which may lie up
+/// to `allowance` metres (at least the model tolerance) from the surface; the third
+/// value is the largest sampled distance, zero for exact and supplied images, which
+/// agree within half the model tolerance.
 pub(crate) fn pcurve_with(
     inverter: &Inverter<'_>,
     shape: &CurveShape,
@@ -736,7 +741,8 @@ pub(crate) fn pcurve_with(
     range: [f64; 2],
     work: &mut Work,
     supplied: Option<Pcurve>,
-) -> Result<(Pcurve, Source), PcurveError> {
+    allowance: f64,
+) -> Result<(Pcurve, Source, f64), PcurveError> {
     let tolerance = inverter.tolerance;
     if let Some(parameter) = singular_crossing(inverter.chart, curve, range, tolerance, work)? {
         return Err(PcurveError::Singular { parameter });
@@ -763,18 +769,21 @@ pub(crate) fn pcurve_with(
                     range,
                 },
                 Source::Exact,
+                0.,
             ));
         }
     }
     if let Some(p) = supplied {
-        return Ok((p, Source::Supplied));
+        return Ok((p, Source::Supplied, 0.));
     }
+    let (image, deviation) = fitted(inverter, curve, range, work, allowance.max(tolerance))?;
     Ok((
         Pcurve {
-            curve: CurveGeometry::Nurbs(fitted(inverter, curve, range, work)?),
+            curve: CurveGeometry::Nurbs(image),
             range,
         },
         Source::Fitted,
+        deviation,
     ))
 }
 
@@ -811,13 +820,18 @@ fn bezier(c: &[[f64; 2]; 4], f: f64) -> [f64; 2] {
 }
 
 /// Verified piecewise cubic Hermite image, returned as a C0 piecewise Bezier NURBS
-/// whose parameter is the edge parameter. Curve knots/quarter periods seed spans.
+/// whose parameter is the edge parameter, with the largest sampled distance of the
+/// 3D curve from the surface. Curve knots/quarter periods seed spans. The image
+/// follows the surface projection of the curve, which may lie up to `allowance`
+/// metres from the surface; the lift tolerance stays a quarter of the model
+/// tolerance.
 fn fitted(
     inverter: &Inverter<'_>,
     curve: &CurveGeometry<ModelSpace, 3>,
     range: [f64; 2],
     work: &mut Work,
-) -> Result<NurbsCurve<ParameterSpace, 2>, PcurveError> {
+    allowance: f64,
+) -> Result<(NurbsCurve<ParameterSpace, 2>, f64), PcurveError> {
     const MAX_DEPTH: usize = 40;
     const MAX_SEGMENTS: usize = 30_000;
     let tolerance = inverter.tolerance;
@@ -827,11 +841,33 @@ fn fitted(
         .map_err(|_| PcurveError::Limit)?;
     work.charge(seeds.len())?;
     let singular = inverter.chart.singular();
+    // NURBS inversion accepts a hinted Newton result within the model tolerance and
+    // otherwise searches the whole surface. Once a sampled point of this curve is
+    // found farther off than the model tolerance, hinted results within the
+    // allowance are accepted, so an accepted deviation does not cost a global search
+    // per point. Geometry within the model tolerance never reaches that state.
+    let accept = std::cell::Cell::new(tolerance);
+    let deviation = std::cell::Cell::new(0.0_f64);
+    let invert = |p: V3, hint: Option<[f64; 2]>, work: &mut Work| {
+        Inverter {
+            chart: inverter.chart,
+            surface: inverter.surface,
+            tolerance: accept.get(),
+        }
+        .invert(p, hint, work)
+    };
+    let track = |off: f64| {
+        deviation.set(deviation.get().max(off));
+        if off > tolerance {
+            accept.set(allowance);
+        }
+    };
+    // The chart point, its derivative and the curve point's distance from the surface.
     let point = |t: f64,
                  side: KnotSide,
                  hint: Option<[f64; 2]>,
                  work: &mut Work|
-     -> Result<([f64; 2], [f64; 2]), PcurveError> {
+     -> Result<([f64; 2], [f64; 2], f64), PcurveError> {
         let (p, d) = curve_jet(curve, t, side, work)?;
         // A curve end at a pole or apex takes its one-sided limit: the coordinate
         // along the singular line from just inside the curve, the other on the line.
@@ -839,34 +875,39 @@ fn fitted(
             if let Some(s) = singular.iter().find(|s| distance(p, s.point) <= tolerance) {
                 let h = 1e-7 * (range[1] - range[0]) * if t == range[0] { 1. } else { -1. };
                 let (q, _) = curve_jet(curve, t + h, side, work)?;
-                let inside = inverter.invert(q, hint, work)?;
+                let inside = invert(q, hint, work)?;
                 let mut uv = inside;
                 uv[1 - s.k] = s.value;
-                return Ok((uv, [0, 1].map(|k| (inside[k] - uv[k]) / h)));
+                return Ok((uv, [0, 1].map(|k| (inside[k] - uv[k]) / h), 0.));
             }
         }
-        let uv = inverter.invert(p, hint, work)?;
+        let uv = invert(p, hint, work)?;
         let lifted = surface_jet(inverter.surface, uv, work)?.p;
         let off = distance(lifted, p);
-        if off > tolerance {
+        if off > allowance {
             return Err(PcurveError::OffSurface {
                 parameter: t,
                 distance: off,
             });
         }
-        Ok((uv, inverter.derivative(uv, d, t, work)?))
+        Ok((uv, inverter.derivative(uv, d, t, work)?, off))
     };
     let mut segments = Vec::new();
     // Resolve the chart of the first point from a nearby interior point, so a start
-    // on a closed seam takes the representative the curve continues from.
+    // on a closed seam takes the representative the curve continues from. It is only
+    // a hint: an unhinted NURBS inversion can stop short of the closest point, which
+    // is no measured distance of the curve.
     let inner = seeds[0] + (seeds[1] - seeds[0]) * 1e-3;
-    let (near, _) = point(inner, KnotSide::Right, None, work)?;
-    let (mut previous, _) = point(seeds[0], KnotSide::Right, Some(near), work)?;
+    let (p, _) = curve_jet(curve, inner, KnotSide::Right, work)?;
+    let near = invert(p, None, work)?;
+    let (mut previous, _, off) = point(seeds[0], KnotSide::Right, Some(near), work)?;
+    track(off);
     for w in seeds.windows(2) {
         let (a, b) = (w[0], w[1]);
-        let (_, da) = point(a, KnotSide::Right, Some(previous), work)?;
+        let (_, da, _) = point(a, KnotSide::Right, Some(previous), work)?;
         let guess = [0, 1].map(|k| previous[k] + da[k] * (b - a));
-        let (uvb, db) = point(b, KnotSide::Left, Some(guess), work)?;
+        let (uvb, db, off) = point(b, KnotSide::Left, Some(guess), work)?;
+        track(off);
         let mut stack = vec![(
             Segment {
                 t: [a, b],
@@ -882,15 +923,16 @@ fn fitted(
                 let t = segment.t[0] + (segment.t[1] - segment.t[0]) * f;
                 let h = bezier(&c, f);
                 let (p, _) = curve_jet(curve, t, KnotSide::Right, work)?;
-                let uv = inverter.invert(p, Some(h), work)?;
+                let uv = invert(p, Some(h), work)?;
                 let exact = surface_jet(inverter.surface, uv, work)?.p;
                 let off = distance(exact, p);
-                if off > tolerance {
+                if off > allowance {
                     return Err(PcurveError::OffSurface {
                         parameter: t,
                         distance: off,
                     });
                 }
+                track(off);
                 let approximated = match surface_jet(inverter.surface, h, work) {
                     Ok(j) => j.p,
                     Err(PcurveError::Limit) => return Err(PcurveError::Limit),
@@ -918,7 +960,8 @@ fn fitted(
             if m <= segment.t[0] || m >= segment.t[1] {
                 return Err(PcurveError::Unresolved);
             }
-            let (uvm, dm) = point(m, KnotSide::Right, Some(bezier(&c, 0.5)), work)?;
+            let (uvm, dm, off) = point(m, KnotSide::Right, Some(bezier(&c, 0.5)), work)?;
+            track(off);
             let [t0, t1] = segment.t;
             stack.push((
                 Segment {
@@ -953,7 +996,7 @@ fn fitted(
         points.into_iter().map(Point::new).collect();
     let points = points.map_err(|_| PcurveError::Geometry)?;
     let weights = vec![1.; points.len()];
-    NurbsCurve::new(
+    let image = NurbsCurve::new(
         3,
         &knots,
         &points,
@@ -963,5 +1006,6 @@ fn fitted(
             max_knots: 3 * MAX_SEGMENTS + 5,
         },
     )
-    .map_err(|_| PcurveError::Geometry)
+    .map_err(|_| PcurveError::Geometry)?;
+    Ok((image, deviation.get()))
 }

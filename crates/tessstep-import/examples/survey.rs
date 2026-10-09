@@ -1,4 +1,5 @@
-//! Usage: cargo run -p tessstep-import --example survey -- [--max-work=N] [--max-records=N] [--repair] FILE METRES_PER_UNIT [MAX_ROOTS]
+//! Usage: cargo run -p tessstep-import --example survey -- [--max-work=N] [--max-records=N]
+//!     [--repair] [--deviation-factor=F] FILE METRES_PER_UNIT [MAX_ROOTS]
 //! Imports every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the
 //! matching selected-root profile, every shape tessellation root with the existing
 //! tessellation profile, and every tessellated annotation occurrence with the
@@ -11,13 +12,14 @@
 //! it as an alternative of another root. MAX_ROOTS bounds shape roots and, separately,
 //! annotation occurrences. Import budgets default to `ImportOptions::for_document`
 //! (sized by the document's entity count); `--max-work` and `--max-records` set them
-//! explicitly, and the output records the budgets used.
-//! SHELL_BASED_SURFACE_MODEL roots are a separate `surface_models` class (bounded by
-//! MAX_ROOTS on their own), each shell meshed as a shell, never as a solid.
-
 //! explicitly, and the output records the budgets used. `--repair` enables the opt-in
 //! sewing and orientation repair (`RepairOptions::enabled`) and reports each solid
-//! root's repair counts; the default survey is strict.
+//! root's repair counts; the default survey is strict. `--deviation-factor` replaces
+//! the default tolerance policy multiple (`ImportOptions::DEVIATION_FACTOR`); each
+//! imported B-rep root reports its tolerance adaptations, largest accepted deviation
+//! and working tolerance.
+//! SHELL_BASED_SURFACE_MODEL roots are a separate `surface_models` class (bounded by
+//! MAX_ROOTS on their own), each shell meshed as a shell, never as a solid.
 #![forbid(unsafe_code)]
 use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
 use tessstep_import::*;
@@ -33,7 +35,8 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let (mut max_work, mut max_records, mut repair) = (None, None, false);
+    let (mut max_work, mut max_records, mut repair, mut deviation_factor) =
+        (None, None, false, None);
     let mut args = vec![String::new()];
     for arg in std::env::args().skip(1) {
         if arg == "--repair" {
@@ -42,13 +45,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             max_work = Some(value.parse::<usize>()?);
         } else if let Some(value) = arg.strip_prefix("--max-records=") {
             max_records = Some(value.parse::<usize>()?);
+        } else if let Some(value) = arg.strip_prefix("--deviation-factor=") {
+            deviation_factor = Some(value.parse::<f64>()?);
         } else {
             args.push(arg);
         }
     }
     if !(3..=4).contains(&args.len()) {
         return Err(
-            "usage: survey [--max-work=N] [--max-records=N] [--repair] FILE METRES_PER_UNIT [MAX_ROOTS]"
+            "usage: survey [--max-work=N] [--max-records=N] [--repair] [--deviation-factor=F] FILE METRES_PER_UNIT [MAX_ROOTS]"
                 .into(),
         );
     }
@@ -80,6 +85,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if repair {
         options.repair = RepairOptions::enabled();
         out.push_str(",\"repair\":true");
+    }
+    if let Some(factor) = deviation_factor {
+        options.deviation_factor = factor;
     }
     write!(
         out,
@@ -165,6 +173,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             session.import_brep_solid(id, length, angle, model)
         };
+        // Tolerance adaptations of an imported B-rep, whatever its tessellation outcome.
+        let deviations = imported.as_ref().ok().map(|solid| {
+            let a = solid.adaptations();
+            format!(
+                "{{\"off_surface_edges\":{},\"off_curve_vertices\":{},\"uncollapsed_sides\":{},\"largest_deviation_m\":{:e},\"working_tolerance_m\":{:e}}}",
+                a.off_surface_edges,
+                a.off_curve_vertices,
+                a.uncollapsed_sides,
+                solid.largest_deviation(),
+                solid.brep().model_tolerance()
+            )
+        });
         // Chord 1e-3 of the solid's vertex bounding-box diagonal, within 1e-6..1e-3 m.
         let mut chord = 1e-6;
         let repairs = imported.as_ref().ok().map(ImportedSolid::repairs);
@@ -226,6 +246,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 r.undecided_shells
             )?;
         }
+        write!(
+            out,
+            ",\"tolerance_adaptations\":{}",
+            deviations.as_deref().unwrap_or("null")
+        )?;
         closure(&mut out, &doc, id)?;
         write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
     }

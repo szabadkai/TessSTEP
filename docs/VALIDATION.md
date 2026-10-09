@@ -477,6 +477,87 @@ more than 100,000 vertices on one face) and one `max_evaluations`. `UnresolvedTo
 roots fell from 29 to 3, which now name `max_rounds`. The baseline comparison reports
 47 changed inputs (stages and accepted-root counts only).
 
+# Milestone 22.3: tolerance policy for edges off their surfaces — 2026-10-09
+
+Delivered: `ImportOptions::deviation_factor` (default 16, `strict` forces 1);
+`Adaptations::off_surface_edges`, `off_curve_vertices` and `uncollapsed_sides`;
+`ImportedSolid::largest_deviation` and the working tolerance; typed rejections naming
+the measured distance and the bound; B-spline sides that collapse only within the
+model tolerance charted as regular sides; survey `--deviation-factor=F` and per-root
+`tolerance_adaptations` ([curved import](CURVED_IMPORT.md#tolerance-policy)).
+
+Measurement first. Every root of the reviewed baseline that failed with one of the
+three kinds was re-imported by the survey (each root's model tolerance is its context
+uncertainty floored at 1e-7 m): with the baseline binary for the first failing
+distance, and with an unbounded multiple for the largest distance the root would
+need. Ratios are distance over model tolerance; the first failing distance is a lower
+bound, and two baseline distances (CATIA through Theorem, 160×; Alias, 8.9×; I-DEAS,
+10.2×) were inversion artefacts: a NURBS inversion stopping short of the closest point
+near a pole or seam, which an accepted import no longer measures.
+
+| Kind | Exporter (`FILE_NAME` originating system) | Roots | Model tolerance (m) | Baseline ratio | Largest ratio | Outcome with the default policy |
+| --- | --- | ---: | --- | --- | --- | --- |
+| edge off surface | SolidWorks 2012/2020, HOOPS for SolidWorks MBD | 12 | 1e-7, 2.5e-7, 1e-6 | 1.06–2.09 | 1.2–7.4; one 17.4 | 3 meshed, 7 tessellation, 1 rejected (17.4×), 1 multiple outer bounds |
+| | CATIA V5 R19 (stepcode) | 3 | 5e-6 | 1.01–1.15 | 1.26, 1.26, 15.9 | 3 meshed |
+| | CATIA through Theorem AP209 | 2 | 1e-7 | 160 (artefact) | 3.5 | 2 tessellation |
+| | NX/UG (Theorem, ST-DEVELOPER) | 2 | 3.1e-5, 5.2e-5 | 1.00, 8.25 | 1.23, 8.84 | 1 tessellation, 1 refused chord (0.46 mm deviation) |
+| | XStep 1.0 | 3 | 1e-7 | 1.45–2.79 | 2.65–5.86 | 1 meshed, 2 tessellation |
+| | AutoCAD 2000i | 3 | 1e-7, 3e-7 | 3.11–31.1 | 7.30; 16.7, 31.1 | 1 tessellation, 2 rejected |
+| | Inventor 4.0 | 2 | 1e-7 | 3.07, 472 | 7.79 | 1 meshed, 1 rejected |
+| | Alibre | 1 | 1e-7 | 1.40 | 7.79 | 1 meshed |
+| | Alias AutoStudio | 2 | 2e-7, 2e-6 | 1.41, 8.89 (artefact) | 4.50 | 2 tessellation |
+| | EUCLID | 3 | 1e-7, 1e-6, 1.5e-5 | 1.14–12.6 | 4.14; 29.5, 203 | 1 tessellation, 2 rejected |
+| | Open CASCADE (MATRA-DATAVISION) | 3 | 1e-7, 2e-7 | 14.7, 102,350 (2) | 28.8; 102,350 | 3 rejected |
+| | Datakit CrossCadWare | 2 | 5e-6 | 1.20, 133 | 1.95; 133 | 1 tessellation, 1 rejected |
+| | none written (NIST PMI test files) | 5 | 5e-6, 1.7e-5 | 1.03–2.41 | 1.25–10.0 | 5 tessellation |
+| | Creo, ESSENCE, ST-DEVELOPER step.cde, I-DEAS | 4 | 1e-7–1e-5 | 1.09–10.2 | 1.09–4.05 | 4 tessellation |
+| | synthetic (`dodgy-step-files`) | 30 | 1e-7 | 1.74–995,000 | beyond 16 | 30 rejected |
+| vertex off curve | MicroStation/J | 2 | 1e-7 | — | 9.79, 9.83 | 2 meshed |
+| | Datakit, AutoCAD, FPX Expert, Open CASCADE 6.6 | 4 | 1e-7, 5e-6 | — | 2.89; 53.5–5,592 | 1 tessellation, 3 rejected |
+| | Open CASCADE 5.2, SolidWorks 2011 | 2 | 1e-6, 1e-7 | — | edges 19.4, 45 | 2 rejected (edge off surface) |
+| | Alias (closed B-spline edges) | 2 | 1e-3 | — | within 16 | 2 topology (non-manifold vertex) |
+| | synthetic | 10 | 1e-7 | — | — | 7 rejected, 3 later stages |
+| singular crossing | NX 6.0 (`bug24383`) | 15 | 5.08e-5 | — | 46 µm side | uncollapsed; 15 rejected (edges 34 µm from exact poles) |
+| | NIST PMI, Inventor 10 | 2 | 1.27e-4, 1e-5 | — | 0.10 mm, 5 µm sides | 2 tessellation |
+| | Open CASCADE 4.0 (`trj7`/`trj8_b1-ec`) | 2 | 1e-3 | — | 0.39 mm side | 2 "face loop runs against its surface along a pole" |
+| | Open CASCADE 7.5 (`as1_motor`) | 1 | 1e-7 | — | no surface normal | 1 rejected (singular parameterization) |
+
+The baseline vertex message named no distance, hence the dashes. Exporter deviations
+cluster below 10 times the tolerance; the default 16 admits them with margin (the
+largest meshed root, CATIA `HEAD_BACK.stp`, needs 15.9) while the next exporter
+roots need 16.7 to 102,350 times. Synthetic files place deviations at exactly 5, 10,
+20, 25, 80 and 100 times the floored tolerance; a bound on 10 or 20 would make their
+outcomes depend on the last bit of a distance.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), `cargo doc` (`-D warnings`) | passed, including the four `tests/tolerance.rs` tests |
+| `check_geometry.py --require-external` | 87 reviewed outcomes passed (four new tolerance fixtures) |
+| `check_capi.py --library-dir target/release` | passed (the C assembly import now uses the default policy); the sanitizer variant hangs on macOS 27 and was not run |
+| `check_metamorphic.py`, `check_architecture.py`, `check_corpus.py`, `conformance.py --check`, script unit tests (45) | passed |
+| `corpus.py --check` with the AP validator | 3,227 compatible, 34 changed, no regressions |
+
+Reviewed corpus movements (every changed root re-imported with the baseline and the
+new survey): 46 roots in 34 files changed and none lost a mesh; 41 more roots pass
+geometry/topology (745 → 786). 11 roots newly mesh (577 → 588): CATIA
+`MAINBODY_BACK`, `MAINBODY_FRONT` and `HEAD_BACK` (largest deviations 6.3, 6.3 and
+80 µm under 5 µm), SolidWorks `bug33398` #13357 and #13360 and `bug32239` #68579,
+XStep `2.stp` #937, Alibre `trj4_s1-ai` #3138, Inventor `trj5_s1-in` #4186 and
+MicroStation `trj3_s1-md` #1708 and #2469 (off-curve vertices and off-surface edges up
+to 0.98 µm under 0.1 µm). All are closed single-component meshes. The Alibre and
+Inventor parts measure 2.9627e-4 and 2.9639e-4 m³ against 2.9591e-4 (UG), 2.9598e-4
+(I-DEAS) and 2.9612e-4 m³ (Pro/ENGINEER) for the same part of the `s1` assembly from
+exporters without deviations (the Alibre part is 1.4 mm taller); the two
+MicroStation roots agree with each other to 3e-6 and converge under chord refinement.
+30 roots move from the geometry stage to tessellation: `SelfIntersection`,
+`UnresolvedTolerance`, trim `Limit` and `ResourceLimit` faces (Milestones 22.2 and
+22.4), and `OCC5157.stp`, whose 0.46 mm deviation exceeds its chord. The two
+`trj7`/`trj8_b1-ec` roots move from the singular crossing to the existing "face loop
+runs against its surface along a pole or apex line" rejection, `bug32239` #68354 to
+"multiple outer bounds", and two roots stay off-surface rejections with the bound in
+their message (`bug33398` #13351 at 17.4×, `trj5_s1-in` #1480 at 29,500×). Unchanged
+files only extend their rejection messages with the bound.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

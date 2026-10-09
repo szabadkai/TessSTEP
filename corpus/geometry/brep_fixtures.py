@@ -475,6 +475,68 @@ def fixtures():
     s.lines = [line.replace(",10.0)", ",10.5)") if "CYLINDRICAL_SURFACE" in line else line for line in s.lines]
     s.write("brep-off-surface.step", faces)
 
+    # Tolerance policy (Milestone 22.3): a 1 um context uncertainty and a cylinder
+    # r=10 h=20 whose top circle edge misses the side surface by 3 um (accepted, 3x
+    # the tolerance) or 50 um (rejected, beyond 16x), and one whose top vertex sits
+    # 3 um outside its circle in the top plane (accepted).
+    def offset_cylinder(s, top_radius, top_vertex):
+        v0 = s.vertex((10, 0, 0))
+        v1 = s.vertex(top_vertex)
+        bottom = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+        top = s.edge(v1, v1, s.circle((0, 0, 20), (0, 0, 1), (1, 0, 0), top_radius))
+        surface = s.add(f"CYLINDRICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+        return [
+            s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], surface),
+            s.face([s.bound([(bottom, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+            s.face([s.bound([(top, True)])], s.plane((0, 0, 20), (0, 0, 1))),
+        ]
+
+    for name, radius, vertex, description in [
+        ("brep-near-surface.step", 10.003, (10.003, 0, 20), "top circle edge 3 um off its side cylinder"),
+        ("brep-far-surface.step", 10.05, (10.05, 0, 20), "top circle edge 50 um off its side cylinder"),
+        ("brep-vertex-off-curve.step", 10, (10.003, 0, 20), "top vertex 3 um off its circle edge"),
+    ]:
+        s = Step(f"Original cylinder r=10 h=20 mm under a 1 um uncertainty; {description}")
+        s.write(name, offset_cylinder(s, radius, vertex), context=context(uncertainty="1.E-3"))
+
+    # 10 mm tetrahedron ABCD with A cut by a 20 um edge A'A, A' = (-t, t, 0): the
+    # bilinear B-spline base (A, A', B, C) has that edge as its u=0 side, which
+    # collapses only within the 50 um uncertainty, so the side is charted as a regular
+    # boundary, not a pole. A sliver face (A, D, A') on x + y = 0 and a face (C, A', D)
+    # close the solid; the volume is (1000 + 100 t) / 6 mm3.
+    s = Step("Original 10 mm tetrahedron whose B-spline base has a 20 um side along an edge, under a 50 um uncertainty")
+    t = 0.014
+    a, a2, b, c, d = (0, 0, 0), (-t, t, 0), (10, 0, 0), (0, 10, 0), (0, 0, 10)
+    va, va2, vb, vc, vd = (s.vertex(p) for p in (a, a2, b, c, d))
+
+    def segment(p, q, vp, vq):
+        return s.edge(vp, vq, s.line(p, [q[k] - p[k] for k in range(3)]))
+
+    def unit(v):
+        n = math.sqrt(sum(x * x for x in v))
+        return [x / n for x in v]
+
+    def cross(u, v):
+        return [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+
+    ab, bc, ca2, a2a = segment(a, b, va, vb), segment(b, c, vb, vc), segment(c, a2, vc, va2), segment(a2, a, va2, va)
+    ad, bd, cd, a2d = segment(a, d, va, vd), segment(b, d, vb, vd), segment(c, d, vc, vd), segment(a2, d, va2, vd)
+    patch = s.add(f"B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#{s.point(a)},#{s.point(a2)}),(#{s.point(b)},#{s.point(c)})),"
+                  ".UNSPECIFIED.,.F.,.F.,.F.,(2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.)")
+    root3 = 1 / math.sqrt(3)
+    near_x = unit(cross([c[k] - d[k] for k in range(3)], [a2[k] - c[k] for k in range(3)]))
+    faces = [
+        # The patch normal is +z; the base faces -z.
+        s.face([s.bound([(a2a, False), (ca2, False), (bc, False), (ab, False)], outer=True)], patch, same=False),
+        s.face([s.bound([(ab, True), (bd, True), (ad, False)], outer=True)], s.plane(a, (0, -1, 0))),
+        s.face([s.bound([(cd, False), (ca2, True), (a2d, True)], outer=True)], s.plane(d, near_x, (0, 1, 0))),
+        s.face([s.bound([(ad, True), (a2d, False), (a2a, True)], outer=True)],
+               s.plane(a, (-1 / math.sqrt(2), -1 / math.sqrt(2), 0), (0, 0, 1))),
+        s.face([s.bound([(bc, True), (cd, True), (bd, False)], outer=True)],
+               s.plane(b, (root3, root3, root3), (-1 / math.sqrt(2), 1 / math.sqrt(2), 0))),
+    ]
+    s.write("brep-short-side.step", faces, context=context(uncertainty="5.E-2"))
+
     # The annular side face has its loop vertices a quarter turn apart: the importer
     # splits the top circle where the seam through the bottom vertex crosses it.
     s = Step("Original solid cylinder r=10 h=20 mm; annular side face whose loop vertices are a quarter turn apart")

@@ -118,6 +118,8 @@ impl TsAssemblyOptions {
             max_work: count(self.max_work)?,
             max_records: count(self.max_records)?,
             strict: self.flags & TS_IMPORT_STRICT != 0,
+            // The opt-in repair stays off; the curved-import tolerance policy keeps its
+            // default, which strict disables.
             ..ImportOptions::default()
         };
         o.assembly.expansion.max_work = o.assembly.import.max_work;

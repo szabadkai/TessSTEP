@@ -123,10 +123,20 @@ pub struct ImportOptions {
     /// Reject common exporter deviations that the default accepts without changing
     /// geometry: `$` instead of `*` in derived ORIENTED_EDGE endpoint slots, and the
     /// unit, measure and complex-instance encodings counted by [`ToleratedEncodings`].
+    /// Strict import also accepts no tolerance deviation, whatever `deviation_factor` says.
     pub strict: bool,
     /// Opt-in topology repair of solid B-reps (sewing and orientation); off by
     /// default, so topology defects are rejected. See [`RepairOptions`].
     pub repair: RepairOptions,
+    /// Curved B-rep tolerance policy: the largest distance accepted between an edge
+    /// curve and its face surfaces, and between a vertex and its edge curve, as a
+    /// multiple (at least 1) of the model tolerance. A distance above the model
+    /// tolerance and within this multiple is a counted adaptation
+    /// ([`Adaptations::off_surface_edges`], [`Adaptations::off_curve_vertices`]); a
+    /// larger one is a typed rejection naming the distance and the bound. 1 accepts
+    /// no deviation. The planar and faceted profiles do not use it. See
+    /// docs/CURVED_IMPORT.md#tolerance-policy.
+    pub deviation_factor: f64,
 }
 impl Default for ImportOptions {
     fn default() -> Self {
@@ -135,12 +145,15 @@ impl Default for ImportOptions {
             max_records: 100_000,
             strict: false,
             repair: RepairOptions::default(),
+            deviation_factor: Self::DEVIATION_FACTOR,
         }
     }
 }
 impl ImportOptions {
     /// Logical work units allowed per document entity by [`Self::for_document`].
     pub const WORK_PER_ENTITY: usize = 512;
+    /// The default [`Self::deviation_factor`].
+    pub const DEVIATION_FACTOR: f64 = 16.;
     /// The default budgets, raised so that a root whose reference closure spans the
     /// whole document decodes and adapts: `max_work` is at least
     /// [`Self::WORK_PER_ENTITY`] per entity and `max_records` at least one per
@@ -154,8 +167,7 @@ impl ImportOptions {
                 .max_work
                 .max(entities.saturating_mul(Self::WORK_PER_ENTITY)),
             max_records: defaults.max_records.max(entities),
-            strict: defaults.strict,
-            repair: defaults.repair,
+            ..defaults
         }
     }
 }
@@ -169,6 +181,7 @@ pub struct ImportedSolid {
     /// STEP identity of edges and vertices, for locating tessellation errors.
     topology: uv_loops::TopologyEntities,
     repairs: RepairReport,
+    deviation: f64,
 }
 impl ImportedSolid {
     /// Topology repairs applied by the opt-in repair stage ([`ImportOptions::repair`]);
@@ -183,6 +196,14 @@ impl ImportedSolid {
     pub fn adaptations(&self) -> Adaptations {
         self.adaptations
     }
+    /// The largest accepted distance in metres of an edge from its face surface or of
+    /// a vertex from its edge curve beyond the model tolerance, or zero when none was
+    /// accepted ([`ImportOptions::deviation_factor`]). The B-rep is then validated,
+    /// trimmed and tessellated with the working tolerance reported by
+    /// `brep().model_tolerance()`: the model tolerance plus twice this distance.
+    pub fn largest_deviation(&self) -> f64 {
+        self.deviation
+    }
     pub fn brep(&self) -> &NormalizedBrep {
         &self.brep
     }
@@ -190,11 +211,26 @@ impl ImportedSolid {
         &self.faces
     }
     /// Returns an owned mesh in metres. Triangle face_ids are physical STEP IDs.
+    /// A solid with an accepted deviation larger than the chord tolerance is rejected:
+    /// its mesh could not stay within the chord of its surfaces.
     pub fn tessellate(
         &self,
         tolerance: TessellationTolerance,
         options: TessellationOptions,
     ) -> Result<tessstep_mesh::Mesh, Error> {
+        let chord = tolerance.chord().as_metres();
+        if self.deviation > chord {
+            return Err(Error {
+                kind: ErrorKind::InvalidGeometry,
+                stage: Stage::Tessellation,
+                entity: Some(self.root),
+                source: None,
+                message: format!(
+                    "the largest accepted deviation {:.3e} m exceeds the chord tolerance {chord:.3e} m",
+                    self.deviation
+                ),
+            });
+        }
         let mesh =
             tessstep_tessellate::tessellate_solid(&self.brep, SolidId(0), tolerance, options)
                 .map_err(|e| {
@@ -541,6 +577,7 @@ pub(crate) fn adapt_solid(
         adaptations: Adaptations::default(),
         topology,
         repairs,
+        deviation: 0.,
     })
 }
 struct Context<'d, 'a> {

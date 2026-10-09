@@ -92,6 +92,14 @@ BREP_EXPECTED = {
     "brep-parabola-prism.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (2000 / 3 * 1e-9, 0.01)),  # apex radius 2f
     "brep-hyperbola-prism.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (125 * (math.sinh(2) - 2) * 1e-9, 0.005)),  # apex radius b^2/a
     "brep-off-surface.step": (("accepted", "rejected", "not_run"), None, None),
+    # Tolerance policy under a 1 um (short side: 50 um) model tolerance: a circle edge
+    # 3 um off its cylinder (the mesh is a frustum to r = 10.003), one 50 um off, a
+    # vertex 3 um off its circle, and a B-spline side of 20 um along an edge.
+    "brep-near-surface.step": (("accepted",) * 3, (0, 1, 0, 0, 0, 0, 0, 0, 1),
+                               (math.pi * 20 / 3 * (100 + 100.03 + 10.003 ** 2) * 1e-9, 0.01)),
+    "brep-far-surface.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-vertex-off-curve.step": (("accepted",) * 3, (0, 1, 0, 0, 0, 0, 0, 0, 0, 1), (math.pi * 2000e-9, 0.01)),
+    "brep-short-side.step": (("accepted",) * 3, (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), ((1000 + 1.4) / 6 * 1e-9, math.inf)),
     "brep-misaligned.step": (("accepted",) * 3, (0, 1, 1, 0, 0), (math.pi * 2000e-9, 0.01)),
     "brep-sphere-cap.step": (("accepted",) * 3, (0, 0, 0, 1, 0), (math.pi * 16 * 26 / 3 * 1e-9, 0.008)),
     "brep-hemisphere.step": (("accepted",) * 3, (0, 1, 0, 0, 1), (2 / 3 * math.pi * 1e-6, 0.01)),
@@ -155,7 +163,10 @@ BREP_CHORD = 1e-5
 # Mesh components of accepted solids with BREP_WITH_VOIDS cavities (others have one).
 BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2, "brep-inverted-cavity.step": 2}
 ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges", "collapsed_faces",
-               "supplied_pcurves", "rejected_pcurves")
+               "supplied_pcurves", "rejected_pcurves", "off_surface_edges", "off_curve_vertices", "uncollapsed_sides")
+# Model tolerances of fixtures with a context uncertainty other than the default 1e-8 m.
+BREP_MODEL_TOLERANCE = {"brep-near-surface.step": 1e-6, "brep-far-surface.step": 1e-6,
+                        "brep-vertex-off-curve.step": 1e-6, "brep-short-side.step": 5e-5}
 
 
 # Product structure linked with the bundled product profile and placed in a scene:
@@ -314,6 +325,8 @@ def main():
                   "diagnostic": selection.stderr, "passed": found == SELECTION_EXPECTED and all(r["status"] == "accepted" for r in survey["roots"])})
     for name, (expected, adaptations, volume) in BREP_EXPECTED.items():
         extra = ["--chord", str(BREP_CHORD)] + (["--degrees"] if name == "brep-cone.step" else [])
+        if name in BREP_MODEL_TOLERANCE:
+            extra += ["--model-tolerance", str(BREP_MODEL_TOLERANCE[name])]
         case = inspect(brep_binary, ROOT / "corpus/geometry" / name, scope="brep-solid", extra=extra)
         r = case["result"]
         case["expected"] = {"stages": expected, "adaptations": adaptations, "volume": volume}
