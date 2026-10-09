@@ -90,6 +90,17 @@ requires `*` in the ancestor's slot ([Part 21 clause 12.2.2](https://www.steptoo
 ancestor's declared domain is checked. DERIVE and INVERSE attributes occupy no
 parameter.
 
+Exporter tolerances are separate flags, off by default and each counted in `Retained`:
+`accept_unset_derived` admits `$` in such a DERIVE-redeclared slot,
+`accept_unordered_complex` admits external complex mappings whose components are out of
+alphabetical order, and `accept_untyped_select` (Milestone 22.7) admits a bare simple
+value (`0.001`) where a SELECT requires the typed form (`LENGTH_MEASURE(0.001)`) when the
+simple domain of one of its defined-type alternatives accepts it; which alternative was
+meant is not recorded. `decode_reachable_profile_policy` applies a policy to profile
+decoding with omitted and link slots, and counts each tolerated instance once. The
+context and product import profiles use it for unordered components and untyped
+measures ([product model](PRODUCT_MODEL.md#mapped-items-operators-and-tolerated-encodings-milestone-227)).
+
 ## Views and failure contracts
 
 `DecodedDocument` borrows both inputs and publishes source-order immutable views only

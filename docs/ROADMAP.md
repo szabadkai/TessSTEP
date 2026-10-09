@@ -686,12 +686,32 @@ baseline movements, never a refreshed baseline.
   the authored `surface-*.step` fixtures and two hash-pinned exporter files in
   `check_geometry.py` (CATIA V5 open shells, Pro/ENGINEER closed shell), and the
   reviewed corpus movement in [VALIDATION.md](VALIDATION.md).
-- **22.7 Mapped-item placements and tolerated unit encodings.** Link assemblies whose
-  occurrences are placed by `MAPPED_ITEM` or Cartesian transformation operators (9
-  shape roots are unplaced today) and tolerate, as counted adaptations, the
-  exporter unit encodings that reject real files at the product stage: explicit
-  dimensions on SI units and untyped measures in selects. Synthetic five-parameter
-  `PRODUCT_DEFINITION`s (about 1,740 inputs) stay rejected.
+- **22.7 Mapped-item placements and tolerated unit encodings — delivered 2026-10-09.**
+  The 9 unplaced roots turned out not to be mapped-item placements; mapped-item
+  assemblies were instead rejected with `MissingPlacement` (`trj3_s1-db-214.stp`, CATIA
+  V4 via debis, and `bug33261.stp`, Creo). The linker now decodes the MAPPED_ITEMs of
+  occurrence shape representations, and `Model::expand` places an occurrence that has
+  no context dependent placement by the mapped item its own representation and its
+  parent's representation both hold (target times inverse mapping origin).
+  `CARTESIAN_TRANSFORMATION_OPERATOR_3D` places as a relationship operator or mapping
+  target with its reflection and uniform scale; other operators are typed rejections
+  naming them. The context and product profiles accept, count (`ToleratedEncodings` on
+  `LinkedAssembly`, `ContextUnits`, `RootImport` and the corpus product stage) and in
+  strict mode reject explicit SI dimensions, `$` SI dimensions, starred conversion
+  dimensions, untyped measures and unordered complex components. Five-parameter
+  `PRODUCT_DEFINITION`s stay rejected. Named reasons for the 9 unplaced roots: a
+  five-parameter definition (`A116`), a tessellated shell no representation holds
+  (`Pmi049`), a B-rep related to the part only by a
+  `MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP` (`bug29241`), supplemental
+  constructive geometry (two NIST FTC 08 copies) and round-hole feature tool bodies
+  (`trj2_f1`, `trj3_t2`, two each). Corpus: 11 more accepted product structures, 3 more
+  meshed roots ([VALIDATION.md](VALIDATION.md)). Evidence:
+  `mapped_items_place_occurrences_by_target_times_inverse_origin`,
+  `cartesian_operators_place_with_reflection_and_uniform_scale`,
+  `explicit_si_dimensions_and_unordered_unit_components_are_counted`,
+  `untyped_measure_values_are_counted_and_keep_their_unit`,
+  `mapped_items_place_occurrences_without_relationships`,
+  `untyped_select_values_and_profile_tolerances_are_admitted_only_by_policy`.
 - **22.8 Document import session and scaling benchmark.** One parse and one decode
   per document shared by every root, assembly and appearance import, so a document
   costs its size once. Add a benchmark over the largest corpus inputs

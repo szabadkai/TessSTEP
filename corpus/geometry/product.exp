@@ -2,12 +2,14 @@
    physical attributes that AP203, AP214 and AP242 exporters write for products,
    product definitions, next assembly usage occurrences, shape definition
    representations, context dependent shape representations, item defined
-   transformations and representation maps, together with their application
-   contexts, geometric contexts, units and axis placements. Selects are reduced to
-   the members these records use, associated documents are opaque links and shape
-   representation subtypes add no attributes. Representation items are
-   generalized to representation_item: the assembly linker retains those links
-   without decoding them. General AP rules are excluded. *)
+   transformations, 3D Cartesian transformation operators, representation maps
+   and mapped items, together with their application contexts, geometric
+   contexts, units and axis placements. Selects are reduced to the members these
+   records use, associated documents are opaque links and shape representation
+   subtypes add no attributes. Representation items are generalized to
+   representation_item: the assembly linker retains those links without decoding
+   them, and decodes only the mapped items of occurrence shape representations.
+   General AP rules are excluded. *)
 SCHEMA tessstep_product;
 TYPE si_prefix = ENUMERATION OF
  (exa, peta, tera, giga, mega, kilo, hecto, deca, deci, centi, milli, micro, nano,
@@ -42,7 +44,7 @@ END_TYPE;
 TYPE characterized_definition = SELECT
  (product_definition, product_definition_relationship);
 END_TYPE;
-TYPE transformation = SELECT (item_defined_transformation);
+TYPE transformation = SELECT (item_defined_transformation, functionally_defined_transformation);
 END_TYPE;
 ENTITY application_context;
  application : STRING;
@@ -184,6 +186,22 @@ ENTITY axis2_placement_3d SUBTYPE OF (geometric_representation_item);
  location : cartesian_point;
  axis : OPTIONAL direction;
  ref_direction : OPTIONAL direction;
+END_ENTITY;
+(* The standard's name and description clash with representation_item.name in
+   cartesian_transformation_operator; this profile renames them. *)
+ENTITY functionally_defined_transformation;
+ transformation_name : STRING;
+ transformation_description : OPTIONAL STRING;
+END_ENTITY;
+ENTITY cartesian_transformation_operator
+ SUBTYPE OF (geometric_representation_item, functionally_defined_transformation);
+ axis1 : OPTIONAL direction;
+ axis2 : OPTIONAL direction;
+ local_origin : cartesian_point;
+ scale : OPTIONAL REAL;
+END_ENTITY;
+ENTITY cartesian_transformation_operator_3d SUBTYPE OF (cartesian_transformation_operator);
+ axis3 : OPTIONAL direction;
 END_ENTITY;
 ENTITY representation_map;
  mapping_origin : representation_item;

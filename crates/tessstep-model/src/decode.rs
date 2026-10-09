@@ -41,13 +41,17 @@ impl Default for Limits {
 /// explicit attribute still requires `*` in the ancestor's slot unless
 /// `accept_unset_derived` also admits `$`, a common nonconformant exporter
 /// encoding. `accept_unordered_complex` admits external complex mappings whose
-/// components are not in alphabetical order. Every tolerance is counted in
+/// components are not in alphabetical order. `accept_untyped_select` admits a bare
+/// simple value (`0.001`) in a SELECT slot that requires the typed form
+/// (`LENGTH_MEASURE(0.001)`) when a defined-type alternative's simple domain accepts
+/// it; which alternative was meant is not recorded. Every tolerance is counted in
 /// [`Retained`]; none changes what a conformant file decodes to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Policy {
     pub retain_unevaluated: bool,
     pub accept_unset_derived: bool,
     pub accept_unordered_complex: bool,
+    pub accept_untyped_select: bool,
 }
 /// What a policy-driven decode left unevaluated or tolerated. All zero without
 /// the policy.
@@ -64,6 +68,8 @@ pub struct Retained {
     pub unset_derived: usize,
     /// External complex instances whose components were not in canonical order.
     pub unordered_complex: usize,
+    /// SELECT values written without the type tag of a defined-type alternative.
+    pub untyped_select: usize,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -249,6 +255,32 @@ pub fn decode_reachable_profile<'a>(
     )
 }
 
+/// `decode_reachable_profile_with_links` under an explicit [`Policy`]. Profile
+/// importers use it to admit counted exporter deviations that the default policy
+/// rejects; with `Policy::default()` it is identical to that function.
+#[allow(clippy::too_many_arguments)]
+pub fn decode_reachable_profile_policy<'a>(
+    document: &'a Document,
+    schemas: &'a SchemaSet,
+    schema_name: &str,
+    roots: &[EntityId],
+    omitted: &[OmittedSlot],
+    links: &[LinkSlot],
+    policy: Policy,
+    limits: Limits,
+) -> Result<DecodedDocument<'a>, Error> {
+    decode_scope(
+        document,
+        schemas,
+        schema_name,
+        limits,
+        Some(roots),
+        omitted,
+        links,
+        policy,
+    )
+}
+
 /// An explicitly declared physical-profile reference that is retained but not followed.
 /// Its value must be `$` (when optional) or a reference to a local entity. Neither the
 /// target nor its closure is decoded or type-checked, so the declared domain is not
@@ -400,7 +432,11 @@ fn decode_scope<'a>(
             let types = if resolved.is_empty() {
                 Vec::new()
             } else {
-                cx.instance_types(&entity.kind)?
+                // Tolerances are counted once, when identities are resolved below.
+                let retained = cx.retained;
+                let types = cx.instance_types(&entity.kind)?;
+                cx.retained = retained;
+                types
             };
             for record in entity.kind.records() {
                 cx.tick()?;

@@ -3,9 +3,11 @@
 //!
 //! Product records are decoded with the bundled original product profile
 //! (`corpus/geometry/product.exp`) and adapted by `tessstep-ap242`; representation
-//! items are retained as links, never decoded, so any geometry may sit behind them.
-//! Placements come only from explicit occurrence relationships; a missing or
-//! ambiguous placement fails, and no placement is ever defaulted to identity.
+//! items are retained as links, never decoded, so any geometry may sit behind them;
+//! only the MAPPED_ITEMs of occurrence shape representations are decoded, since they
+//! are placements. Placements come only from explicit occurrence relationships or
+//! mapped items; a missing or ambiguous placement fails, and no placement is ever
+//! defaulted to identity.
 use super::*;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -73,6 +75,8 @@ pub struct LinkedAssembly {
     unplaced: Vec<EntityId>,
     unimported: Vec<EntityId>,
     excluded: Vec<ExcludedRecord>,
+    mapped_placements: usize,
+    tolerated: ToleratedEncodings,
     /// Discovered shape roots by containing representation.
     pub(crate) held: BTreeMap<EntityId, Vec<EntityId>>,
 }
@@ -111,6 +115,16 @@ impl LinkedAssembly {
     pub fn is_complete(&self) -> bool {
         !self.excluded.iter().any(|e| e.structural)
     }
+    /// Occurrence nodes placed by a MAPPED_ITEM in the occurrence's shape
+    /// representation rather than by a context dependent shape representation.
+    pub fn mapped_placements(&self) -> usize {
+        self.mapped_placements
+    }
+    /// Tolerated unit, measure and complex-instance encodings in the decoded product
+    /// records; each is rejected (and its record excluded) in strict mode.
+    pub fn tolerated(&self) -> ToleratedEncodings {
+        self.tolerated
+    }
 }
 
 /// Link supplied shapes to the document's product structure and build a scene.
@@ -118,6 +132,11 @@ impl LinkedAssembly {
 /// FACETED_BREP or a shape tessellation root); each is placed wherever a product
 /// definition's shape representation, or a representation associated with it by an
 /// untransformed shape representation relationship in the same context, holds it.
+/// Occurrences are placed by context dependent shape representations (item defined
+/// transformations or 3D Cartesian transformation operators) or, without one, by a
+/// MAPPED_ITEM of the occurrence's own shape representation that the parent's
+/// representation also holds. Cartesian operators place with their reflection and
+/// uniform scale; every other operator is excluded with its typed reason.
 pub fn link_assembly(
     document: &Document,
     shapes: &[ShapeAsset],
@@ -170,7 +189,21 @@ pub(crate) fn link(
         }
     }
     let roots = product_roots(document, &mut charge)?;
-    let (decoded, excluded) = decode_product(document, &roots, options.import)?;
+    let mut mapped = occurrence_mapped_items(document, &roots, &mut charge)?;
+    // Each product record is decoded with the mapped items it places.
+    let groups: Vec<Vec<EntityId>> = roots
+        .iter()
+        .map(|&root| {
+            std::iter::once(root)
+                .chain(mapped.remove(&root).into_iter().flatten())
+                .collect()
+        })
+        .collect();
+    let (decoded, excluded) = decode_product(document, &groups, options.import)?;
+    let tolerated = decoded
+        .as_ref()
+        .map(ToleratedEncodings::of)
+        .unwrap_or_default();
     let model = match &decoded {
         Some(decoded) => Some(
             tessstep_ap242::adapt(
@@ -192,9 +225,12 @@ pub(crate) fn link(
     let mut unimported = BTreeSet::new();
     let mut products = Vec::new();
     let mut occurrences = 0;
+    let mut mapped_placements = 0;
     if let Some(model) = &model {
         let parts = model.parts();
         occurrences = parts.occurrences.len();
+        let placed_by_relationship: BTreeSet<_> =
+            parts.placements.iter().map(|p| p.occurrence).collect();
         for d in &parts.definitions {
             charge(1)?;
             let formation = parts.formations.iter().find(|f| f.id == d.formation);
@@ -230,6 +266,15 @@ pub(crate) fn link(
             }
             let Some(expansion) = expansion else {
                 let e = first_error.expect("a definition with representations was tried");
+                // An occurrence whose placement record was excluded cannot be placed;
+                // the exclusion (an operator outside the profile, say) is the reason.
+                let placement = excluded.iter().find(|x| x.structural);
+                if let (tessstep_product::Error::MissingPlacement, Some(x)) = (e, placement) {
+                    return Err(Error {
+                        message: format!("assembly expansion: {e}: {}", x.error.message),
+                        ..x.error.clone()
+                    });
+                }
                 let kind = if e == tessstep_product::Error::ResourceLimit {
                     ErrorKind::ResourceLimit
                 } else {
@@ -243,6 +288,12 @@ pub(crate) fn link(
             let base = instances.len();
             for inst in &expansion {
                 charge(1)?;
+                if inst
+                    .occurrence
+                    .is_some_and(|o| !placed_by_relationship.contains(&o))
+                {
+                    mapped_placements += 1;
+                }
                 let id = InstanceId(instances.len() as u64 + 1);
                 let parent = inst.parent.map(|p| InstanceId(base as u64 + p as u64 + 1));
                 // Expansion lists parents before their children; asset leaves follow.
@@ -324,6 +375,8 @@ pub(crate) fn link(
             .collect(),
         unimported: unimported.into_iter().collect(),
         excluded,
+        mapped_placements,
+        tolerated,
         held: held.clone(),
     })
 }
@@ -410,19 +463,94 @@ fn product_roots(
     Ok(roots)
 }
 
-/// Decode the product records' closure. When the combined closure leaves the
-/// profile, each record is decoded alone and those outside it are excluded with
-/// their typed reason.
+/// The MAPPED_ITEMs in occurrence shape representations, by the shape definition
+/// representation that binds each representation to its occurrence's product
+/// definition shape. This is how the CATIA- and Creo-style mapped-item assembly
+/// encoding places an occurrence; every other mapped item stays an opaque link.
+fn occurrence_mapped_items(
+    document: &Document,
+    roots: &[EntityId],
+    charge: &mut impl FnMut(usize) -> Result<(), Error>,
+) -> Result<BTreeMap<EntityId, Vec<EntityId>>, Error> {
+    let entities = document.entities();
+    let reference = |v: Option<&StepValue>| match v.map(|v| &v.kind) {
+        Some(ValueKind::Reference(id)) => Some(*id),
+        _ => None,
+    };
+    let simple = |id: EntityId, name: &str| {
+        entities.get(id).and_then(|e| match e.kind.records() {
+            [r] if r.name.as_ref().eq_ignore_ascii_case(name) => Some(r),
+            _ => None,
+        })
+    };
+    let has = |id: EntityId, name: &str| {
+        entities.get(id).is_some_and(|e| {
+            e.kind
+                .records()
+                .iter()
+                .any(|r| r.name.as_ref().eq_ignore_ascii_case(name))
+        })
+    };
+    let mut found = BTreeMap::new();
+    for &root in roots {
+        charge(1)?;
+        let Some(binding) = simple(root, "SHAPE_DEFINITION_REPRESENTATION") else {
+            continue;
+        };
+        let shape = reference(binding.parameters.first())
+            .and_then(|id| simple(id, "PRODUCT_DEFINITION_SHAPE"));
+        if !shape
+            .and_then(|shape| reference(shape.parameters.get(2)))
+            .is_some_and(|id| has(id, "NEXT_ASSEMBLY_USAGE_OCCURRENCE"))
+        {
+            continue;
+        }
+        // The items of a simple representation record, or of the REPRESENTATION
+        // component of a complex instance.
+        let records = reference(binding.parameters.get(1))
+            .and_then(|id| entities.get(id))
+            .map_or(&[][..], |e| e.kind.records());
+        let record = match records {
+            [r] => Some(r),
+            _ => records
+                .iter()
+                .find(|r| r.name.as_ref().eq_ignore_ascii_case("REPRESENTATION")),
+        };
+        let Some(ValueKind::Aggregate(items)) =
+            record.and_then(|r| r.parameters.get(1)).map(|v| &v.kind)
+        else {
+            continue;
+        };
+        let mut mapped = Vec::new();
+        for item in items {
+            charge(1)?;
+            if let ValueKind::Reference(id) = item.kind {
+                if has(id, "MAPPED_ITEM") {
+                    mapped.push(id);
+                }
+            }
+        }
+        if !mapped.is_empty() {
+            found.insert(root, mapped);
+        }
+    }
+    Ok(found)
+}
+
+/// Decode the product records' closure; each group is a product record and the
+/// mapped items it places. When the combined closure leaves the profile, each group
+/// is decoded alone and those outside it are excluded with their typed reason.
 fn decode_product<'a>(
     document: &'a Document,
-    roots: &[EntityId],
+    groups: &[Vec<EntityId>],
     options: ImportOptions,
 ) -> Result<(Option<DecodedDocument<'a>>, Vec<ExcludedRecord>), Error> {
-    if roots.is_empty() {
+    if groups.is_empty() {
         return Ok((None, Vec::new()));
     }
     let decode = |roots: &[EntityId]| decode_with_profile(document, roots, options);
-    match decode(roots) {
+    let roots: Vec<EntityId> = groups.iter().flatten().copied().collect();
+    match decode(&roots) {
         Ok(decoded) => Ok((Some(decoded), Vec::new())),
         Err(e) if e.kind == decode::ErrorKind::ResourceLimit => {
             Err(product_decode_error(document, e))
@@ -430,22 +558,25 @@ fn decode_product<'a>(
         Err(_) => {
             let mut kept = Vec::new();
             let mut excluded = Vec::new();
-            for &root in roots {
-                match decode(&[root]) {
-                    Ok(_) => kept.push(root),
+            for group in groups {
+                let root = group[0];
+                match decode(group) {
+                    Ok(_) => kept.extend_from_slice(group),
                     Err(e) if e.kind == decode::ErrorKind::ResourceLimit => {
                         return Err(product_decode_error(document, e));
                     }
                     Err(e) => {
-                        let structural = document.entities().get(root).is_some_and(|r| {
-                            r.kind.records().iter().any(|r| {
-                                let name = r.name.as_ref();
-                                name.eq_ignore_ascii_case("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
-                                    || name.eq_ignore_ascii_case(
-                                        "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
-                                    )
-                            })
-                        });
+                        // An occurrence's mapped items are its placement.
+                        let structural = group.len() > 1
+                            || document.entities().get(root).is_some_and(|r| {
+                                r.kind.records().iter().any(|r| {
+                                    let name = r.name.as_ref();
+                                    name.eq_ignore_ascii_case("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+                                        || name.eq_ignore_ascii_case(
+                                            "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
+                                        )
+                                })
+                            });
                         let e = product_decode_error(document, e);
                         excluded.push(ExcludedRecord {
                             record: root,
@@ -474,7 +605,7 @@ fn decode_with_profile<'a>(
 ) -> Result<DecodedDocument<'a>, decode::Error> {
     use product_profile::schema_tessstep_product as s;
     use tessstep_schema::EntityBinding;
-    decode::decode_reachable_profile_with_links(
+    decode::decode_reachable_profile_policy(
         document,
         &product_profile::SCHEMA_SET,
         "tessstep_product",
@@ -511,6 +642,7 @@ fn decode_with_profile<'a>(
                 attribute: "DOCUMENTATION_IDS",
             },
         ],
+        crate::encodings::policy(options),
         decode::Limits {
             max_work: options.max_work,
             ..decode::Limits::default()
@@ -596,6 +728,9 @@ pub struct RootImport {
     /// alternative is imported only when every earlier member of its group failed.
     pub selected: bool,
     pub result: Result<(), Error>,
+    /// Tolerated encodings in the units of the root's context; zero when the root
+    /// has no usable context units.
+    pub tolerated: ToleratedEncodings,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -688,6 +823,7 @@ pub fn import_assembly(
                 kind,
                 selected: k == 0,
                 result: mesh.as_ref().map(|_| ()).map_err(Clone::clone),
+                tolerated: units.as_ref().map(|u| u.tolerated).unwrap_or_default(),
             });
             if let Ok(mesh) = mesh {
                 shapes.push(ShapeAsset {

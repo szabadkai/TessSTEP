@@ -41,8 +41,11 @@ also accepts `$` there, a common exporter deviation that carries no geometry: th
 slots are derived, so their values are never read. `ImportOptions::strict` (C:
 `TS_IMPORT_STRICT` in a `ts_import_policy` passed to
 `ts_document_tessellate_planar_with_policy`; C++: `ImportPolicy`) rejects `$` in those
-slots. Explicit vertex references in them are rejected in both modes. An explicit
-physical-profile mapping recognizes exactly those named slots. The adapter derives their meaning
+slots. Explicit vertex references in them are rejected in both modes. The same switch
+rejects the unit, measure and complex-instance encodings that context-unit discovery
+and product linking otherwise accept and count
+([product model](PRODUCT_MODEL.md#mapped-items-operators-and-tolerated-encodings-milestone-227)).
+An explicit physical-profile mapping recognizes exactly those named slots. The adapter derives their meaning
 from `EDGE_ELEMENT` and `ORIENTATION`. Ordinary schema decoding still rejects
 unsupported derived attributes: no general EXPRESS DERIVE evaluation or suppression
 of schema diagnostics is claimed.

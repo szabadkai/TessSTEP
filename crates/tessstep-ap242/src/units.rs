@@ -96,41 +96,34 @@ impl<'d, 'a> Context<'d, 'a> {
                     })?,
                     _ => return Err(self.error(ErrorKind::TypeMismatch, "expected SI prefix")),
                 };
+                // The standard derives SI dimensions from the name. Explicit exponents
+                // (a profile-tolerated exporter encoding) must agree with the role.
+                let declared = view
+                    .attributes
+                    .iter()
+                    .any(|a| a.declaration.name.eq_ignore_ascii_case("dimensions"));
+                if declared
+                    && !matches!(
+                        self.attr(view, "dimensions")?.kind,
+                        ValueKind::Omitted | ValueKind::Null
+                    )
+                {
+                    self.dimensions_agree(
+                        view,
+                        dimension,
+                        "explicit SI unit dimensions disagree with unit role",
+                    )?;
+                }
                 break scale;
             } else if conversion {
                 // A tolerated `*` (an importer omitted slot) leaves the dimensions to
                 // the unit role checked above.
-                let names: &[&'static str] =
-                    if matches!(self.attr(view, "dimensions")?.kind, ValueKind::Omitted) {
-                        &[]
-                    } else {
-                        &[
-                            "length_exponent",
-                            "mass_exponent",
-                            "time_exponent",
-                            "electric_current_exponent",
-                            "thermodynamic_temperature_exponent",
-                            "amount_of_substance_exponent",
-                            "luminous_intensity_exponent",
-                        ]
-                    };
-                if !names.is_empty() {
-                    let exponents = self.target(view, "dimensions", "dimensional_exponents")?;
-                    for (i, &name) in names.iter().enumerate() {
-                        let value = self.attr(exponents, name)?;
-                        let n = self.number(value)?;
-                        let expected = if i == 0 && dimension == Dimension::Length {
-                            1.0
-                        } else {
-                            0.0
-                        };
-                        if n != expected {
-                            return Err(self.error(
-                                ErrorKind::Units,
-                                "conversion dimensions disagree with unit role",
-                            ));
-                        }
-                    }
+                if !matches!(self.attr(view, "dimensions")?.kind, ValueKind::Omitted) {
+                    self.dimensions_agree(
+                        view,
+                        dimension,
+                        "conversion dimensions disagree with unit role",
+                    )?;
                 }
                 let measure = self.target(view, "conversion_factor", "measure_with_unit")?;
                 let value = self.attr(measure, "value_component")?;
@@ -162,6 +155,39 @@ impl<'d, 'a> Context<'d, 'a> {
         }
         Unit::new(dimension, scale)
             .map_err(|_| self.error(ErrorKind::Units, "invalid SI conversion scale"))
+    }
+    /// All seven explicit exponents of a unit's DIMENSIONS agree with its role.
+    fn dimensions_agree(
+        &mut self,
+        view: &'d EntityView<'a>,
+        dimension: Dimension,
+        message: &'static str,
+    ) -> Result<(), Error> {
+        let exponents = self.target(view, "dimensions", "dimensional_exponents")?;
+        for (i, name) in [
+            "length_exponent",
+            "mass_exponent",
+            "time_exponent",
+            "electric_current_exponent",
+            "thermodynamic_temperature_exponent",
+            "amount_of_substance_exponent",
+            "luminous_intensity_exponent",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let value = self.attr(exponents, name)?;
+            let n = self.number(value)?;
+            let expected = if i == 0 && dimension == Dimension::Length {
+                1.0
+            } else {
+                0.0
+            };
+            if n != expected {
+                return Err(self.error(ErrorKind::Units, message));
+            }
+        }
+        Ok(())
     }
 }
 fn prefix_scale(s: &str) -> Option<f64> {

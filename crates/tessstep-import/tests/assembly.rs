@@ -124,6 +124,12 @@ fn starred_conversion_units_are_tolerated_by_default_and_rejected_in_strict_mode
         boxes(&imported.assembly),
         [[0, 0, 0, 254, 508, 762], [0, 1016, 0, 254, 1524, 762]]
     );
+    let counted = ToleratedEncodings {
+        omitted_conversion_dimensions: 1,
+        ..ToleratedEncodings::default()
+    };
+    assert_eq!(imported.assembly.tolerated(), counted);
+    assert!(imported.roots.iter().all(|r| r.tolerated == counted));
     let mut strict = AssemblyImportOptions::default();
     strict.assembly.import.strict = true;
     // Strict mode rejects the unit in the solid's context and in every product
@@ -223,4 +229,228 @@ fn surface_styles_colour_solids_and_faces() {
             }
         }
     }
+}
+
+const MAPPED: &str = include_str!("../../../corpus/geometry/assembly-mapped.step");
+const OPERATOR: &str = include_str!("../../../corpus/geometry/assembly-operator.step");
+const SI_DIMENSIONS: &str = include_str!("../../../corpus/geometry/assembly-si-dimensions.step");
+const UNTYPED: &str = include_str!("../../../corpus/geometry/assembly-untyped-measure.step");
+
+/// A fixture with one exact record text replaced.
+fn edit(text: &str, old: &str, new: &str) -> String {
+    assert!(text.contains(old), "{old}");
+    text.replace(old, new)
+}
+
+fn strict() -> AssemblyImportOptions {
+    let mut options = AssemblyImportOptions::default();
+    options.assembly.import.strict = true;
+    options
+}
+
+#[test]
+fn mapped_items_place_occurrences_by_target_times_inverse_origin() {
+    let doc = parse(MAPPED);
+    for options in [AssemblyImportOptions::default(), strict()] {
+        let imported = import_assembly(&doc, options).unwrap();
+        assert!(imported.roots.iter().all(|r| r.result.is_ok()));
+        let assembly = &imported.assembly;
+        assert!(assembly.is_complete());
+        assert_eq!(assembly.occurrence_count(), 4);
+        assert_eq!(assembly.mapped_placements(), 6, "two pairs and four blocks");
+        assert_eq!(assembly.tolerated(), ToleratedEncodings::default());
+        // `pair` is mapped from its second block frame, 40 mm along y: in `rig` its
+        // blocks sit 40 mm lower, and the turned copy turns about that frame.
+        assert_eq!(
+            boxes(assembly),
+            [
+                [0, -40, 0, 10, -20, 30],
+                [0, 0, 0, 10, 20, 30],
+                [80, 0, 0, 100, 10, 30],
+                [120, 0, 0, 140, 10, 30],
+            ]
+        );
+    }
+    // Without the occurrence's own representation no item says which occurrence it
+    // places, so the occurrence has no placement; two qualifying items are ambiguous.
+    for (text, kind) in [
+        (
+            edit(MAPPED, "#96=SHAPE_DEFINITION_REPRESENTATION(#94,#95);", ""),
+            "MissingPlacement",
+        ),
+        (
+            edit(MAPPED, "('block-1',(#80),#8)", "('block-1',(#80,#82),#8)"),
+            "AmbiguousPlacement",
+        ),
+    ] {
+        let e = link_assembly(&parse(&text), &[], AssemblyOptions::default()).unwrap_err();
+        assert_eq!(
+            (e.stage, e.kind),
+            (Stage::Product, ErrorKind::InvalidGeometry)
+        );
+        assert!(e.message.contains(kind), "{e}");
+    }
+}
+
+#[test]
+fn cartesian_operators_place_with_reflection_and_uniform_scale() {
+    let doc = parse(OPERATOR);
+    let imported = import_assembly(&doc, AssemblyImportOptions::default()).unwrap();
+    let assembly = &imported.assembly;
+    assert!(assembly.is_complete());
+    assert_eq!(
+        (assembly.occurrence_count(), assembly.mapped_placements()),
+        (3, 1)
+    );
+    // Mirrored in y; scaled by 2 at 100 mm along x; the mapped item's target operator
+    // scales by 0.5 at 100 mm along y.
+    assert_eq!(
+        boxes(assembly),
+        [
+            [0, -20, 0, 10, 0, 30],
+            [0, 100, 0, 5, 110, 15],
+            [100, 0, 0, 120, 40, 60]
+        ]
+    );
+    let scales: Vec<(bool, i64)> = assembly
+        .scene()
+        .instances()
+        .iter()
+        .filter(|i| i.source.asset.is_some())
+        .map(|i| {
+            let l = i.world_transform.linear();
+            let column = (l[0][0].powi(2) + l[1][0].powi(2) + l[2][0].powi(2)).sqrt();
+            (i.mirrored, (column * 1e3).round() as i64)
+        })
+        .collect();
+    let mut sorted = scales.clone();
+    sorted.sort();
+    assert_eq!(sorted, [(false, 500), (false, 2000), (true, 1000)]);
+    // Operators the scene cannot place as evaluated similarities are typed rejections
+    // that name the operator.
+    let flat = edit(
+        OPERATOR,
+        "#89=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','',$,#85,#86,#88,$,#87);",
+        "#89=CARTESIAN_TRANSFORMATION_OPERATOR_2D('','',$,#85,#86,#88,$);",
+    );
+    let e = link_assembly(&parse(&flat), &[], AssemblyOptions::default()).unwrap_err();
+    assert_eq!((e.stage, e.kind), (Stage::Product, ErrorKind::Unsupported));
+    assert_eq!(e.entity.map(EntityId::get), Some(89));
+    assert!(
+        e.message.contains("MissingPlacement")
+            && e.message
+                .contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D is outside"),
+        "{e}"
+    );
+    let negative = edit(OPERATOR, "#90,2.0,$)", "#90,-2.0,$)");
+    let e = link_assembly(&parse(&negative), &[], AssemblyOptions::default()).unwrap_err();
+    assert_eq!(
+        (e.stage, e.kind, e.entity.map(EntityId::get)),
+        (Stage::Product, ErrorKind::InvalidGeometry, Some(91))
+    );
+    assert!(e.message.contains("operator scale"), "{e}");
+}
+
+/// The tolerant default imports with the encodings counted in the product records,
+/// the discovered context units and every root; strict excludes every product record
+/// reaching the units and imports no root.
+fn tolerated_then_rejected(text: &str, expected: ToleratedEncodings, boxes_mm: &[[i64; 6]]) {
+    let doc = parse(text);
+    let imported = import_assembly(&doc, AssemblyImportOptions::default()).unwrap();
+    assert!(imported.assembly.is_complete());
+    assert_eq!(boxes(&imported.assembly), boxes_mm);
+    assert_eq!(imported.assembly.tolerated(), expected);
+    assert!(
+        imported
+            .roots
+            .iter()
+            .all(|r| r.result.is_ok() && r.tolerated == expected)
+    );
+    let solids = discover_solids(&doc, ImportOptions::default()).unwrap();
+    assert_eq!(solids[0].units.as_ref().unwrap().tolerated, expected);
+    let rejected = import_assembly(&doc, strict()).unwrap();
+    assert!(!rejected.assembly.is_complete());
+    assert!(rejected.assembly.nodes().is_empty());
+    assert!(rejected.roots.iter().all(|r| r.result.is_err()));
+    let solids = discover_solids(&doc, strict().assembly.import).unwrap();
+    assert!(solids[0].units.is_err());
+}
+
+#[test]
+fn explicit_si_dimensions_and_unordered_unit_components_are_counted() {
+    let pair = [[0, 0, 0, 10, 20, 30], [0, 40, 0, 10, 60, 30]];
+    tolerated_then_rejected(
+        SI_DIMENSIONS,
+        ToleratedEncodings {
+            explicit_si_dimensions: 3,
+            unordered_complex: 2,
+            ..ToleratedEncodings::default()
+        },
+        &pair,
+    );
+    // In canonical component order strict still rejects the explicit exponents.
+    let ordered = edit(
+        &edit(
+            SI_DIMENSIONS,
+            "#5=(NAMED_UNIT(#4)LENGTH_UNIT()SI_UNIT(",
+            "#5=(LENGTH_UNIT()NAMED_UNIT(#4)SI_UNIT(",
+        ),
+        "#8=(NAMED_UNIT(#6)SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.))",
+        "#8=(NAMED_UNIT(#6)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT())",
+    );
+    tolerated_then_rejected(
+        &ordered,
+        ToleratedEncodings {
+            explicit_si_dimensions: 3,
+            ..ToleratedEncodings::default()
+        },
+        &pair,
+    );
+    let e = import_assembly(&parse(&ordered), strict())
+        .unwrap()
+        .assembly
+        .excluded()[0]
+        .error
+        .clone();
+    assert!(e.message.contains("requires a derived marker"), "{e}");
+    // Explicit exponents must agree with the unit role.
+    let wrong = edit(
+        SI_DIMENSIONS,
+        "#6=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.)",
+        "#6=DIMENSIONAL_EXPONENTS(0.,0.,1.,0.,0.,0.,0.)",
+    );
+    let doc = parse(&wrong);
+    let e = discover_solids(&doc, ImportOptions::default()).unwrap()[0]
+        .units
+        .clone()
+        .unwrap_err();
+    assert!(e.message.contains("SI unit dimensions disagree"), "{e}");
+    let e = link_assembly(&doc, &[], AssemblyOptions::default()).unwrap_err();
+    assert!(
+        e.message.contains("explicit SI unit dimensions disagree"),
+        "{e}"
+    );
+}
+
+#[test]
+fn untyped_measure_values_are_counted_and_keep_their_unit() {
+    // The bare conversion factor still makes the unit an inch.
+    tolerated_then_rejected(
+        UNTYPED,
+        ToleratedEncodings {
+            untyped_measures: 2,
+            ..ToleratedEncodings::default()
+        },
+        &[[0, 0, 0, 254, 508, 762], [0, 1016, 0, 254, 1524, 762]],
+    );
+    let e = import_assembly(&parse(UNTYPED), strict())
+        .unwrap()
+        .assembly
+        .excluded()[0]
+        .error
+        .clone();
+    assert!(
+        e.message.contains("not a permitted SELECT alternative"),
+        "{e}"
+    );
 }

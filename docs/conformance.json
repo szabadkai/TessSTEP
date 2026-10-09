@@ -726,7 +726,7 @@
       "feature": "Root and representation-context unit discovery",
       "status": "implemented",
       "test": "discovery_reads_context_units_and_uncertainty",
-      "limitations": "Shape representations containing each solid root; SI and conversion-based length/plane-angle units and length uncertainty; missing or conflicting units are per-root errors, never defaults"
+      "limitations": "Shape representations containing each solid root; SI and conversion-based length/plane-angle units and length uncertainty; missing or conflicting units are per-root errors, never defaults; tolerated exporter unit and measure encodings are counted, and strict import rejects them"
     },
     {
       "feature": "Periodic NURBS surface axes",
@@ -749,8 +749,8 @@
     {
       "feature": "STEP product structure linking",
       "status": "bounded subset implemented",
-      "test": "nested_occurrences_compose_their_placements",
-      "limitations": "bundled original product profile over AP203/AP214/AP242 physical layouts; next assembly usage occurrences placed by context dependent shape representations with item defined transformations; missing or ambiguous placements fail; mapped-item and Cartesian-operator assemblies and external document references are not linked"
+      "test": "mapped_items_place_occurrences_by_target_times_inverse_origin",
+      "limitations": "bundled original product profile over AP203/AP214/AP242 physical layouts; next assembly usage occurrences placed by context dependent shape representations with item defined transformations or 3D Cartesian operators (reflection and uniform scale), or by MAPPED_ITEMs of occurrence shape representations; tolerated unit and measure encodings are counted and rejected when strict; missing or ambiguous placements fail; external document references are not linked"
     },
     {
       "feature": "Assembly import as a scene",

@@ -100,6 +100,16 @@ can connect coordinate frames during traversal; cross-context ownership associat
 does not establish a world placement. No external resources or arbitrary alternatives are
 selected. Output contains no partial expansion on failure.
 
+An occurrence without any placement relationship may instead be placed by a mapped item
+(Milestone 22.7), the encoding CATIA- and Creo-style exporters write: a representation
+bound to the occurrence's own shape holds a mapped item whose map's source is a
+representation of the child, and a representation in the parent instance's frame holds
+the same item. That holder's evaluated `source_to_using` map is the child-to-parent
+placement, and the child instance uses the map's source representation. Two distinct
+qualifying items return `AmbiguousPlacement`. A mapped item held only by the occurrence's
+representation places nothing, since that representation's frame is not known to be the
+parent's, and the occurrence keeps failing with `MissingPlacement`.
+
 Defaults: 5,000,000 work steps, 100,000 instances, 1,024 levels. Traversal is iterative;
 instance and work limits stop exponential DAG expansion before unbounded output allocation.
 The independent mesh scene API can consume these explicit transforms and caller-selected
@@ -152,9 +162,50 @@ context, holds it. A combined closure outside the profile is decoded record by r
 excluded records are reported, and those that are occurrences or placements mark the
 structure incomplete. The solid-angle unit of a context is optional, and the tolerant
 default accepts `NAMED_UNIT(*)` on conversion-based units (the dimensions follow from
-the unit role; strict mode rejects it). Mapped-item and Cartesian-operator assemblies
-and external document references are not linked. Evidence: `tests/assembly.rs`, the
-product stage of the corpus runner and `external-assembly.json`.
+the unit role; strict mode rejects it). External document references are not linked.
+Evidence: `tests/assembly.rs`, the product stage of the corpus runner and
+`external-assembly.json`.
+
+## Mapped items, operators and tolerated encodings (Milestone 22.7)
+
+The linker also decodes the MAPPED_ITEMs held by occurrence shape representations
+(shape definition representations of a next assembly usage occurrence's product
+definition shape), each together with the record that binds it; every other mapped
+item, including those of draughting models and presentation representations, stays an
+opaque link. `Model::expand` then places such occurrences as described above; the
+number of occurrence nodes placed this way is `LinkedAssembly::mapped_placements`. An
+item-defined, mapped or operator placement is evaluated with the checked Milestone 5
+rules: target times inverse mapping origin, each frame in its own context's length unit.
+
+`CARTESIAN_TRANSFORMATION_OPERATOR_3D` is accepted as a relationship's transformation
+operator and as a mapping target, in its AP physical layout (item name, the functionally
+defined transformation's name and description, axis1, axis2, local origin, scale,
+axis3). Its evaluation is an orthonormal frame, possibly mirrored by the second axis,
+times one positive uniform scale, which the Milestone 18 scene places as an explicit
+affine transform with its reflection flag. Every other operator is a typed rejection
+naming it: `CARTESIAN_TRANSFORMATION_OPERATOR_2D`, the supplemental non-uniform operator
+and other functionally defined transformations are outside the profile, and a
+non-positive scale fails in the adapter. An occurrence whose placement record was
+excluded reports the exclusion with its `MissingPlacement`.
+
+Exporters write some unit and measure encodings that Part 21 or the schema reject but
+whose meaning is unambiguous. The tolerant default accepts them in the context
+(discovery) and product profiles and counts them in `ToleratedEncodings`, reported for
+the product records (`LinkedAssembly::tolerated`), each discovered context
+(`ContextUnits::tolerated`) and each imported root (`RootImport::tolerated`):
+
+| Count | Encoding | Meaning kept |
+| --- | --- | --- |
+| `explicit_si_dimensions` | `NAMED_UNIT(#exponents)` on an SI unit instead of `*` (XStep, PSStep, older OpenCASCADE) | exponents checked against the unit role |
+| `unset_si_dimensions` | `$` instead of `*` on an SI unit | dimensions follow from the unit name |
+| `omitted_conversion_dimensions` | `NAMED_UNIT(*)` on a conversion-based unit (NIST, Creo) | dimensions follow from the unit role |
+| `untyped_measures` | a bare number where a typed `LENGTH_MEASURE(…)` is required (debis CATIA V4) | the measure's unit gives the dimension |
+| `unordered_complex` | complex instance components out of alphabetical order (XStep units) | components are matched by name |
+
+`ImportOptions::strict` rejects each of them; the affected product records are then
+excluded with their typed decode error and the roots of an affected context get a unit
+error. Synthetic five-parameter `PRODUCT_DEFINITION`s (the `AttributeCount` rejections
+of the generated `dodgy-step-files` inputs) stay rejected in both modes.
 
 ## Evidence and references
 

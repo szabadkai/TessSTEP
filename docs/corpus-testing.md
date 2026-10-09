@@ -305,6 +305,11 @@ result counts products, occurrences, placed definition nodes and placed and unpl
 shape roots. A missing or ambiguous placement is `rejected`; an occurrence or
 placement record outside the profile is `unsupported` (or `rejected` when invalid),
 with the first located reason; a file without product records is `not_applicable`.
+Since Milestone 22.7 occurrences may also be placed by mapped items and Cartesian
+operators; the result then counts `mapped_placements`, and a `tolerated` object counts
+the exporter unit, measure and complex-instance encodings the tolerant default accepted
+in the product records (both are written only when nonzero, see
+[the product model](PRODUCT_MODEL.md#mapped-items-operators-and-tolerated-encodings-milestone-227)).
 The summary reports outcomes by declared schema and the top failure categories; a
 previously accepted input becoming non-accepted fails `--check`.
 

@@ -143,6 +143,67 @@ surface models, four ending in `UnresolvedTolerance`) and `trj5_k1-pe-203.stp` /
 `-214.stp` (a tessellation resource limit after about 9 s of refinement) are new among
 the slowest, all far below the 120 s per-input deadline.
 
+# Milestone 22.7: mapped-item placements and tolerated unit encodings — 2026-10-09
+
+Delivered: occurrences placed by MAPPED_ITEMs of their own shape representations
+(`Model::expand`, linker decoding of those items), `CARTESIAN_TRANSFORMATION_OPERATOR_3D`
+placements (relationship operator or mapping target, reflection and uniform scale), and
+counted tolerances of exporter unit encodings in the context and product profiles
+(`ToleratedEncodings`; decoder `Policy::accept_untyped_select` and
+`decode_reachable_profile_policy`). Strict mode rejects every tolerated encoding.
+
+Measurement first: none of the 9 unplaced roots in accepted structures is placed by a
+mapped item or operator. `A116` holds a five-parameter `PRODUCT_DEFINITION` (stays
+rejected); `Pmi049` has a `TESSELLATED_SHELL` that no representation holds; `bug29241`
+relates its B-rep to the part's shape representation only by a
+`MECHANICAL_DESIGN_AND_DRAUGHTING_RELATIONSHIP`; the two NIST FTC 08 copies hold a
+supplemental `TESSELLATED_SHELL` in a constructive geometry representation; `trj2_f1` and
+`trj3_t2` hold two `ROUND_HOLE` feature tool bodies each. Mapped-item assemblies were
+rejected outright with `MissingPlacement`: `trj3_s1-db-214.stp` (CATIA V4 via debis,
+10 occurrences) and `bug33261.stp` (Creo, 47). The real-exporter unit rejections were
+explicit SI dimensions (PSStep, older OpenCASCADE, an unnamed exporter; 4 files), the same
+with unordered unit components (XStep; 3 files) and untyped uncertainty values (debis;
+2 files). No other product result gained mapped placements: the mapped items of the
+other corpus assemblies (for example the draughting-model views of `trj4_s1-tu-214`) are
+outside occurrence shape representations and stay opaque links.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), rustdoc | passed; new evidence in `tests/assembly.rs` (four tests), `tessstep-product` and decoder tests |
+| `check_geometry.py`, `check_product.py`, `check_architecture.py`, `conformance.py --check`, script unit tests | passed; 87 reviewed geometry outcomes including four new authored assemblies |
+| AP214 validator on the new fixtures | mapped and operator fixtures accepted (confirms the 8-parameter operator layout); the two unit fixtures rejected, as the encodings are nonconformant |
+| `corpus.py --check` with a validator rebuilt from this branch | 3,226 compatible, 15 changed, 1 reviewed regression (below) on 2026-10-02 and again with `--timeout 300` on 2026-10-09; with the default 120 s deadline the 2026-10-09 run under load also timed out `bug30790.step` (below) |
+
+Reviewed movements against the baseline: 11 product stages move from rejected to
+accepted (`trj3_s1-db-214` with 10 and `bug33261` with 47 mapped placements, all 9 and
+24 discovered roots placed; `2.stp`, `OCC2368`, `bug28414` (explicit SI dimensions and
+unordered components); `bug24601`, `bug25013`, `bug30790`, `bug32596` (explicit SI
+dimensions); `trj8_c2-db-214` and `trj8_k1-db-214` (untyped uncertainty)). Five accepted
+structures only gain a `tolerated` count of starred conversion-unit dimensions (three
+NIST AP203 files, `bug28345_30338`, `bug33569`). Accepted structures: 585 → 596; placed
+shape roots 607 → 688; unplaced 9 → 11, the two new ones `bug24601`'s solids, whose
+representations reach the part only through untransformed relationships across
+contexts (unchanged rule). With their declared units, 44 roots in seven files that
+discovery had left on assumed millimetres now use their context units: meshed roots
+577 → 580 (`2.stp` 11 → 12, `bug30790` 0 → 2), and `bug30790`'s other 24 roots,
+centimetre-sized parts declared in metres, now pass geometry (stage partial → accepted)
+and stop at a tessellation face budget (`tessellation:resource_limit` 78 roots).
+
+Run time: those 24 budget failures cost several seconds each, so `bug30790.step`
+(198,667 entities) becomes the slowest corpus input: 164 s in the 2026-10-09 run under a
+load average of about 15 from parallel builds (`bug33261.stp`, 13 s unloaded, took 21 s
+there), above the runner's 120 s deadline, while the 2026-10-02 run finished it within
+the deadline. Budget behaviour on such faces is Milestone 22.2; until then the deadline
+is marginal for this file on loaded or slower machines.
+
+Regression, justified: `bug32596_abc_0_13.step` geometry accepted → rejected. The file
+declares a conversion-based `METRE` and a 1e-17 m uncertainty (floored to 1e-7 m).
+Before, its unit failed discovery and the survey assumed millimetres, so the 1e-7 m
+tolerance was a thousand times looser relative to the geometry; in its declared unit an
+edge lies 4.2e-7 m off its face surface and the root is rejected with that distance. It
+never meshed (tessellation was rejected before), so no meshed root is lost; the edge
+distance policy is Milestone 22.3. The baseline was not saved.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

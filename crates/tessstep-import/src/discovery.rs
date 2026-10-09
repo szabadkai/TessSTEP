@@ -27,6 +27,8 @@ pub struct ContextUnits {
     /// The context's length uncertainty in metres, if it assigns one. A measure
     /// named `DISTANCE_ACCURACY_VALUE` wins; otherwise the smallest length measure.
     pub distance_uncertainty: Option<f64>,
+    /// Tolerated unit and measure encodings in the context's unit closure.
+    pub tolerated: crate::encodings::ToleratedEncodings,
 }
 
 /// A solid root and the units of the shape representation that contains it.
@@ -683,7 +685,7 @@ fn decode_representation(
     use context_profile::schema_tessstep_context as s;
     use tessstep_schema::EntityBinding;
     let schema = &context_profile::SCHEMA_SET;
-    let decoded = decode::decode_reachable_profile_with_links(
+    let decoded = decode::decode_reachable_profile_policy(
         document,
         schema,
         "tessstep_context",
@@ -716,6 +718,7 @@ fn decode_representation(
             entity: s::Entity_REPRESENTATION::DECLARATION,
             attribute: "ITEMS",
         }],
+        crate::encodings::policy(options),
         decode::Limits {
             max_work: options.max_work,
             ..decode::Limits::default()
@@ -870,26 +873,26 @@ impl<'d, 'a> Units<'d, 'a> {
                 if let ValueKind::Enumeration(prefix) = &self.attr(v, "PREFIX").kind {
                     scale *= prefix_scale(prefix).expect("decoded SI prefix");
                 }
+                // Explicit exponents, a tolerated encoding of the derived slot.
+                if let ValueKind::Reference(_) = self.attr(v, "DIMENSIONS").kind {
+                    self.exponents_agree(
+                        v,
+                        dimension,
+                        "SI unit dimensions disagree with the unit role",
+                    )?;
+                }
                 return Ok((dimension, scale));
             }
             if !self.is(v, "CONVERSION_BASED_UNIT") {
                 return Err(self.error("unit is neither SI nor conversion based"));
             }
-            let expected_length = if dimension == Dimension::Length {
-                1.
-            } else {
-                0.
-            };
             // A tolerated `*` leaves the dimensions to the unit role checked above.
-            let exponents = match self.attr(v, "DIMENSIONS").kind {
-                ValueKind::Omitted => &[][..],
-                _ => &self.reference(v, "DIMENSIONS").attributes[..],
-            };
-            for (i, a) in exponents.iter().enumerate() {
-                let n = Self::number(a.value).unwrap_or(f64::NAN);
-                if n != if i == 0 { expected_length } else { 0. } {
-                    return Err(self.error("conversion dimensions disagree with the unit role"));
-                }
+            if !matches!(self.attr(v, "DIMENSIONS").kind, ValueKind::Omitted) {
+                self.exponents_agree(
+                    v,
+                    dimension,
+                    "conversion dimensions disagree with the unit role",
+                )?;
             }
             let measure = self.reference(v, "CONVERSION_FACTOR");
             let factor = Self::number(self.attr(measure, "VALUE_COMPONENT")).unwrap_or(f64::NAN);
@@ -901,6 +904,31 @@ impl<'d, 'a> Units<'d, 'a> {
         }
         Err(self.error("unit conversion chain is too deep"))
     }
+    /// The seven explicit DIMENSIONAL_EXPONENTS of a unit agree with its role.
+    fn exponents_agree(
+        &self,
+        v: &'d EntityView<'a>,
+        dimension: Dimension,
+        message: &str,
+    ) -> Result<(), Error> {
+        let expected_length = if dimension == Dimension::Length {
+            1.
+        } else {
+            0.
+        };
+        for (i, a) in self
+            .reference(v, "DIMENSIONS")
+            .attributes
+            .iter()
+            .enumerate()
+        {
+            let n = Self::number(a.value).unwrap_or(f64::NAN);
+            if n != if i == 0 { expected_length } else { 0. } {
+                return Err(self.error(message));
+            }
+        }
+        Ok(())
+    }
 }
 
 fn context_units(
@@ -910,7 +938,7 @@ fn context_units(
 ) -> Result<ContextUnits, Error> {
     use context_profile::schema_tessstep_context as s;
     use tessstep_schema::EntityBinding;
-    let decoded = decode::decode_reachable_profile(
+    let decoded = decode::decode_reachable_profile_policy(
         document,
         &context_profile::SCHEMA_SET,
         "tessstep_context",
@@ -920,6 +948,8 @@ fn context_units(
             s::Entity_CONVERSION_BASED_UNIT::DECLARATION,
             options,
         ),
+        &[],
+        crate::encodings::policy(options),
         decode::Limits {
             max_work: options.max_work,
             ..decode::Limits::default()
@@ -1003,13 +1033,16 @@ fn context_units(
         plane_angle: AngleUnit::radians_per_unit(angle)
             .map_err(|_| u.error("invalid plane angle unit scale"))?,
         distance_uncertainty: uncertainty.map(|(_, m)| m),
+        tolerated: crate::encodings::ToleratedEncodings::of(&decoded),
     })
 }
 
-/// Unit dimension slots: SI units derive DIMENSIONS and write `*` (`$` tolerated);
-/// conversion-based units write explicit exponents, and the tolerant default also
-/// accepts `*` there, taking the dimensions from the unit role (several AP203
-/// exporters, including NIST's, write `NAMED_UNIT(*)` for inch and degree units).
+/// Unit dimension slots: SI units derive DIMENSIONS and write `*`; the tolerant
+/// default also accepts `$` and explicit exponents there (XStep, PSStep and older
+/// OpenCASCADE exporters write `NAMED_UNIT(#exponents)`), which must agree with the
+/// unit role. Conversion-based units write explicit exponents, and the tolerant
+/// default also accepts `*` there, taking the dimensions from the unit role (several
+/// AP203 exporters, including NIST's, write `NAMED_UNIT(*)` for inch and degree units).
 pub(crate) fn unit_slots(
     si: tessstep_schema::DeclarationId,
     conversion: tessstep_schema::DeclarationId,
@@ -1019,7 +1052,7 @@ pub(crate) fn unit_slots(
         entity: si,
         attribute: "DIMENSIONS",
         allow_unset: !options.strict,
-        allow_value: false,
+        allow_value: !options.strict,
     }];
     if !options.strict {
         slots.push(decode::OmittedSlot {

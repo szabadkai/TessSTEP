@@ -18,6 +18,24 @@ style on a point (no surface colour) and a presentation layer assignment.
 
 assembly-inch.step: `pair` alone in inch units written as a conversion-based unit
 with `NAMED_UNIT(*)`, a deviation the tolerant default accepts and strict rejects.
+
+assembly-mapped.step: the nested structure with every occurrence placed by a
+MAPPED_ITEM, as CATIA- and Creo-style exporters write it: the parent's shape
+representation holds the mapped item, and the occurrence's product definition shape
+has its own shape representation holding the same item. `pair` is mapped from its
+second block frame (40 mm along y), so the target-times-inverse-origin rule moves it.
+
+assembly-operator.step: `rig` places `block` three times by 3D Cartesian
+transformation operators: a mirror in y and a uniform scale 2 at 100 mm along x as
+context dependent placements, and a uniform scale 0.5 at 100 mm along y as the target
+of a mapped item.
+
+assembly-si-dimensions.step: `pair` in millimetres whose SI units write explicit
+DIMENSIONAL_EXPONENTS and, for the length and solid angle units, complex components
+out of canonical order (an XStep-style encoding the tolerant default accepts).
+
+assembly-untyped-measure.step: `pair` in inches whose conversion factor and length
+uncertainty are bare numbers where a typed LENGTH_MEASURE is required.
 """
 import argparse
 from pathlib import Path
@@ -54,19 +72,35 @@ class Writer:
         return self.add(f"AXIS2_PLACEMENT_3D('',#{p},#{self.direction(z)},#{self.direction(x)})")
 
 
-def context(w, inch=False):
+def context(w, inch=False, encoding=None):
+    """Product contexts and a geometric context in millimetres (or inches). With
+    encoding "explicit" the SI units write their dimensional exponents, the length and
+    solid angle units out of component order; with "untyped" the conversion factor
+    and uncertainty are bare numbers."""
     app = w.add("APPLICATION_CONTEXT('automotive design')")
     product_context = w.add(f"PRODUCT_CONTEXT('',#{app},'mechanical')")
     definition_context = w.add(f"PRODUCT_DEFINITION_CONTEXT('part definition',#{app},'design')")
+    measure = "{}" if encoding == "untyped" else "LENGTH_MEASURE({})"
     if inch:
         mm = w.add("(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))")
-        factor = w.add(f"LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#{mm})")
-        length = w.add(f"(CONVERSION_BASED_UNIT('INCH',#{factor})LENGTH_UNIT()NAMED_UNIT(*))")
+        factor = w.add(f"LENGTH_MEASURE_WITH_UNIT({measure.format('25.4')},#{mm})")
+        dimensions = "*"
+        if encoding == "untyped":
+            dimensions = f"#{w.add('DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.)')}"
+        length = w.add(f"(CONVERSION_BASED_UNIT('INCH',#{factor})LENGTH_UNIT()NAMED_UNIT({dimensions}))")
+    elif encoding == "explicit":
+        metre = w.add("DIMENSIONAL_EXPONENTS(1.,0.,0.,0.,0.,0.,0.)")
+        length = w.add(f"(NAMED_UNIT(#{metre})LENGTH_UNIT()SI_UNIT(.MILLI.,.METRE.))")
     else:
         length = w.add("(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))")
-    angle = w.add("(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.))")
-    solid = w.add("(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT())")
-    uncertainty = w.add(f"UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-05),#{length},'distance_accuracy_value','')")
+    if encoding == "explicit":
+        none = w.add("DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.)")
+        angle = w.add(f"(NAMED_UNIT(#{none})PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.))")
+        solid = w.add(f"(NAMED_UNIT(#{none})SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.))")
+    else:
+        angle = w.add("(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.))")
+        solid = w.add("(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT())")
+    uncertainty = w.add(f"UNCERTAINTY_MEASURE_WITH_UNIT({measure.format('1.E-05')},#{length},'distance_accuracy_value','')")
     geometric = w.add(f"(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty}))"
                       f"GLOBAL_UNIT_ASSIGNED_CONTEXT((#{length},#{angle},#{solid}))REPRESENTATION_CONTEXT('',''))")
     return product_context, definition_context, geometric
@@ -188,12 +222,89 @@ def inch():
     return w
 
 
+def mapped_item(w, child_rep, child_origin, target):
+    """A mapped item of the child's shape representation; target is a frame or operator."""
+    source = w.add(f"REPRESENTATION_MAP(#{child_origin},#{child_rep})")
+    return w.add(f"MAPPED_ITEM('',#{source},#{target})")
+
+
+def mapped_occurrence(w, ident, parent, child, item, geometric):
+    """An occurrence whose own shape representation holds the mapped item placing it."""
+    nauo = w.add(f"NEXT_ASSEMBLY_USAGE_OCCURRENCE('{ident}','{ident}','',#{parent},#{child},$)")
+    shape = w.add(f"PRODUCT_DEFINITION_SHAPE('','',#{nauo})")
+    rep = w.add(f"SHAPE_REPRESENTATION('{ident}',(#{item}),#{geometric})")
+    w.add(f"SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})")
+
+
+def mapped():
+    w = Writer()
+    product_context, definition_context, geometric = context(w)
+    block_rep, block_origin, _ = block(w, geometric)
+    block_definition = product(w, "block", product_context, definition_context, block_rep)
+    first, second = w.frame((0, 0, 0)), w.frame((0, 40, 0))
+    items = [mapped_item(w, block_rep, block_origin, first), mapped_item(w, block_rep, block_origin, second)]
+    pair_rep = w.add(f"SHAPE_REPRESENTATION('pair',(#{first},#{second},#{items[0]},#{items[1]}),#{geometric})")
+    pair_definition = product(w, "pair", product_context, definition_context, pair_rep)
+    for k, item in enumerate(items):
+        mapped_occurrence(w, f"block-{k + 1}", pair_definition, block_definition, item, geometric)
+    first, turned = w.frame((0, 0, 0)), w.frame((100, 0, 0), z=(0, 0, 1), x=(0, 1, 0))
+    items = [mapped_item(w, pair_rep, second, first), mapped_item(w, pair_rep, second, turned)]
+    rig_rep = w.add(f"SHAPE_REPRESENTATION('rig',(#{first},#{turned},#{items[0]},#{items[1]}),#{geometric})")
+    rig = product(w, "rig", product_context, definition_context, rig_rep)
+    for k, item in enumerate(items):
+        mapped_occurrence(w, f"pair-{k + 1}", rig, pair_definition, item, geometric)
+    return w
+
+
+def operator(w, origin, axis1=None, axis2=None, axis3=None, scale=None):
+    """A CARTESIAN_TRANSFORMATION_OPERATOR_3D in its physical layout: the item name, the
+    functionally defined transformation's name and description, axis1, axis2, local
+    origin, scale and axis3."""
+    axes = ["$" if a is None else f"#{w.direction(a)}" for a in (axis1, axis2, axis3)]
+    p = w.point(origin)
+    s = "$" if scale is None else f"{scale:.1f}"
+    return w.add(f"CARTESIAN_TRANSFORMATION_OPERATOR_3D('','',$,{axes[0]},{axes[1]},#{p},{s},{axes[2]})")
+
+
+def operators():
+    w = Writer()
+    product_context, definition_context, geometric = context(w)
+    block_rep, block_origin, _ = block(w, geometric)
+    block_definition = product(w, "block", product_context, definition_context, block_rep)
+    origin = w.frame((0, 0, 0))
+    half = operator(w, (0, 100, 0), scale=0.5)
+    item = mapped_item(w, block_rep, block_origin, half)
+    rep = w.add(f"SHAPE_REPRESENTATION('rig',(#{origin},#{item}),#{geometric})")
+    rig = product(w, "rig", product_context, definition_context, rep)
+    for ident, op in [("mirror", operator(w, (0, 0, 0), (1, 0, 0), (0, -1, 0), (0, 0, 1))),
+                      ("double", operator(w, (100, 0, 0), scale=2.0))]:
+        nauo = w.add(f"NEXT_ASSEMBLY_USAGE_OCCURRENCE('{ident}','{ident}','',#{rig},#{block_definition},$)")
+        shape = w.add(f"PRODUCT_DEFINITION_SHAPE('','',#{nauo})")
+        rel = w.add(f"(REPRESENTATION_RELATIONSHIP('','',#{block_rep},#{rep})"
+                    f"REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#{op})SHAPE_REPRESENTATION_RELATIONSHIP())")
+        w.add(f"CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#{rel},#{shape})")
+    mapped_occurrence(w, "half", rig, block_definition, item, geometric)
+    return w
+
+
+def encoded(encoding):
+    w = Writer()
+    product_context, definition_context, geometric = context(w, inch=encoding == "untyped", encoding=encoding)
+    pair(w, product_context, definition_context, geometric)
+    return w
+
+
 FIXTURES = {
     "assembly-nested.step": ("Original nested assembly: rig uses pair twice, pair uses block twice; millimetres", nested),
     "assembly-missing-placement.step": ("Original assembly whose second block occurrence has no placement", lambda: nested(placed=False)),
     "assembly-unplaced.step": ("Original part with a second solid that no product definition uses", unplaced),
     "assembly-styled.step": ("Original styled block: translucent solid colour, blue top face, a curve style and a layer", styled),
     "assembly-inch.step": ("Original assembly in inches with a starred conversion-based unit dimension", inch),
+    "assembly-mapped.step": ("Original nested assembly whose occurrences are placed by mapped items", mapped),
+    "assembly-operator.step": ("Original assembly placed by mirroring and scaling Cartesian operators", operators),
+    "assembly-si-dimensions.step": ("Original assembly with explicit SI unit dimensions and unordered unit components",
+                                    lambda: encoded("explicit")),
+    "assembly-untyped-measure.step": ("Original assembly in inches with untyped measure values", lambda: encoded("untyped")),
 }
 
 

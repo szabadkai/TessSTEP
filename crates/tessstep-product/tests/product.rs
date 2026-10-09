@@ -216,3 +216,93 @@ fn product_expansion_is_iterative_bounded_and_does_not_invent_placements() {
         Err(Error::MissingPlacement)
     );
 }
+
+#[test]
+fn mapped_items_place_occurrences_without_relationships() {
+    use std::collections::BTreeMap;
+    let unit = |d| Unit::new(d, 1.).unwrap();
+    let translate =
+        |x| Transform::new([[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]], [x, 0., 0.]).unwrap();
+    let rep = |id, items: &[u64]| Representation {
+        id: RepresentationId(id),
+        name: String::new(),
+        context: ContextId(1),
+        items: items.iter().map(|&i| ItemId(i)).collect(),
+    };
+    let mut p = parts();
+    p.definitions.truncate(2);
+    p.occurrences.truncate(1);
+    p.contexts.push(Context {
+        id: ContextId(1),
+        units: Units {
+            length: unit(Dimension::Length),
+            plane_angle: unit(Dimension::PlaneAngle),
+            solid_angle: None,
+        },
+    });
+    // Parent 3 holds mapped item 100 of child 4's representation 11; occurrence 6
+    // has its own representation 12 holding the same item.
+    p.representations = vec![rep(10, &[100, 102]), rep(11, &[110]), rep(12, &[100])];
+    for (shape, target, representation) in [
+        (1, ShapeTarget::Definition(DefinitionId(3)), 10),
+        (2, ShapeTarget::Definition(DefinitionId(4)), 11),
+        (3, ShapeTarget::Occurrence(OccurrenceId(6)), 12),
+    ] {
+        p.shapes.push(Shape {
+            id: ShapeId(shape),
+            target,
+        });
+        p.shape_bindings.push(ShapeBinding {
+            shape: ShapeId(shape),
+            representation: RepresentationId(representation),
+        });
+    }
+    p.maps.push(RepresentationMap {
+        id: MapId(30),
+        representation: RepresentationId(11),
+        origin: ItemId(110),
+    });
+    for (item, target) in [(100, 101), (102, 103)] {
+        p.mapped_items.push(MappedItem {
+            id: ItemId(item),
+            map: MapId(30),
+            target: ItemId(target),
+        });
+        p.item_dependencies.push((ItemId(item), ItemId(target)));
+    }
+    for (item, x) in [(100, 5.), (102, 7.)] {
+        p.mapped_transforms.push(ResolvedMapping {
+            item: ItemId(item),
+            using_representation: RepresentationId(10),
+            source_to_using: translate(x),
+        });
+    }
+    let expand = |p: &Parts| {
+        Model::new(p.clone(), 100_000).unwrap().expand(
+            DefinitionId(3),
+            RepresentationId(10),
+            &BTreeMap::new(),
+            ExpansionLimits::default(),
+        )
+    };
+    let instances = expand(&p).unwrap();
+    assert_eq!(instances.len(), 2);
+    assert_eq!(
+        (instances[1].occurrence, instances[1].representation),
+        (Some(OccurrenceId(6)), RepresentationId(11))
+    );
+    assert_eq!(instances[1].local_to_world.translation(), [5., 0., 0.]);
+    // Two qualifying items in the occurrence's representation are ambiguous.
+    let mut ambiguous = p.clone();
+    ambiguous.representations[2].items.push(ItemId(102));
+    assert_eq!(expand(&ambiguous), Err(Error::AmbiguousPlacement));
+    // Without the occurrence's own representation, or when only that representation
+    // (whose frame is not the parent's) holds the item, nothing places the occurrence.
+    let mut unbound = p.clone();
+    unbound.shape_bindings.pop();
+    assert_eq!(expand(&unbound), Err(Error::MissingPlacement));
+    let mut own_frame = p;
+    own_frame.representations[0].items = vec![ItemId(102)];
+    own_frame.mapped_transforms[0].using_representation = RepresentationId(12);
+    assert_eq!(expand(&own_frame), Err(Error::MissingPlacement));
+}

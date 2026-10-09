@@ -105,6 +105,7 @@ impl Model {
                 return Err(Error::MissingLink);
             }
         }
+        let mapped = MappedPlacements::new(&self.parts, &mut work)?;
         let mut associated: BTreeMap<RepresentationId, Vec<RepresentationId>> = BTreeMap::new();
         for id in &self.parts.associations {
             work.tick()?;
@@ -156,7 +157,19 @@ impl Model {
                 for o in children.iter().rev() {
                     work.tick()?;
                     let mut choice = None;
-                    let candidates = placements.get(&o.id).ok_or(Error::MissingPlacement)?;
+                    let candidates = match placements.get(&o.id) {
+                        Some(candidates) => candidates.as_slice(),
+                        // Without a context dependent placement, a mapped item may
+                        // place the occurrence; see `MappedPlacements::place`.
+                        None => {
+                            let child_reps = self
+                                .definition_reps
+                                .get(&o.child)
+                                .ok_or(Error::MissingLink)?;
+                            choice = mapped.place(o.id, child_reps, &same_frame, &mut work)?;
+                            &[]
+                        }
+                    };
                     for id in candidates {
                         work.tick()?;
                         if selections.get(&o.id).is_some_and(|selected| selected != id) {
@@ -219,5 +232,104 @@ impl Model {
             out.push(instance);
         }
         Ok(out)
+    }
+}
+
+/// Occurrence placements written as mapped items, the alternative to a context
+/// dependent shape representation that CATIA- and Creo-style exporters write: the
+/// occurrence's own shape representation holds a MAPPED_ITEM whose map's source is
+/// a representation of the child, and a representation in the parent's frame holds
+/// the same item. That holder's evaluated source-to-using map is the child-to-parent
+/// placement. A mapped item that only the occurrence's representation holds places
+/// nothing, since that representation's frame is not known to be the parent's.
+struct MappedPlacements<'p> {
+    own: BTreeMap<OccurrenceId, Vec<RepresentationId>>,
+    items: BTreeMap<RepresentationId, &'p [ItemId]>,
+    sources: BTreeMap<ItemId, RepresentationId>,
+    transforms: BTreeMap<(ItemId, RepresentationId), Transform>,
+}
+impl<'p> MappedPlacements<'p> {
+    fn new(parts: &'p Parts, work: &mut Budget) -> Result<Self, Error> {
+        let mut shapes = BTreeMap::new();
+        for s in &parts.shapes {
+            work.tick()?;
+            if let ShapeTarget::Occurrence(o) = s.target {
+                shapes.insert(s.id, o);
+            }
+        }
+        let mut own: BTreeMap<OccurrenceId, Vec<RepresentationId>> = BTreeMap::new();
+        for b in &parts.shape_bindings {
+            work.tick()?;
+            if let Some(&o) = shapes.get(&b.shape) {
+                own.entry(o).or_default().push(b.representation);
+            }
+        }
+        let mut items = BTreeMap::new();
+        for r in &parts.representations {
+            work.tick()?;
+            items.insert(r.id, r.items.as_slice());
+        }
+        let mut maps = BTreeMap::new();
+        for m in &parts.maps {
+            work.tick()?;
+            maps.insert(m.id, m.representation);
+        }
+        let mut sources = BTreeMap::new();
+        for m in &parts.mapped_items {
+            work.tick()?;
+            if let Some(&source) = maps.get(&m.map) {
+                sources.insert(m.id, source);
+            }
+        }
+        let mut transforms = BTreeMap::new();
+        for t in &parts.mapped_transforms {
+            work.tick()?;
+            transforms.insert((t.item, t.using_representation), t.source_to_using);
+        }
+        Ok(Self {
+            own,
+            items,
+            sources,
+            transforms,
+        })
+    }
+    /// The child representation and child-to-parent map of an occurrence placed by
+    /// a mapped item; two distinct items that both qualify are ambiguous.
+    fn place(
+        &self,
+        occurrence: OccurrenceId,
+        child_reps: &BTreeSet<RepresentationId>,
+        parent_frame: &BTreeSet<RepresentationId>,
+        work: &mut Budget,
+    ) -> Result<Option<(RepresentationId, Transform)>, Error> {
+        let mut choice: Option<(ItemId, RepresentationId, Transform)> = None;
+        for rep in self.own.get(&occurrence).into_iter().flatten() {
+            work.tick()?;
+            for &item in self.items.get(rep).copied().unwrap_or(&[]) {
+                work.tick()?;
+                let Some(&source) = self.sources.get(&item) else {
+                    continue;
+                };
+                if !child_reps.contains(&source) {
+                    continue;
+                }
+                let mut holder = None;
+                for &r in parent_frame {
+                    work.tick()?;
+                    if let Some(&t) = self.transforms.get(&(item, r)) {
+                        holder = Some(t);
+                        break;
+                    }
+                }
+                let Some(t) = holder else {
+                    continue;
+                };
+                if choice.is_some_and(|(other, ..)| other != item) {
+                    return Err(Error::AmbiguousPlacement);
+                }
+                choice = Some((item, source, t));
+            }
+        }
+        Ok(choice.map(|(_, rep, t)| (rep, t)))
     }
 }

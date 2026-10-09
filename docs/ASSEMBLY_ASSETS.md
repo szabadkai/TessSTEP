@@ -25,7 +25,10 @@ adapter supplies checked matrices and bounded definition-DAG expansion, and Mile
 binds them to imported meshes: `tessstep_import::link_assembly` builds a scene whose
 assets are supplied shape meshes (asset ID = root entity ID), whose definition nodes
 carry occurrence placements and whose asset leaves are identity children of the
-definition holding the root; `import_assembly` imports every selected root first. See
+definition holding the root; `import_assembly` imports every selected root first.
+Milestone 22.7 adds occurrences placed by mapped items and 3D Cartesian operators, whose
+mirrored and uniformly scaled placements reach the scene as explicit affine transforms
+with the reflection flag set where they mirror. See
 [PRODUCT_MODEL.md](PRODUCT_MODEL.md#linking-imported-shapes-milestone-21).
 
 `instances()` returns immutable source records, world transforms, depth (roots are

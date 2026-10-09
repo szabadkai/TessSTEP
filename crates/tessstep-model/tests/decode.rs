@@ -609,6 +609,100 @@ fn schema_decode_selects_tags_nested_aliases_and_entities() {
     assert_decode(&cycle, "#1=ITEM(1);", Some(ErrorKind::ResourceLimit));
 }
 #[test]
+fn untyped_select_values_and_profile_tolerances_are_admitted_only_by_policy() {
+    use decode::Policy;
+    let real = Domain::Builtin {
+        kind: Builtin::Real,
+        width: None,
+        fixed: false,
+    };
+    let s = schema(vec![
+        defined("LENGTH", real),
+        defined("POSITIVE", Domain::Named(DeclarationId(0))),
+        defined("COLOR", Domain::Enumeration(&["RED", "BLUE"])),
+        entity_dynamic("ROOT", &[], &[]),
+        defined(
+            "MEASURE",
+            Domain::Select(&[DeclarationId(1), DeclarationId(2), DeclarationId(3)]),
+        ),
+        entity_dynamic(
+            "ITEM",
+            &[],
+            &[
+                attr("value", Domain::Named(DeclarationId(4)), false),
+                attr("next", Domain::Named(DeclarationId(3)), true),
+            ],
+        ),
+        entity_dynamic("A", &[DeclarationId(3)], &[attr("a", INT, false)]),
+        entity_dynamic("B", &[DeclarationId(3)], &[attr("b", INT, false)]),
+    ]);
+    let tolerant = Policy {
+        accept_untyped_select: true,
+        accept_unordered_complex: true,
+        ..Policy::default()
+    };
+    let root = [EntityId::new(1).unwrap()];
+    let run = |body: &str, policy: Policy, links: &[decode::LinkSlot]| {
+        decode::decode_reachable_profile_policy(
+            &parse(body),
+            &s,
+            "TEST",
+            &root,
+            &[],
+            links,
+            policy,
+            Limits::default(),
+        )
+        .map(|d| d.retained())
+    };
+    // A bare number or enumeration matches a defined-type alternative by its domain;
+    // the default policy keeps requiring the type tag.
+    for body in ["#1=ITEM(0.5,$);", "#1=ITEM(2,$);", "#1=ITEM(.BLUE.,$);"] {
+        assert_eq!(
+            run(body, Policy::default(), &[]).unwrap_err().kind,
+            ErrorKind::TypeMismatch
+        );
+        assert_eq!(
+            run(body, tolerant, &[]).unwrap().untyped_select,
+            1,
+            "{body}"
+        );
+    }
+    for body in ["#1=ITEM(POSITIVE(0.5),$);", "#1=ITEM(#2,$);#2=ROOT();"] {
+        assert_eq!(
+            run(body, tolerant, &[]).unwrap(),
+            decode::Retained::default()
+        );
+    }
+    for body in [
+        "#1=ITEM('text',$);",
+        "#1=ITEM(.GREEN.,$);",
+        "#1=ITEM((1.),$);",
+    ] {
+        assert_eq!(
+            run(body, tolerant, &[]).unwrap_err().kind,
+            ErrorKind::TypeMismatch,
+            "{body}"
+        );
+    }
+    // Profile links resolve memberships while collecting the closure; an unordered
+    // complex instance is still counted once.
+    let link = decode::LinkSlot {
+        entity: DeclarationId(5),
+        attribute: "next",
+    };
+    let body = "#1=ITEM(POSITIVE(1.),#2);#2=(ROOT()B(2)A(1));";
+    assert_eq!(
+        run(body, Policy::default(), &[]).unwrap_err().kind,
+        ErrorKind::ComplexMapping
+    );
+    assert_eq!(run(body, tolerant, &[]).unwrap().unordered_complex, 1);
+    assert_eq!(run(body, tolerant, &[link]).unwrap().unordered_complex, 0);
+    let body = "#1=(ROOT()B(2)A(1));";
+    assert_eq!(run(body, tolerant, &[]).unwrap().unordered_complex, 1);
+    assert_eq!(run(body, tolerant, &[link]).unwrap().unordered_complex, 1);
+}
+#[test]
 fn schema_decode_uniqueness_is_value_based_and_bounded() {
     let real = Domain::Builtin {
         kind: Builtin::Real,

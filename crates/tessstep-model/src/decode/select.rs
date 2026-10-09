@@ -14,6 +14,17 @@ impl Context<'_> {
             } else {
                 None
             };
+        // A bare simple value where the SELECT requires a type tag (policy only).
+        let untyped = typed_id.is_none()
+            && self.policy.accept_untyped_select
+            && matches!(
+                value.kind,
+                ValueKind::Integer(_)
+                    | ValueKind::Real(_)
+                    | ValueKind::String(_)
+                    | ValueKind::Enumeration(_)
+                    | ValueKind::Binary(_)
+            );
         let mut stack = Vec::new();
         for id in alternatives.iter().rev() {
             self.tick()?;
@@ -54,6 +65,20 @@ impl Context<'_> {
                             unreachable!()
                         };
                         return self.value(&domain, inner, false, depth + 1);
+                    } else if untyped {
+                        let retained = self.retained;
+                        match self.value(&domain, value, false, depth + 1) {
+                            Ok(()) => {
+                                self.retained.untyped_select += 1;
+                                return Ok(());
+                            }
+                            Err(e)
+                                if matches!(e.kind, ErrorKind::TypeMismatch | ErrorKind::Width) =>
+                            {
+                                self.retained = retained;
+                            }
+                            Err(e) => return Err(e),
+                        }
                     }
                 }
                 DeclarationKind::Entity { .. } => (),

@@ -1,13 +1,15 @@
-//! Usage: cargo run -p tessstep-import --example assembly -- [--meshes] SCHEMA FILE
+//! Usage: cargo run -p tessstep-import --example assembly -- [--meshes] [--strict] SCHEMA FILE
 //! Links the product structure of FILE (products, definitions, next assembly usage
-//! occurrences and their context dependent placements) with the bundled product
-//! profile and reports it as the corpus product stage (`product-structure`, format
-//! 1). SCHEMA is the declared AP schema selected by the corpus runner; it is
-//! reported, and the bounded profile is the same for every AP. Without --meshes no
-//! shape is imported: `placed_roots` counts discovered shape roots that a placed
-//! representation holds. With --meshes every selected root is imported with its
-//! context units (chord 0.1 mm, model tolerance the declared uncertainty floored at
-//! 1e-7 m) and placed in a scene, and surface styles are adapted to its appearance.
+//! occurrences and their context dependent or mapped-item placements) with the
+//! bundled product profile and reports it as the corpus product stage
+//! (`product-structure`, format 1). SCHEMA is the declared AP schema selected by the
+//! corpus runner; it is reported, and the bounded profile is the same for every AP.
+//! Without --meshes no shape is imported: `placed_roots` counts discovered shape
+//! roots that a placed representation holds. With --meshes every selected root is
+//! imported with its context units (chord 0.1 mm, model tolerance the declared
+//! uncertainty floored at 1e-7 m) and placed in a scene, and surface styles are
+//! adapted to its appearance. `mapped_placements` and the `tolerated` encoding
+//! counts are written only when nonzero; --strict rejects those encodings.
 //! Exit status 0 means accepted.
 #![forbid(unsafe_code)]
 use std::{collections::BTreeSet, fmt::Write, fs::File, io::BufReader};
@@ -41,13 +43,16 @@ fn escape(s: &str) -> String {
 
 fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let meshes = args
-        .iter()
-        .position(|a| a == "--meshes")
-        .map(|i| args.remove(i))
-        .is_some();
+    let mut flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .map(|i| args.remove(i))
+            .is_some()
+    };
+    let meshes = flag("--meshes");
+    let strict = flag("--strict");
     let [schema, path] = args.as_slice() else {
-        return Err("usage: assembly [--meshes] SCHEMA FILE".into());
+        return Err("usage: assembly [--meshes] [--strict] SCHEMA FILE".into());
     };
     let doc = tessstep_model::parse(BufReader::new(File::open(path)?), ParseLimits::default())?;
     let mut out = format!(
@@ -55,7 +60,8 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         escape(schema),
         doc.entities().len()
     );
-    let options = AssemblyImportOptions::default();
+    let mut options = AssemblyImportOptions::default();
+    options.assembly.import.strict = strict;
     let solids = discover_solids(&doc, options.assembly.import)?;
     let tessellations = discover_tessellations(&doc, options.assembly.import)?;
     let discovered: BTreeSet<_> = solids
@@ -109,6 +115,25 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
                     escape(&first.error.to_string())
                 )?;
             }
+            if assembly.mapped_placements() > 0 {
+                write!(
+                    out,
+                    ",\"mapped_placements\":{}",
+                    assembly.mapped_placements()
+                )?;
+            }
+            let t = assembly.tolerated();
+            if t.total() > 0 {
+                write!(
+                    out,
+                    ",\"tolerated\":{{\"explicit_si_dimensions\":{},\"unset_si_dimensions\":{},\"omitted_conversion_dimensions\":{},\"untyped_measures\":{},\"unordered_complex\":{}}}",
+                    t.explicit_si_dimensions,
+                    t.unset_si_dimensions,
+                    t.omitted_conversion_dimensions,
+                    t.untyped_measures,
+                    t.unordered_complex
+                )?;
+            }
             if let Some(roots) = roots {
                 // World bounds and volume of every placed asset instance, in metres.
                 let (mut lo, mut hi, mut volume) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3], 0.);
@@ -127,11 +152,13 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
                             hi[k] = hi[k].max(w[k]);
                         }
                     }
+                    // A mirrored instance is rendered (and baked) with reversed
+                    // winding, so its volume scales by |det|, not by det.
                     let l = t.linear();
                     let det = l[0][0] * (l[1][1] * l[2][2] - l[1][2] * l[2][1])
                         - l[0][1] * (l[1][0] * l[2][2] - l[1][2] * l[2][0])
                         + l[0][2] * (l[1][0] * l[2][1] - l[1][1] * l[2][0]);
-                    volume += asset.mesh.statistics().signed_volume * det;
+                    volume += asset.mesh.statistics().signed_volume * det.abs();
                 }
                 if lo[0].is_finite() {
                     write!(

@@ -31,6 +31,7 @@ mod style_profile;
 mod assembly;
 mod brep;
 mod discovery;
+mod encodings;
 mod pcurve;
 mod planar;
 mod schema;
@@ -49,6 +50,8 @@ pub use discovery::{
     discover_tessellations, select_representations,
 };
 pub use discovery::{SurfaceModelRoot, discover_surface_models};
+
+pub use encodings::ToleratedEncodings;
 pub use planar::import_planar_solid;
 pub use schema::{DeclaredSchema, Protocol, declared_schema};
 pub use style::{ImportedAppearance, StyleCounts, StyleOptions, import_appearance};
@@ -113,7 +116,8 @@ pub struct ImportOptions {
     pub max_work: usize,
     pub max_records: usize,
     /// Reject common exporter deviations that the default accepts without changing
-    /// geometry: `$` instead of `*` in derived ORIENTED_EDGE endpoint slots.
+    /// geometry: `$` instead of `*` in derived ORIENTED_EDGE endpoint slots, and the
+    /// unit, measure and complex-instance encodings counted by [`ToleratedEncodings`].
     pub strict: bool,
 }
 impl Default for ImportOptions {
