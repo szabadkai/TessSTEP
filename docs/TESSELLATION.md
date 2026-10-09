@@ -33,14 +33,10 @@ permitted small discrepancy is included in chord checks. Raw model geometry is n
 changed. A full closed circle retains both parameter endpoints with the same
 canonical vertex position.
 
-Face refinement accepts a facet when every probe lies within the chord of its plane
-and the surface normal within the angle of the facet normal. A facet thinner than
-the chord has no meaningful plane orientation, so its probes may instead agree with
-the corner normals within the angle. A rejected facet is split across the edge whose
-corner normals turn by more than the angle, or across its longest edge when none
-does, and Lawson flips never replace a diagonal within the angle by one whose ends
-turn further; both rules keep splitting and flipping from undoing each other on
-anisotropic charts.
+Face refinement ([below](#curved-faces-and-adaptive-refinement-milestones-1516))
+treats boundary samples the same way: a facet is measured through the surface points
+of its corners, so a canonical sample up to the model tolerance off the surface does
+not tilt the plane its probes are compared with.
 
 `SharedEdges::face_boundary` reconstructs a face's UV chart, then maps each canonical
 sample through each use's pcurve, applying its recorded chart shift and checking the
@@ -96,7 +92,18 @@ moves a hole outside the outer polygon fails explicitly, even when the separatel
 reconstructed smooth trim passed. Callers may resample edges more finely and retry.
 
 Deterministic visible bridges join holes to the current polygon; bounded ear clipping
-then produces triangles without Steiner vertices. Bridge copies use the same vertex
+then produces triangles without Steiner vertices. Each hole takes the shortest visible
+bridge to the current polygon (ties by the lowest hole, then polygon position).
+Candidates are tested for visibility in that order, in batches of the 32 shortest
+untested ones, so the search ends at the first visible bridge; it used to test every
+candidate shorter than the best so far in index order, each test linear in the
+boundary size. Ear tests visit only the polygon positions a uniform grid (about one
+position per cell) places within the ear's triangle widened by the predicate
+tolerance (each corner by `eps / sin(angle / 2)`), and scan the whole polygon only
+for corners sharper than about 2e-6 rad. Both searches return what the full scans
+returned, so triangulations are unchanged; on the Onshape export's cylinder with 36
+holes (1,802 boundary samples) bridging fell from 24.7M to 1.8M work units and ear
+clipping from 3.4M to 0.25M. Bridge copies use the same vertex
 indices, creating ordinary paired interior edges. Collinear vertices are never silently
 dropped. Postchecks require every directed boundary segment exactly once, every interior
 edge twice in opposing directions, the expected triangle count, matching UV area and
@@ -113,8 +120,10 @@ consumer tests; these borrowed Rust records never cross the ABI.
 `PlanarOptions` bounds vertices (at most one million), triangles (at most two million)
 and work. Trim reconstruction has its own options/budgets; polygon validation and
 triangulation each receive `max_work`. Intersection/containment comparisons, bridge
-searches, ear tests, ring copying and mesh checks charge logical work. Worst-case work
-is cubic; budgets are not exact wall-time or RSS caps. No partial mesh is returned.
+searches, ear tests, grid cells, ring copying and mesh checks charge logical work.
+Worst-case work is still cubic (every bridge candidate invisible, every ear widened
+over the whole grid); budgets are not exact wall-time or RSS caps. No partial mesh is
+returned.
 
 Predicates use checked finite f64 arithmetic and the explicit UV distance tolerance.
 Near-degenerate configurations may return `UnresolvedGeometry`. There is no exact
@@ -134,14 +143,14 @@ regular cone/sphere patches, ring tori and positive-weight tensor-product NURBS 
 share the supplied-pcurve chart and constrained UV triangulator. Face orientation is
 applied to both triangle winding and per-corner normals. Face IDs follow the input model.
 
-Each face uses a diagonal UV metric: the RMS parametric speeds |S_u| and |S_v| over
-(at most 64) boundary samples. Scaling UV by it approximates arc length to first
-order, so a short, wide cylinder or a slow NURBS direction does not produce needles.
-The initial constrained triangulation clips ears best-first by their minimum angle in
-the metric chart (validity predicates use the unscaled chart), turning dense parallel
-boundaries into strips instead of fans. Queue-based Lawson flips in the metric chart
-then revisit only the edges around each flip while keeping constraints fixed; the
-flip count is bounded.
+The initial constrained triangulation ranks ears in a diagonal UV metric, the RMS
+parametric speeds |S_u| and |S_v| over (at most 64) boundary samples, which
+approximates arc length to first order: ears are clipped best-first by their minimum
+angle in that chart (validity predicates use the unscaled chart), turning dense
+parallel boundaries into strips instead of fans. Refinement and flips then use the
+per-vertex curvature metric described [below](#curvature-anisotropic-refinement-milestone-222).
+Queue-based Lawson flips revisit only the edges around each flip while keeping
+constraints fixed; the flip count is bounded.
 
 Refinement measures the distance from evaluated surface probes to the facet plane
 (the geometric chord error) and the angle between the facet normal and evaluated
@@ -154,24 +163,76 @@ axes) and probe the clipped corners, edge midpoints and center, with one-sided
 evaluations at cell boundaries. Narrow knot spans therefore receive checks even when
 ordinary triangle probes would miss them.
 
-Failing triangles request their longest metric UV edge midpoint. Each internal midpoint is
-allocated once and inserted into all incident triangles. No hanging nodes are permitted.
-When the edge is a boundary constraint, the face requests a canonical edge parameter
-midpoint instead. The driver combines requests from all selected faces, retains all
-previous sample parameters, reruns shared-edge error checks, and remeshes the faces.
-This also refines straight 3D boundaries where surface normals vary. Faces never insert
-independent boundary positions. Seams retain distinct UVs while sharing position identity.
+Failing triangles request the midpoint of their longest edge in the curvature metric.
+Each internal midpoint is allocated once and inserted into all incident triangles. No
+hanging nodes are permitted. When the edge is a boundary constraint, the face requests
+a canonical edge parameter midpoint instead. The driver combines requests from all
+selected faces, retains all previous sample parameters, reruns shared-edge error
+checks, and remeshes the faces whose edges changed; a face completed in the previous
+pass whose edges kept their samples is reused, since meshing is deterministic. This
+also refines straight 3D boundaries where surface normals vary. Faces never insert
+independent boundary positions. Seams retain distinct UVs while sharing position
+identity.
+
+A face does not return at its first boundary request. Interior refinement continues
+until no interior split remains or the set of requested boundary segments stops
+changing between rounds, so one boundary pass resolves every facet that the coarse
+boundary leaves failing (requests used to trickle in a few per pass until the pass
+limit). Facets beside an already requested segment would otherwise keep splitting
+into slivers along it, hence the second condition. Within a face, a facet that passed
+is not probed again in later rounds: its corners determine every probe.
+
+Facets are measured through the surface points (lifts) of their corners, not the
+canonical boundary positions, which may sit off the surface by up to the model
+tolerance; the mesh then deviates from the surface by that offset in addition to the
+sampled error, as edge sampling does at vertices. A facet no wider than the model
+tolerance (twice its area over its longest edge) has no plane orientation the model
+resolves: it must meet the chord, but its normal is not compared with surface normals,
+which may fold within it near a degenerate pole. The metric likewise never asks for a
+step below the model tolerance. A corner whose surface normal faces away from its
+facet's plane (possible only for such facets or where canonical corners sit off the
+surface) carries the plane's normal, so output corner normals always face the facet's
+side.
 
 Fixed probes and f64 predicates are not certified continuous error bounds or exact
 Delaunay predicates. Edge flips have a strict angular margin and a flip ceiling of
 64 per triangle; they improve shape without claiming a minimum-angle guarantee.
-Refinement is isotropic in the metric chart, so doubly curved faces at very small
-chords can exceed the default vertex and work budgets. Singular normals,
+Singular normals,
 collapsed curves, missing/non-affine pcurve correspondence and unresolved tolerances
 fail explicitly, except at poles and apices closed by collapsed edges (below).
 Automatic singular-edge repair and explicit crease-aligned meshing within a
 nonsmooth NURBS face remain unsupported; smooth patches on either side can be
 separate faces. Resource-limited failure is not a partial mesh.
+
+### Curvature-anisotropic refinement (Milestone 22.2)
+
+Every regular vertex carries a symmetric UV metric tensor built from the surface's
+second derivatives in an orthonormal tangent frame. Refinement only compares lengths
+in it (the longest edge of a failing facet, the Delaunay diagonal of a quadrilateral),
+so its shape matters, not its scale:
+
+* **Normal part.** The absolute second fundamental form |II| (principal curvatures
+  replaced by their magnitudes), scaled so its largest eigenvalue is the inverse square
+  of the step the angle (`angle / k`) or the chord (`sqrt(6 chord / k)`) allows. A
+  linear facet approximates a quadratic surface best, in distance and in normal, when
+  it is equilateral in |II|. The ratio of normal-turn rates (the third fundamental
+  form) is the wrong shape: a facet that long across a narrow torus band sags along its
+  long edge by more than its width, and its plane tilts out of the angle.
+* **Tangential part.** Parameter lines that curve within the tangent plane (the u
+  circles near the top of a torus, polar charts near an apex) bend a long edge
+  sideways; the tangential second derivatives add a term that keeps that in-plane
+  sagitta of a unit edge below a quarter of the smallest allowed step.
+* **Floor and ceiling.** An isotropic floor (the inverse square of the face's 3D
+  boundary extent) keeps the tensor positive definite and measures a plane by arc
+  length; a ceiling (the inverse square of the model tolerance) caps every eigenvalue.
+
+An edge's length is measured in the mean of its end tensors; an edge ending at a pole
+copy is measured as its 3D chord times the finer end's density. Lawson flips decide
+each quadrilateral in the Cholesky chart of its four vertices' mean tensor. Splitting
+the longest edge in this metric splits a tight torus band across the band rather than
+along it: the Onshape export's band (R = 2.035 mm, r = 0.3 mm, 0.1 rad) used to walk a
+sliver along the band one vertex per round to the round limit, and now meshes with
+1,591 vertices in 0.02 s.
 
 ### Poles and apices
 
@@ -187,19 +248,46 @@ the tessellator treats it that way:
   share their rays from the pole, whatever pole copy each triangle uses.
 * A triangle with two copies of the same pole is a UV sliver with no 3D extent. It is
   always accepted and dropped from the mesh; the fans around it cover that surface.
-* Edge lengths for split selection are 3D chords when an edge ends at a pole copy, and
-  such an edge is split on the ray to its other end rather than at its UV midpoint.
-  Lawson flips skip quadrilaterals that contain a pole copy. Both avoid chasing an
-  arbitrary chart point toward the pole with needle triangles.
+* Edge lengths for split selection are 3D chords (times the finer end's metric
+  density) when an edge ends at a pole copy, and such an edge is split on the ray to its
+  other end rather than at its UV midpoint, at the point halfway to that end in 3D
+  (a short bisection on the ray parameter keeps the split between 3/8 and 5/8 of the
+  chord; a B-spline row can collapse so slowly that the chart midpoint sits next to the
+  pole). Edges from different copies of one pole to the same vertex are one 3D edge
+  and share that midpoint. Lawson flips skip quadrilaterals that contain a pole copy.
+  All of this avoids chasing an arbitrary chart point toward the pole with needles.
 * Singular corners have no surface normal: probes there check only chord distance, and
-  each triangle's corner normal is the limit from inside its polar wedge. Output UVs of
-  pole copies are their triangle's polar coordinate.
+  each triangle's corner normal is the limit from inside its polar wedge. A B-spline
+  pole whose control row collapses only within tolerance still evaluates a (noise)
+  normal at the pole itself; probes exactly at a singular corner ignore it. Output UVs
+  of pole copies are their triangle's polar coordinate.
+
+The 3D fan around a pole is consistent only when the rays of its wedges advance
+monotonically around it. Ear clipping in the raw chart does not know that: next to a
+seam running out of the pole it fans one pole copy to consecutive seam samples
+(wedges of no angle along the seam), or it fans a pole copy to distant samples whose
+rays run backwards, and such folds survive every interior split. Each run of two or
+more pole copies with regular neighbours is therefore capped explicitly: a ring of
+interior vertices parallel to the pole line, through the nearer of the two boundary
+samples beside the run and at the run's interior pole-copy coordinates, replaces the
+run in the polygon; between pole line and ring each pole-copy interval becomes a
+collapsed sliver and a wedge between consecutive ring rays, and the rest of the face,
+bounded by the ring, is ear clipped as before. Ray splits and ring-edge splits keep
+the fan monotone. A ring that would leave the face or cross a loop is not built, and
+that run keeps the plain triangulation; a folded wedge found there requests a pole
+sample between its rays (the collapsed edge is parameter-only) and restarts the pass,
+and a split whose pole ray coincides with a boundary segment requests that segment
+instead. The 36 B-spline faces of the Onshape export with two `VERTEX_LOOP` poles
+each used to exhaust their boundary passes and now mesh.
 
 The hemisphere and apex-cone kernel tests
 (`pole_and_apex_charts_close_with_collapsed_edges`) check watertightness, one welded
 pole vertex, the chord-dependent volume bound, dense independent polar-wedge probes
-(within 5% of the tolerances) and determinism. Collapsed B-spline sides use the same
-mechanism; see [curved import](CURVED_IMPORT.md).
+(within 5% of the tolerances) and determinism; a sphere from pole to pole with one
+seam and a hole reaching within 0.37 rad of both poles
+(`pole_caps_keep_fans_monotone_beside_seams_and_holes`) checks dense probes and that
+every facet at a pole faces outward. Collapsed B-spline sides use the same mechanism;
+see [curved import](CURVED_IMPORT.md).
 
 ## Owned shell and solid meshes (Milestone 17)
 
@@ -232,3 +320,36 @@ retain their separate per-face/per-pass budgets. Mesh limits also conservatively
 the sum of face-local vertices before welding. Thus `max_evaluations` is not a count of
 trim reconstruction's independent evaluations, nor is any logical budget an RSS cap.
 The algorithm is deterministic for the same ordered faces, inputs and options.
+
+### Tessellation budgets (Milestone 22.2)
+
+Every `ResourceLimit` names the budget it exhausted and that budget's configured value
+in `TessellationError::budget` (a `Budget { name, limit }`, `name` being the option's
+path) and in its `Display`, for example `tessellation Some(FaceId(90)):
+Polygon(ResourceLimit) (budget planar.max_work 10000000 exhausted)`; nested kinds keep
+their own variant (`Sampling`, `Boundary`, `Polygon`, `Mesh`). Refinement rounds and
+boundary passes that run out (`UnresolvedTolerance`) name `max_rounds` or
+`max_boundary_passes` the same way. The budgets and their defaults:
+
+| Budget | Default | Bounds |
+| --- | ---: | --- |
+| `max_work` | 50,000,000 | refinement, probes, flips, caps and assembly, shared by all faces and passes |
+| `max_evaluations` | 10,000,000 | surface evaluations and edge sampling, shared by all faces and passes |
+| `max_rounds` | 32 (at most 48) | refinement rounds per face and pass |
+| `max_boundary_passes` | 16 (at most 24) | boundary resampling passes |
+| `sampling.max_samples` / `sampling.max_evaluations` | 1,000,000 / 10,000,000 | edge samples and evaluations per pass |
+| `planar.max_vertices` / `planar.max_triangles` | 100,000 / 200,000 | vertices and triangles per face (boundary mapping allows twice the vertices) |
+| `planar.max_work` | 10,000,000 | polygon validation, and separately bridges and ear clipping, per face and pass |
+| `planar.trim.max_work` / `planar.trim.max_samples` | 5,000,000 / 100,000 | trim reconstruction per face and pass |
+| `mesh.max_vertices` / `mesh.max_triangles` / `mesh.max_work` | 1,000,000 / 2,000,000 / 50,000,000 | the assembled mesh |
+
+Trim reconstruction reports one `Limit` for its two budgets; on that failure path a
+rerun with the sample ceiling raised tells them apart. The defaults are unchanged by
+Milestone 22.2: the algorithmic costs were reduced instead (the curvature metric, the
+caps, deferred boundary requests, reused faces and facets, bisected knot lines and
+skipped single-cell knot probes, the bridge order and the ear grid). The whole Onshape
+export uses 7.65M of the 10M evaluations and 27.8M of the 50M work units. In the
+corpus, `bug33261.stp` root #46035 needs 10–15M evaluations and `bug24593_281946.stp`
+root #30 50–75M work; 22 roots exhaust `planar.trim.max_work` in quadratic trim loop
+checks (15 in `as1_motor.step`; root #143 needs more than 50M), and `bug26889_export.step`
+root #34 needs more than the 50M work and then the 100,000 vertices of one face.

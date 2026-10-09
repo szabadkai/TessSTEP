@@ -397,6 +397,86 @@ change beyond noise (376 and 356 s base, 366 and 362 s session, four workers). T
 survey and `import_assembly` prepare by default so that every multi-root corpus file
 exercises shared decoding; whether to keep that default is left for review.
 
+# Milestone 22.2: curvature-anisotropic refinement and tessellation budgets — 2026-10-09
+
+Delivered: refinement and Lawson flips in a per-vertex curvature metric; explicit polar
+caps around pole runs; deferred boundary requests, faces reused across boundary passes
+and facets accepted once per face; facets measured through the surface lift of their
+corners and, below the model tolerance, by chord only; pole edges split halfway in 3D
+along their ray; a length-ordered bridge search and a grid-indexed ear test for planar
+triangulation; bisected knot lines and skipped single-cell knot probes for B-spline
+faces; and `TessellationError::budget`, naming every exhausted tessellation budget and
+its value. Tessellation defaults are unchanged. See
+[TESSELLATION.md](TESSELLATION.md#curvature-anisotropic-refinement-milestone-222).
+
+Diagnosis on the Onshape export (`~/Downloads/Core__2_.step`, not redistributable),
+face by face with a scratch driver: the torus band #2168 failed as described in the
+roadmap; a pure normal-turn metric (third fundamental form) made the band facets
+seven times longer than wide, whose planes tilt out of the angle (the shape has to
+follow |II|); the 36 two-pole B-spline faces folded their pole fans in the raw-chart ear
+clipping (11 folded wedges in face #2076's first triangulation) and also evaluated a
+noise normal exactly at a pole their control row collapses only within tolerance;
+splits of pole edges from two copies of one pole created coincident vertices; face
+#2157's chart is so slow next to its poles that the chart midpoint of a pole edge lay
+0.5 nm from the pole while the other end was 85 µm away, and its surface folds within
+30 µm of the poles (below the 20 µm-scale resolution the metric now caps); boundary
+samples sit up to 10 µm off the B-spline surfaces (model tolerance 20 µm); the
+36-hole cylinder #2164 spent 24.7M work units in bridge search and 3.4M in ear tests;
+and the whole solid then exhausted `max_evaluations` because every pass remeshed
+every face and re-probed accepted facets, and B-spline probes scanned whole knot
+vectors.
+
+| Check | Result |
+| --- | --- |
+| `cargo run --release -p tessstep-import --example survey -- ~/Downloads/Core__2_.step 1` | accepted: profile, geometry and tessellation; closed solid with 65,766 vertices, 131,556 triangles, volume 5.8498e-6 m³, 7.4 s for the root (chord 4.36e-5 m, 0.1 rad); 7.65M of the 10M evaluations and 27.8M of the 50M work units |
+| `cargo test -p tessstep-tessellate --test anisotropic` | passed: `narrow_torus_band_refines_across_the_band`, `planar_face_with_many_holes_meshes_within_default_budgets`, `pole_caps_keep_fans_monotone_beside_seams_and_holes`, `tessellation_budgets_are_named_in_diagnostics`; on `c80d0ff` the first three fail (`UnresolvedTolerance`, `ResourceLimit`, `ResourceLimit`) |
+| `cargo test --workspace --locked` | passed (80 test binaries) |
+| fmt, Clippy (`-D warnings`, all targets), `cargo doc` (`-D warnings`) | passed |
+| `check_architecture.py`, `check_geometry.py`, `check_metamorphic.py`, `conformance.py --check` | passed (83 reviewed geometry outcomes, 76 generated expectations) |
+| `corpus.py --check --repeat 2` with the AP validator | 3,227 compatible inputs, no crash, timeout or nondeterminism, 272 s; 47 inputs changed against the baseline (reviewed below) |
+
+All existing adaptive tests (`solid_torus_welds_both_periodic_seams`,
+`pole_and_apex_charts_close_with_collapsed_edges` and the others) hold their sampled
+bounds. The bridge order, the ear grid and the knot-line bisection evaluate the same
+predicates on the same candidates as the scans they replace; the knot change and the
+skipped single-cell probes left the Onshape mesh unchanged (65,766 vertices and the
+same volume before and after), while acceptance work fell from 33M to 14M units and
+acceptance evaluations from 8.8M to 7.2M.
+
+**Reviewed corpus movements** (per root, against the 2026-09-27 22.1 run; baseline not
+saved): 1,197 shape roots, 745 passing geometry/topology (unchanged), 643 meshed (577
+before). 66 roots newly mesh: 25 failed with `UnresolvedTolerance` (round or pass
+limits), 24 with the adaptive `ResourceLimit`, 5 with a planar `Polygon(ResourceLimit)`
+and 12 with a polygon-validity error (`SelfIntersection`, one `DegenerateLoop`). The
+last group failed only after about a dozen trickling boundary passes had refined
+their boundaries far enough to self-intersect at mesh resolution (on `c80d0ff`,
+`trj3_s1-tc-214.stp` root #2249's face 1 merely runs out of passes when limited to
+12 or fewer and fails polygon validation with 14 or more); with deferred requests they never get there, which is a
+consequence rather than a guarantee (with polar caps disabled they still mesh). By
+file: `bug33261.stp` (+8), `trj3_s1-tc-214.stp` (+4), three each in
+`trj3_s1-id-203`, `trj3_s1-ec-214`, `trj3_s1-ec-203`, `trj4_s1-ai-214` and
+`trj4_s1-ec-214`, two in `bug24601_216523_2_03.stp` and `pr1db.stp`, and one each in
+the NIST CTC/FTC/STC files, `bug22715_cube.stp`, `bug28389_CONFIDENTIAL_SHEET_METAL_F3D.stp`,
+`bug32239.STEP`, `pr1ct.stp`, `io1-cm-214.stp` and 20 others. No root lost its
+outcome. Four roots changed failure category, each reviewed:
+
+* `nist_ctc_02_asme1_rc.stp` #20700 and `nist_ctc_02_asme1_ap242-e2.stp` #14911:
+  `Polygon(ResourceLimit)` → `Polygon(UnresolvedGeometry)` (planar face #9481 and
+  model face 164). The cheaper triangulation now reaches the polygon itself; `c80d0ff` with
+  a 2·10⁹ planar budget fails the same faces the same way.
+* `bug33261.stp` #46035: `UnresolvedTolerance` → `ResourceLimit (budget max_evaluations
+  10000000 exhausted)`; it meshes with 10–15M evaluations (178,946 vertices, 5.3 s).
+* `bug24593_281946.stp` #30: face 4's `SelfIntersection` no longer occurs; face 11 then
+  exhausts `max_work` (50M); it meshes with 50–75M (24,837 vertices, 6.7 s).
+
+`tessellation:resource_limit` roots fell from 54 to 25, and every one names its
+budget: 22 `planar.trim.max_work` (trim reconstruction, quadratic loop checks in
+`tessstep-trim`; `as1_motor.step` root #143 still fails at 50M and meshes at 500M),
+two `max_work` (`bug24593_281946.stp` #30 above; `bug26889_export.step` #34 then needs
+more than 100,000 vertices on one face) and one `max_evaluations`. `UnresolvedTolerance`
+roots fell from 29 to 3, which now name `max_rounds`. The baseline comparison reports
+47 changed inputs (stages and accepted-root counts only).
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

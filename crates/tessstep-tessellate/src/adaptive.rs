@@ -1,11 +1,12 @@
 use crate::{
-    BoundaryError, PlanarError, PlanarOptions, SamplingLimits, SharedEdges, sample_edges_seeded,
+    BoundaryError, PlanarError, PlanarOptions, SamplingLimits, SharedEdges, metric,
+    sample_edges_seeded,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use tessstep_curves::spline::KnotSide;
 use tessstep_math::{Direction3, ModelSpace, NumericalTolerance, Point3, TessellationTolerance};
 use tessstep_mesh::{Mesh, MeshData};
-use tessstep_surfaces::AxisDomain;
+use tessstep_surfaces::{AxisDomain, Evaluation};
 use tessstep_topology::{
     EdgeId, FaceId, NormalizedBrep, ShellId, SolidId, SurfaceGeometry, VertexId,
 };
@@ -54,19 +55,41 @@ pub enum TessellationErrorKind {
     Polygon(PlanarError),
     Mesh(tessstep_mesh::Error),
 }
+/// A tessellation budget and its configured value, named in the diagnostic of the
+/// failure that exhausted it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Budget {
+    /// The option's path in [`TessellationOptions`], for example `planar.max_work`.
+    pub name: &'static str,
+    pub limit: usize,
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct TessellationError {
     pub face: Option<FaceId>,
     pub kind: TessellationErrorKind,
+    /// The exhausted budget, for resource limits and for refinement rounds or boundary
+    /// passes that ran out (`UnresolvedTolerance`).
+    pub budget: Option<Budget>,
 }
 impl std::fmt::Display for TessellationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "tessellation {:?}: {:?}", self.face, self.kind)
+        write!(f, "tessellation {:?}: {:?}", self.face, self.kind)?;
+        if let Some(b) = self.budget {
+            write!(f, " (budget {} {} exhausted)", b.name, b.limit)?;
+        }
+        Ok(())
     }
 }
 impl std::error::Error for TessellationError {}
 fn error(kind: TessellationErrorKind) -> TessellationError {
-    TessellationError { face: None, kind }
+    TessellationError {
+        face: None,
+        kind,
+        budget: None,
+    }
+}
+fn budget(name: &'static str, limit: usize) -> Option<Budget> {
+    Some(Budget { name, limit })
 }
 type Failure = TessellationErrorKind;
 type Key = (u32, u32);
@@ -83,6 +106,9 @@ enum Source {
 struct Vertex {
     uv: [f64; 2],
     position: Point3<ModelSpace>,
+    /// The surface at `uv`. A canonical boundary sample may sit off it by up to the
+    /// model tolerance; facets are measured through the lifted corners.
+    lifted: Point3<ModelSpace>,
     /// None only at singular vertices (poles, apices), whose normal depends on the
     /// direction of approach; triangles evaluate it from inside at completion.
     normal: Option<Direction3<ModelSpace>>,
@@ -91,6 +117,8 @@ struct Vertex {
     /// singular line: its coordinate there is arbitrary, so triangles use the one of
     /// their opposite edge.
     free: Option<usize>,
+    /// Curvature metric and its 3D density (see [`metric`]); None where singular.
+    metric: Option<(metric::Tensor, f64)>,
 }
 struct FaceMesh {
     vertices: Vec<Vertex>,
@@ -103,23 +131,37 @@ struct FaceMesh {
 struct Work {
     remaining: usize,
     evaluations: usize,
+    options: TessellationOptions,
+    /// The budget behind the pending `ResourceLimit`, recorded where it is exhausted.
+    exhausted: Option<Budget>,
 }
 impl Work {
+    fn new(options: TessellationOptions) -> Self {
+        Self {
+            remaining: options.max_work,
+            evaluations: options.max_evaluations,
+            options,
+            exhausted: None,
+        }
+    }
+    /// Record an exhausted budget and fail with a resource limit.
+    fn exhaust(&mut self, name: &'static str, limit: usize) -> Failure {
+        self.exhausted = budget(name, limit);
+        Failure::ResourceLimit
+    }
     fn charge(&mut self, n: usize) -> Result<(), Failure> {
-        self.remaining = self
-            .remaining
-            .checked_sub(n)
-            .ok_or(Failure::ResourceLimit)?;
+        match self.remaining.checked_sub(n) {
+            Some(rest) => self.remaining = rest,
+            None => return Err(self.exhaust("max_work", self.options.max_work)),
+        }
         Ok(())
     }
-    fn eval(
-        &mut self,
-        surface: &SurfaceGeometry,
-        uv: [f64; 2],
-        sides: [KnotSide; 2],
-    ) -> Result<(Point3<ModelSpace>, Direction3<ModelSpace>), Failure> {
-        let (position, normal) = self.eval_any(surface, uv, sides)?;
-        Ok((position, normal.ok_or(Failure::SingularSurface)?))
+    fn evaluate(&mut self, n: usize) -> Result<(), Failure> {
+        match self.evaluations.checked_sub(n) {
+            Some(rest) => self.evaluations = rest,
+            None => return Err(self.exhaust("max_evaluations", self.options.max_evaluations)),
+        }
+        Ok(())
     }
     /// Position and, unless the parameterization is singular there, the normal.
     fn eval_any(
@@ -128,27 +170,51 @@ impl Work {
         uv: [f64; 2],
         sides: [KnotSide; 2],
     ) -> Result<(Point3<ModelSpace>, Option<Direction3<ModelSpace>>), Failure> {
+        let jet = self.jet(surface, uv, sides)?;
+        Ok((jet.position, jet.normal(NumericalTolerance::default()).ok()))
+    }
+    fn jet(
+        &mut self,
+        surface: &SurfaceGeometry,
+        uv: [f64; 2],
+        sides: [KnotSide; 2],
+    ) -> Result<Evaluation<ModelSpace>, Failure> {
         self.charge(1)?;
-        self.evaluations = self
-            .evaluations
-            .checked_sub(1)
-            .ok_or(Failure::ResourceLimit)?;
-        let jet = match surface {
+        self.evaluate(1)?;
+        match surface {
             SurfaceGeometry::Analytic(s) => s.evaluate(uv[0], uv[1]),
             SurfaceGeometry::Nurbs(s) => s.evaluate_on_sides(uv[0], uv[1], sides),
         }
-        .map_err(|_| Failure::Geometry)?;
-        Ok((jet.position, jet.normal(NumericalTolerance::default()).ok()))
+        .map_err(|_| Failure::Geometry)
     }
+    /// Normal and curvature metric of a regular mesh vertex.
+    fn regular(
+        &mut self,
+        surface: &SurfaceGeometry,
+        uv: [f64; 2],
+        sizing: metric::Sizing,
+    ) -> Result<RegularPoint, Failure> {
+        let jet = self.jet(surface, uv, [KnotSide::Right; 2])?;
+        let normal = jet
+            .normal(NumericalTolerance::default())
+            .map_err(|_| Failure::SingularSurface)?;
+        Ok(RegularPoint {
+            position: jet.position,
+            normal,
+            metric: metric::curvature(&jet, normal, sizing),
+        })
+    }
+}
+struct RegularPoint {
+    position: Point3<ModelSpace>,
+    normal: Direction3<ModelSpace>,
+    metric: Option<(metric::Tensor, f64)>,
 }
 impl Work {
     /// Parametric speeds |S_u| and |S_v| at a UV point.
     fn speeds(&mut self, surface: &SurfaceGeometry, uv: [f64; 2]) -> Result<[f64; 2], Failure> {
         self.charge(1)?;
-        self.evaluations = self
-            .evaluations
-            .checked_sub(1)
-            .ok_or(Failure::ResourceLimit)?;
+        self.evaluate(1)?;
         let jet = surface.evaluate(uv).map_err(|_| Failure::Geometry)?;
         Ok([
             jet.du.norm().map_err(|_| Failure::Geometry)?,
@@ -183,6 +249,9 @@ fn face_metric(
 }
 /// Tessellate selected constructed faces and weld positions only by topology/cache
 /// identity. Surface normals and UVs remain per corner, preserving seams and creases.
+// The error carries the located trim failure and the exhausted budget; it is
+// returned once per call, so its size is not on a hot path.
+#[allow(clippy::result_large_err)]
 pub fn tessellate_faces(
     brep: &NormalizedBrep,
     faces: &[FaceId],
@@ -196,11 +265,22 @@ pub fn tessellate_faces(
     {
         return Err(error(Failure::InvalidOptions));
     }
-    let mut work = Work {
-        remaining: options.max_work,
-        evaluations: options.max_evaluations,
+    let mut work = Work::new(options);
+    // Every failure carries the budget that ran out, when one did.
+    let fail = |work: &mut Work, face: Option<FaceId>, kind: Failure| TessellationError {
+        budget: work.exhausted.take().or_else(|| match &kind {
+            // Vertex and triangle counts are checked before assembly; the rest is
+            // the mesh validation work.
+            Failure::Mesh(tessstep_mesh::Error::ResourceLimit) => {
+                budget("mesh.max_work", options.mesh.max_work)
+            }
+            _ => None,
+        }),
+        face,
+        kind,
     };
-    work.charge(faces.len()).map_err(error)?;
+    work.charge(faces.len())
+        .map_err(|k| fail(&mut work, None, k))?;
     let mut unique = BTreeSet::new();
     for &face in faces {
         if face.0 >= brep.data().faces.len() {
@@ -211,58 +291,86 @@ pub fn tessellate_faces(
         }
     }
     let mut forced: Vec<Vec<f64>> = Vec::new();
+    // Faces completed in the previous pass, reused while their edges' samples are
+    // unchanged: meshing is deterministic, so a remesh would reproduce them exactly.
+    let mut cached = BTreeMap::<FaceId, FaceMesh>::new();
+    let mut previous: Vec<Vec<f64>> = Vec::new();
     for pass in 0..=options.max_boundary_passes {
         let mut sampling = options.sampling;
         sampling.max_evaluations = sampling.max_evaluations.min(work.evaluations);
-        let shared = sample_edges_seeded(brep, tolerance, sampling, &forced)
-            .map_err(|e| error(Failure::Sampling(e)))?;
-        work.evaluations = work
-            .evaluations
-            .checked_sub(shared.evaluations())
-            .ok_or_else(|| error(Failure::ResourceLimit))?;
+        let mut short = None;
+        let shared =
+            sample_edges_seeded(brep, tolerance, sampling, &forced, &mut short).map_err(|e| {
+                work.exhausted = match short {
+                    Some(crate::Exhausted::Samples) => {
+                        budget("sampling.max_samples", options.sampling.max_samples)
+                    }
+                    Some(crate::Exhausted::Evaluations)
+                        if options.sampling.max_evaluations <= work.evaluations =>
+                    {
+                        budget("sampling.max_evaluations", options.sampling.max_evaluations)
+                    }
+                    Some(crate::Exhausted::Evaluations) => {
+                        budget("max_evaluations", options.max_evaluations)
+                    }
+                    None => None,
+                };
+                fail(&mut work, None, Failure::Sampling(e))
+            })?;
+        work.evaluate(shared.evaluations())
+            .map_err(|k| fail(&mut work, None, k))?;
+        work.charge(shared.edges().iter().map(|e| e.samples().len()).sum())
+            .map_err(|k| fail(&mut work, None, k))?;
+        let parameters: Vec<Vec<f64>> = shared
+            .edges()
+            .iter()
+            .map(|e| e.samples().iter().map(|s| s.parameter).collect())
+            .collect();
+        let unchanged = |edge: EdgeId| previous.get(edge.0) == parameters.get(edge.0);
         let mut requests = Vec::new();
         let mut completed = Vec::new();
         let mut vertices = 0usize;
         let mut triangles = 0usize;
         for &face in faces {
-            match face_mesh(&shared, face, tolerance, options, &mut work).map_err(|kind| {
-                TessellationError {
-                    face: Some(face),
-                    kind,
-                }
-            })? {
+            let reused = cached
+                .remove(&face)
+                .filter(|_| face_edges(brep, face).all(unchanged));
+            let outcome = match reused {
+                Some(mesh) => Outcome::Complete(mesh),
+                None => face_mesh(&shared, face, tolerance, options, &mut work)
+                    .map_err(|kind| fail(&mut work, Some(face), kind))?,
+            };
+            match outcome {
                 Outcome::Refine(mut needs) => requests.append(&mut needs),
                 Outcome::Complete(mesh) => {
-                    vertices = vertices
-                        .checked_add(mesh.vertices.len())
-                        .ok_or_else(|| error(Failure::ResourceLimit))?;
-                    triangles = triangles
-                        .checked_add(mesh.triangles.len())
-                        .ok_or_else(|| error(Failure::ResourceLimit))?;
-                    if vertices > options.mesh.max_vertices.min(u32::MAX as usize)
-                        || triangles > options.mesh.max_triangles
-                    {
-                        return Err(error(Failure::ResourceLimit));
+                    vertices = vertices.saturating_add(mesh.vertices.len());
+                    triangles = triangles.saturating_add(mesh.triangles.len());
+                    let max_vertices = options.mesh.max_vertices.min(u32::MAX as usize);
+                    if vertices > max_vertices {
+                        let kind = work.exhaust("mesh.max_vertices", max_vertices);
+                        return Err(fail(&mut work, None, kind));
+                    }
+                    if triangles > options.mesh.max_triangles {
+                        let kind = work.exhaust("mesh.max_triangles", options.mesh.max_triangles);
+                        return Err(fail(&mut work, None, kind));
                     }
                     completed.push((face, mesh));
                 }
             }
         }
         if requests.is_empty() {
-            return assemble(brep, completed, options, &mut work).map_err(error);
+            return assemble(brep, completed, options, &mut work)
+                .map_err(|k| fail(&mut work, None, k));
         }
         if pass == options.max_boundary_passes {
-            return Err(error(Failure::UnresolvedTolerance));
+            work.exhausted = budget("max_boundary_passes", options.max_boundary_passes);
+            return Err(fail(&mut work, None, Failure::UnresolvedTolerance));
         }
-        work.charge(shared.edges().iter().map(|e| e.samples().len()).sum())
-            .map_err(error)?;
-        forced = shared
-            .edges()
-            .iter()
-            .map(|e| e.samples().iter().map(|s| s.parameter).collect())
-            .collect();
+        cached = completed.into_iter().collect();
+        forced = parameters.clone();
+        previous = parameters;
         for (edge, u) in requests {
-            work.charge(1).map_err(error)?;
+            work.charge(1).map_err(|k| fail(&mut work, None, k))?;
             forced[edge.0].push(u);
         }
         for params in &mut forced {
@@ -272,6 +380,18 @@ pub fn tessellate_faces(
     }
     unreachable!("bounded pass loop returns")
 }
+/// The edges bounding a face.
+fn face_edges(brep: &NormalizedBrep, face: FaceId) -> impl Iterator<Item = EdgeId> + '_ {
+    let raw = brep.data();
+    let f = &raw.faces[face.0];
+    std::iter::once(f.outer)
+        .chain(f.holes.iter().copied())
+        .flat_map(move |wire| raw.wires[wire.0].coedges.iter())
+        .map(move |c| raw.coedges[c.0].edge)
+}
+// The error carries the located trim failure and the exhausted budget; it is
+// returned once per call, so its size is not on a hot path.
+#[allow(clippy::result_large_err)]
 pub fn tessellate_shell(
     brep: &NormalizedBrep,
     shell: ShellId,
@@ -295,6 +415,9 @@ pub fn tessellate_shell(
 /// A closed oriented mesh of a solid: one component per boundary shell, a positive
 /// outer volume and a negative volume for every cavity shell (which faces into its
 /// cavity). Cavity containment and disjointness are not checked.
+// The error carries the located trim failure and the exhausted budget; it is
+// returned once per call, so its size is not on a hot path.
+#[allow(clippy::result_large_err)]
 pub fn tessellate_solid(
     brep: &NormalizedBrep,
     solid: SolidId,
@@ -410,6 +533,7 @@ enum Outcome {
     Complete(FaceMesh),
     Refine(Vec<(EdgeId, f64)>),
 }
+mod pole;
 fn face_mesh(
     shared: &SharedEdges<'_>,
     face: FaceId,
@@ -425,10 +549,23 @@ fn face_mesh(
             options.planar.trim,
             options.planar.max_vertices.saturating_mul(2),
         )
-        .map_err(Failure::Boundary)?;
+        .map_err(|e| {
+            work.exhausted = match &e {
+                BoundaryError::ResourceLimit => {
+                    budget("planar.max_vertices", options.planar.max_vertices)
+                }
+                BoundaryError::Trim(t) if t.kind == tessstep_trim::ErrorKind::Limit => {
+                    trim_budget(shared.brep, face, options.planar.trim)
+                }
+                _ => None,
+            };
+            Failure::Boundary(e)
+        })?;
+    let sizing = sizing(&mapped, tolerance, shared.brep.model_tolerance())?;
     let mut vertices = Vec::new();
     let mut boundaries = Vec::new();
     let mut constraints = BTreeMap::<Key, (EdgeId, f64)>::new();
+    let mut poles = Vec::new();
     for uses in std::iter::once(&mapped.outer).chain(&mapped.holes) {
         let first = vertices.len() as u32;
         let mut segments = Vec::new();
@@ -438,7 +575,7 @@ fn face_mesh(
             let samples = shared.edges[c.edge.0].samples();
             for (j, pair) in use_.samples.windows(2).enumerate() {
                 if vertices.len() >= options.planar.max_vertices {
-                    return Err(Failure::ResourceLimit);
+                    return Err(work.exhaust("planar.max_vertices", options.planar.max_vertices));
                 }
                 let index = if c.orientation.is_reversed() {
                     samples.len() - 1 - j
@@ -458,17 +595,21 @@ fn face_mesh(
                 // nearly degenerate parameterization can return an arbitrary one there.
                 let singular =
                     matches!(source, Source::Vertex(v) if shared.brep.is_singular_vertex(v));
-                let normal = if singular {
-                    None
+                let position = pair[0].edge_sample.position;
+                let (normal, metric, lifted) = if singular {
+                    (None, None, position)
                 } else {
-                    Some(work.eval(surface, uv, [KnotSide::Right; 2])?.1)
+                    let point = work.regular(surface, uv, sizing)?;
+                    (Some(point.normal), point.metric, point.position)
                 };
                 vertices.push(Vertex {
                     uv,
-                    position: pair[0].edge_sample.position,
+                    position,
+                    lifted,
                     normal,
                     source,
                     free: None,
+                    metric,
                 });
                 let a = pair[0].edge_sample.parameter;
                 let b = pair[1].edge_sample.parameter;
@@ -477,6 +618,14 @@ fn face_mesh(
                     return Err(Failure::UnresolvedTolerance);
                 }
                 segments.push((c.edge, mid));
+                if shared.brep.is_collapsed(c.edge) {
+                    poles.push(PoleSegment {
+                        pole: source,
+                        edge: c.edge,
+                        parameters: [a, b],
+                        uv: [pair[0].uv, pair[1].uv],
+                    });
+                }
             }
         }
         let poly: Vec<_> = (first..vertices.len() as u32).collect();
@@ -494,69 +643,144 @@ fn face_mesh(
             vertices[b as usize].free = Some(axis);
         }
     }
-    let uv: Vec<_> = vertices.iter().map(|v| v.uv).collect();
     let metric = face_metric(surface, &vertices, work)?;
-
-    let mut triangles = crate::planar::triangulate_uv(&uv, &boundaries, options.planar, metric)
-        .map_err(Failure::Polygon)?;
+    let boundary_rays: BTreeMap<_, _> = constraints
+        .iter()
+        .filter_map(|(&(a, b), &request)| Some((ray(&vertices, a, b)?, request)))
+        .collect();
+    // Pole runs get explicit monotone fans; the rest is ear clipped. A ring that
+    // leaves an invalid remainder falls back to the plain triangulation.
+    let boundary_count = vertices.len();
+    let pole::Caps {
+        mut triangles,
+        loops,
+    } = pole::caps(
+        surface,
+        face,
+        &mut vertices,
+        &boundaries,
+        sizing,
+        options.planar.max_vertices,
+        work,
+    )?;
+    let uv: Vec<_> = vertices.iter().map(|v| v.uv).collect();
+    match crate::planar::triangulate_uv(&uv, &loops, options.planar, metric) {
+        Ok(rest) => triangles.extend(rest),
+        Err(_) if !triangles.is_empty() => {
+            vertices.truncate(boundary_count);
+            let uv: Vec<_> = vertices.iter().map(|v| v.uv).collect();
+            triangles = crate::planar::triangulate_uv(&uv, &boundaries, options.planar, metric)
+                .map_err(|e| polygon_failure(e, &boundaries, options.planar, work))?;
+        }
+        Err(e) => return Err(polygon_failure(e, &loops, options.planar, work)),
+    }
+    let resolution = shared.brep.model_tolerance();
+    let mut requested = BTreeSet::new();
+    let mut passed = BTreeSet::new();
     for round in 0..=options.max_rounds {
         improve(&vertices, &mut triangles, &constraints, metric, work)?;
         let mut split = BTreeSet::new();
         let mut requests = Vec::new();
+        let mut folded = false;
         for &tri in &triangles {
             work.charge(1)?;
-            if acceptable(surface, tri.map(|i| vertices[i as usize]), tolerance, work)? {
+            // A facet that passed keeps passing: its corners determine every probe.
+            let corners = canonical(tri);
+            if passed.contains(&corners) {
+                continue;
+            }
+            if acceptable(
+                surface,
+                tri.map(|i| vertices[i as usize]),
+                tolerance,
+                resolution,
+                work,
+            )? {
+                passed.insert(corners);
+                continue;
+            }
+            if let Some(request) = fold(tri.map(|i| vertices[i as usize]), &poles) {
+                requests.push(request);
+                folded = true;
                 continue;
             }
             let mut longest = (0., key(tri[0], tri[1]));
             for k in 0..3 {
-                let length = edge_length(&vertices, metric, tri[k], tri[(k + 1) % 3])?;
+                let length = edge_length(&vertices, sizing, tri[k], tri[(k + 1) % 3])?;
                 if length > longest.0 {
                     longest = (length, key(tri[k], tri[(k + 1) % 3]));
                 }
             }
-            if let Some(&request) = constraints.get(&longest.1) {
+            // A ray from a pole that a boundary segment also runs along is refined on
+            // the boundary: its interior copies would otherwise split off a sliver.
+            let ray = ray(&vertices, longest.1.0, longest.1.1);
+            if let Some(&request) = constraints
+                .get(&longest.1)
+                .or_else(|| ray.and_then(|r| boundary_rays.get(&r)))
+            {
                 requests.push(request);
             } else {
                 split.insert(longest.1);
             }
         }
-        if !requests.is_empty() {
-            return Ok(Outcome::Refine(requests));
-        }
-        if split.is_empty() {
-            return finish(surface, vertices, triangles, work).map(Outcome::Complete);
-        }
-        if round == options.max_rounds {
+        // Boundary requests wait until the interior has converged or no further
+        // boundary segment is requested, so that one boundary pass resolves every
+        // facet the coarse boundary leaves failing; facets beside a requested segment
+        // would otherwise keep splitting into slivers along it. A folded fan only
+        // arises in the initial triangulation, but splits of its neighbours would
+        // propagate the fold, so it restarts the pass at once.
+        let now: BTreeSet<(EdgeId, u64)> = requests.iter().map(|r| (r.0, r.1.to_bits())).collect();
+        let settled = !now.is_empty() && now == requested;
+        requested = now;
+        if split.is_empty() || round == options.max_rounds || folded || settled {
+            if !requests.is_empty() {
+                return Ok(Outcome::Refine(requests));
+            }
+            if split.is_empty() {
+                return finish(surface, vertices, triangles, work).map(Outcome::Complete);
+            }
+            work.exhausted = budget("max_rounds", options.max_rounds);
             return Err(Failure::UnresolvedTolerance);
         }
         let mut midpoints = BTreeMap::new();
+        // Edges from different copies of one pole to the same vertex are one 3D edge
+        // (the pole's ray to that vertex), split at one shared midpoint.
+        let mut rays = BTreeMap::new();
         // Each requested midpoint is shared by every incident triangle, preventing T-junctions.
         for (a, b) in split {
+            let ray = ray(&vertices, a, b);
+            if let Some(&m) = ray.and_then(|r| rays.get(&r)) {
+                midpoints.insert((a, b), m);
+                continue;
+            }
             if vertices.len() >= options.planar.max_vertices {
-                return Err(Failure::ResourceLimit);
+                return Err(work.exhaust("planar.max_vertices", options.planar.max_vertices));
             }
             let (p, q) = (vertices[a as usize], vertices[b as usize]);
-            let mut uv = [0, 1].map(|k| p.uv[k] * 0.5 + q.uv[k] * 0.5);
             // An edge from a pole copy is split on the ray to its other end.
-            match (p.free, q.free) {
-                (Some(k), None) => uv[k] = q.uv[k],
-                (None, Some(k)) => uv[k] = p.uv[k],
-                _ => {}
-            }
+            let uv = match (p.free, q.free) {
+                (Some(k), None) => ray_midpoint(surface, p, q, k, work)?,
+                (None, Some(k)) => ray_midpoint(surface, q, p, k, work)?,
+                _ => [0, 1].map(|k| p.uv[k] * 0.5 + q.uv[k] * 0.5),
+            };
             if uv == p.uv || uv == q.uv {
                 return Err(Failure::UnresolvedTolerance);
             }
-            let (position, normal) = work.eval(surface, uv, [KnotSide::Right; 2])?;
+            let point = work.regular(surface, uv, sizing)?;
             let i = vertices.len();
             vertices.push(Vertex {
                 uv,
-                position,
-                normal: Some(normal),
+                position: point.position,
+                lifted: point.position,
+                normal: Some(point.normal),
                 source: Source::Interior(face, i),
                 free: None,
+                metric: point.metric,
             });
             midpoints.insert((a, b), i as u32);
+            if let Some(r) = ray {
+                rays.insert(r, i as u32);
+            }
         }
         let mut refined = Vec::new();
         for tri in triangles {
@@ -564,7 +788,12 @@ fn face_mesh(
             for k in 0..3 {
                 let a = tri[k];
                 let b = tri[(k + 1) % 3];
-                if let Some(&m) = midpoints.get(&key(a, b)) {
+                let edge = key(a, b);
+                let shared = || {
+                    let r = ray(&vertices, a, b)?;
+                    (!constraints.contains_key(&edge)).then(|| rays.get(&r))?
+                };
+                if let Some(&m) = midpoints.get(&edge).or_else(shared) {
                     let index = pieces
                         .iter()
                         .position(|t| t.contains(&a) && t.contains(&b))
@@ -578,9 +807,12 @@ fn face_mesh(
                     pieces.push([m, b, t[(j + 2) % 3]]);
                 }
             }
+            // Both pole edges of a collapsed sliver share their ray's midpoint, which
+            // leaves pieces with a repeated corner; the sliver's rest covers them.
+            pieces.retain(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
             work.charge(pieces.len())?;
             if refined.len() + pieces.len() > options.planar.max_triangles {
-                return Err(Failure::ResourceLimit);
+                return Err(work.exhaust("planar.max_triangles", options.planar.max_triangles));
             }
             refined.extend(pieces);
         }
@@ -588,16 +820,190 @@ fn face_mesh(
     }
     unreachable!("bounded refinement loop returns")
 }
-/// Length of a mesh edge in the face's metric chart, or its 3D chord when it ends at
-/// a pole copy, whose chart point is arbitrary along the pole line.
-fn edge_length(vertices: &[Vertex], metric: [f64; 2], a: u32, b: u32) -> Result<f64, Failure> {
-    let (a, b) = (vertices[a as usize], vertices[b as usize]);
-    let length = if a.free.is_some() || b.free.is_some() {
-        a.position
-            .distance(b.position)
-            .map_err(|_| Failure::Geometry)?
+/// Names the budget behind a planar triangulation failure: the triangle count is
+/// checked up front, everything else (validation, bridges, ears) charges `max_work`.
+fn polygon_failure(
+    e: PlanarError,
+    loops: &[Vec<u32>],
+    planar: PlanarOptions,
+    work: &mut Work,
+) -> Failure {
+    let limit = match &e {
+        PlanarError::ResourceLimit => true,
+        PlanarError::InvalidPolygon(t) => t.kind == tessstep_trim::ErrorKind::Limit,
+        _ => false,
+    };
+    if limit {
+        let expected = loops.iter().map(Vec::len).sum::<usize>() + 2 * loops.len();
+        work.exhausted = if expected.saturating_sub(4) > planar.max_triangles {
+            budget("planar.max_triangles", planar.max_triangles)
+        } else {
+            budget("planar.max_work", planar.max_work)
+        };
+    }
+    Failure::Polygon(e)
+}
+/// Trim reconstruction reports one `Limit` for its sample and work budgets; a rerun
+/// with the sample ceiling raised tells them apart (only on this failure path).
+fn trim_budget(
+    brep: &NormalizedBrep,
+    face: FaceId,
+    trim: tessstep_trim::Options,
+) -> Option<Budget> {
+    let raised = tessstep_trim::Options {
+        max_samples: 1_000_000,
+        ..trim
+    };
+    let samples = trim.max_samples < raised.max_samples
+        && !matches!(
+            tessstep_trim::reconstruct(brep, face, raised),
+            Err(e) if e.kind == tessstep_trim::ErrorKind::Limit
+        );
+    if samples {
+        budget("planar.trim.max_samples", trim.max_samples)
     } else {
-        ((a.uv[0] - b.uv[0]) * metric[0]).hypot((a.uv[1] - b.uv[1]) * metric[1])
+        budget("planar.trim.max_work", trim.max_work)
+    }
+}
+/// The isotropic metric floor from the face's 3D boundary extent: flat directions
+/// are measured relative to the face size.
+fn sizing(
+    mapped: &crate::FaceBoundary<'_>,
+    tolerance: TessellationTolerance,
+    resolution: f64,
+) -> Result<metric::Sizing, Failure> {
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for use_ in mapped.outer.iter().chain(mapped.holes.iter().flatten()) {
+        for s in &use_.samples {
+            for (k, x) in s.edge_sample.position.coordinates().into_iter().enumerate() {
+                lo[k] = lo[k].min(x);
+                hi[k] = hi[k].max(x);
+            }
+        }
+    }
+    let extent = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>();
+    let chord = tolerance.chord().as_metres();
+    let floor = 1. / extent.max(chord * chord);
+    let ceiling = (1. / (resolution * resolution)).max(floor);
+    if !floor.is_finite() {
+        return Err(Failure::Geometry);
+    }
+    Ok(metric::Sizing {
+        chord,
+        angle: tolerance.normal_angle().as_radians(),
+        floor,
+        ceiling,
+    })
+}
+/// A segment of a collapsed edge between two pole copies.
+struct PoleSegment {
+    pole: Source,
+    edge: EdgeId,
+    parameters: [f64; 2],
+    uv: [[f64; 2]; 2],
+}
+/// A fan triangle whose pole copy lies outside the range its two rays span along
+/// the pole line is folded: its polar wedge runs backwards and its 3D facet faces
+/// away from the surface, and no interior split changes that. It requests a pole
+/// sample between its rays instead (the collapsed edge is parameter-only, so the
+/// request only reshapes the fans of the next boundary pass).
+fn fold(corners: [Vertex; 3], poles: &[PoleSegment]) -> Option<(EdgeId, f64)> {
+    let patch = Patch::new(&corners);
+    let (s, k) = patch.polar?;
+    if orient(patch.uv[0], patch.uv[1], patch.uv[2]) > 0. {
+        return None;
+    }
+    let target = 0.5 * (corners[(s + 1) % 3].uv[k] + corners[(s + 2) % 3].uv[k]);
+    let line = corners[s].uv[1 - k];
+    poles.iter().find_map(|p| {
+        let [a, b] = p.uv.map(|uv| uv[k]);
+        let on_line = p.uv.iter().all(|uv| uv[1 - k] == line);
+        if p.pole != corners[s].source || !on_line || !(a.min(b) < target && target < a.max(b)) {
+            return None;
+        }
+        let [t0, t1] = p.parameters;
+        let t = t0 + (target - a) / (b - a) * (t1 - t0);
+        (t.is_finite() && t != t0 && t != t1).then_some((p.edge, t))
+    })
+}
+/// The point on the ray from a pole copy to `other` halfway to it in 3D. Charts are
+/// often far from uniform next to a pole (a B-spline row collapsing slowly), where
+/// the chart midpoint can sit next to the pole and split off a sliver; a short
+/// bisection on the ray parameter keeps the split between 3/8 and 5/8 of the chord.
+fn ray_midpoint(
+    surface: &SurfaceGeometry,
+    pole: Vertex,
+    other: Vertex,
+    k: usize,
+    work: &mut Work,
+) -> Result<[f64; 2], Failure> {
+    let at = |t: f64| {
+        let mut uv = other.uv;
+        uv[1 - k] = pole.uv[1 - k] + t * (other.uv[1 - k] - pole.uv[1 - k]);
+        uv
+    };
+    let full = pole
+        .position
+        .distance(other.position)
+        .map_err(|_| Failure::Geometry)?;
+    let (mut lo, mut hi, mut t) = (0., 1., 0.5);
+    for _ in 0..24 {
+        let (position, _) = work.eval_any(surface, at(t), [KnotSide::Right; 2])?;
+        let d = position
+            .distance(pole.position)
+            .map_err(|_| Failure::Geometry)?;
+        if full.is_nan() || full <= 0. || (0.375 * full..=0.625 * full).contains(&d) {
+            break;
+        }
+        if d < 0.5 * full {
+            lo = t;
+        } else {
+            hi = t;
+        }
+        t = 0.5 * (lo + hi);
+    }
+    Ok(at(t))
+}
+/// A triangle rotated to start at its smallest index, keeping its orientation.
+fn canonical(t: [u32; 3]) -> [u32; 3] {
+    let k = (0..3).min_by_key(|&k| t[k]).expect("three corners");
+    [t[k], t[(k + 1) % 3], t[(k + 2) % 3]]
+}
+/// The pole and other end of an edge from a pole copy to a regular vertex.
+fn ray(vertices: &[Vertex], a: u32, b: u32) -> Option<(Source, u32)> {
+    let (p, q) = (vertices[a as usize], vertices[b as usize]);
+    match (p.free, q.free) {
+        (Some(_), None) => Some((p.source, b)),
+        (None, Some(_)) => Some((q.source, a)),
+        _ => None,
+    }
+}
+/// Length of a mesh edge in the curvature metric (the mean of its ends' tensors), or
+/// its 3D chord scaled by the finer end's density when it ends at a pole copy, whose
+/// chart point is arbitrary along the pole line, or at a singular corner.
+fn edge_length(
+    vertices: &[Vertex],
+    sizing: metric::Sizing,
+    a: u32,
+    b: u32,
+) -> Result<f64, Failure> {
+    let (a, b) = (vertices[a as usize], vertices[b as usize]);
+    let length = match (a.metric, b.metric) {
+        (Some((ta, _)), Some((tb, _))) if a.free.is_none() && b.free.is_none() => {
+            let t = metric::mean([ta, tb]).ok_or(Failure::Geometry)?;
+            metric::length(t, [b.uv[0] - a.uv[0], b.uv[1] - a.uv[1]])
+        }
+        (ma, mb) => {
+            let density = [ma, mb]
+                .into_iter()
+                .flatten()
+                .map(|(_, d)| d)
+                .fold(sizing.floor.sqrt(), f64::max);
+            a.position
+                .distance(b.position)
+                .map_err(|_| Failure::Geometry)?
+                * density
+        }
     };
     if length.is_finite() {
         Ok(length)
@@ -688,8 +1094,28 @@ fn finish(
         let [Some(a), Some(b), Some(c)] = n else {
             return Err(Failure::SingularSurface);
         };
+        // A facet within the model tolerance of degenerate has no resolved plane (see
+        // `acceptable`); a corner whose surface normal faces away from that plane
+        // takes the plane's normal, so corner normals always face the facet's side.
+        let [p, q, r] = corners.map(|v| v.position);
+        let facet = q
+            .difference(p)
+            .and_then(|pq| r.difference(p).and_then(|pr| pq.cross(pr)))
+            .and_then(|n| n.normalized());
+        let mut corner = [a, b, c];
+        if let Ok(facet) = facet {
+            for n in &mut corner {
+                if n.vector()
+                    .dot(facet.vector())
+                    .map_err(|_| Failure::Geometry)?
+                    <= 0.
+                {
+                    *n = facet;
+                }
+            }
+        }
         kept.push(tri);
-        normals.push([a, b, c]);
+        normals.push(corner);
         uvs.push(patch.uv);
     }
     Ok(FaceMesh {
@@ -702,23 +1128,28 @@ fn finish(
 fn probe(
     surface: &SurfaceGeometry,
     vertices: &[Vertex; 3],
+    patch: &Patch,
     uv: [f64; 2],
     sides: [KnotSide; 2],
-    normal: Direction3<ModelSpace>,
-    tolerance: TessellationTolerance,
+    facet: Facet,
     work: &mut Work,
 ) -> Result<bool, Failure> {
     let (position, n) = work.eval_any(surface, uv, sides)?;
-    let chord = tolerance.chord().as_metres();
+    let (normal, chord) = (facet.normal, facet.chord);
     // Geometric chord error: distance from the surface probe to the facet plane.
     // A tangential parametric offset (for example across a cone generator) is not
     // surface deviation, so the probe is not compared with its barycentric image;
     // the normal-angle check below still rejects folded or misoriented facets.
     let d = position
-        .difference(vertices[0].position)
+        .difference(vertices[0].lifted)
         .and_then(|v| v.dot(normal.vector()))
         .map_err(|_| Failure::Geometry)?
         .abs();
+    // A singular corner (pole or apex) has no normal. A pole that a B-spline control
+    // row only collapses to within tolerance still evaluates one, but it is noise.
+    if (0..3).any(|k| vertices[k].normal.is_none() && patch.uv[k] == uv) {
+        return Ok(d <= chord);
+    }
     let Some(n) = n else {
         // Only a singular corner (pole or apex) has no normal; it is a mesh vertex.
         if vertices.iter().any(|v| v.normal.is_none()) {
@@ -730,15 +1161,25 @@ fn probe(
         && n.angle_to(normal)
             .map_err(|_| Failure::Geometry)?
             .as_radians()
-            <= tolerance
-                .normal_angle()
-                .as_radians()
-                .min(std::f64::consts::FRAC_PI_2 - 1e-12))
+            <= facet.angle)
 }
+/// A facet's plane normal and the chord and normal-angle limits its probes must meet.
+#[derive(Clone, Copy)]
+struct Facet {
+    normal: Direction3<ModelSpace>,
+    chord: f64,
+    angle: f64,
+}
+/// Whether a facet meets the tolerances at every probe. `resolution` is the model
+/// tolerance, the scale below which the model represents no geometry (corners may
+/// sit that far off the surface): a facet no wider than it (twice its area over its
+/// longest edge) must meet the chord, but its plane orientation is not resolved, so
+/// it is not compared with surface normals.
 fn acceptable(
     surface: &SurfaceGeometry,
     vertices: [Vertex; 3],
     tolerance: TessellationTolerance,
+    resolution: f64,
     work: &mut Work,
 ) -> Result<bool, Failure> {
     // A sliver along a pole line has no 3D extent; the fans around it cover the
@@ -761,13 +1202,31 @@ fn acceptable(
             }
         }
     }
-    let [a, b, c] = vertices.map(|v| v.position);
+    let [a, b, c] = vertices.map(|v| v.lifted);
     let cross = b
         .difference(a)
         .and_then(|ab| c.difference(a).and_then(|ac| ab.cross(ac)))
         .map_err(|_| Failure::Geometry)?;
     let Ok(normal) = cross.normalized() else {
         return Ok(false);
+    };
+    let longest = [(a, b), (b, c), (c, a)]
+        .into_iter()
+        .map(|(p, q)| p.distance(q))
+        .try_fold(0_f64, |m, d| d.map(|d| m.max(d)))
+        .map_err(|_| Failure::Geometry)?;
+    let width = cross.norm().map_err(|_| Failure::Geometry)? / longest;
+    let facet = Facet {
+        normal,
+        chord: tolerance.chord().as_metres(),
+        angle: if width <= resolution {
+            f64::INFINITY
+        } else {
+            tolerance
+                .normal_angle()
+                .as_radians()
+                .min(std::f64::consts::FRAC_PI_2 - 1e-12)
+        },
     };
     for weights in [
         [1., 0., 0.],
@@ -784,10 +1243,10 @@ fn acceptable(
         if !probe(
             surface,
             &vertices,
+            &patch,
             patch.at(weights),
             [KnotSide::Right; 2],
-            normal,
-            tolerance,
+            facet,
             work,
         )? {
             return Ok(false);
@@ -797,6 +1256,9 @@ fn acceptable(
         // Every intersected knot cell is probed, including both one-sided limits.
         // Small knot spans cannot disappear between a fixed triangle's usual probes.
         let mut cuts = [Vec::new(), Vec::new()];
+        // Whether a knot line meets the closed extent: only there do one-sided limits
+        // differ, so a facet inside one cell repeats its stencil probes and is done.
+        let mut touches = [false; 2];
         for (axis, cut) in cuts.iter_mut().enumerate() {
             let lo = patch
                 .uv
@@ -809,7 +1271,18 @@ fn acceptable(
                 .map(|v| v[axis])
                 .fold(f64::NEG_INFINITY, f64::max);
             let knots = s.knot_vectors()[axis].knots();
-            work.charge(knots.len())?;
+            // Knots are sorted and a constant shift keeps them sorted, so the knot
+            // lines inside an extent are found by bisection.
+            let mut within = |shift: f64, cut: &mut Vec<f64>, work: &mut Work| {
+                let start = knots.partition_point(|&k| k + shift < lo);
+                let open = knots.partition_point(|&k| k + shift <= lo);
+                let end = knots.partition_point(|&k| k + shift < hi);
+                let closed = knots.partition_point(|&k| k + shift <= hi);
+                work.charge(2 + closed.saturating_sub(start))?;
+                touches[axis] |= closed > start;
+                cut.extend(knots[open..end.max(open)].iter().map(|&k| k + shift));
+                Ok::<(), Failure>(())
+            };
             cut.push(lo);
             if s.periodic_axes()[axis] {
                 // Unwrapped charts repeat the knot lines once per period.
@@ -821,21 +1294,17 @@ fn acceptable(
                     return Ok(false);
                 }
                 for n in first..=last {
-                    work.charge(knots.len())?;
-                    let shift = n as f64 * period;
-                    cut.extend(
-                        knots
-                            .iter()
-                            .map(|&k| k + shift)
-                            .filter(|&k| k > lo && k < hi),
-                    );
+                    within(n as f64 * period, cut, work)?;
                 }
                 cut.sort_by(f64::total_cmp);
             } else {
-                cut.extend(knots.iter().copied().filter(|&k| k > lo && k < hi));
+                within(0., cut, work)?;
             }
             cut.push(hi);
             cut.dedup();
+        }
+        if patch.polar.is_none() && !touches[0] && !touches[1] {
+            return Ok(true);
         }
         for u in cuts[0].windows(2) {
             for v in cuts[1].windows(2) {
@@ -870,7 +1339,7 @@ fn acceptable(
                             KnotSide::Right
                         },
                     ];
-                    probe(surface, &vertices, uv, sides, normal, tolerance, work)
+                    probe(surface, &vertices, &patch, uv, sides, facet, work)
                 };
                 if !check(center, work)? {
                     return Ok(false);
@@ -978,10 +1447,17 @@ fn improve(
         {
             continue;
         }
-        let [pa, pb, pc, pd] = [a, b, c, d].map(|i| {
-            let uv = vertices[i as usize].uv;
-            [uv[0] * metric[0], uv[1] * metric[1]]
-        });
+        // The quadrilateral's mean curvature metric, else the face's diagonal one.
+        let quad = metric::mean(
+            [a, b, c, d]
+                .into_iter()
+                .filter_map(|i| vertices[i as usize].metric.map(|(t, _)| t)),
+        )
+        .unwrap_or([metric[0] * metric[0], 0., metric[1] * metric[1]]);
+        let Some(chart) = metric::chart(quad) else {
+            return Err(Failure::Geometry);
+        };
+        let [pa, pb, pc, pd] = [a, b, c, d].map(|i| chart(vertices[i as usize].uv));
         let x = orient(pc, pd, pb);
         let y = orient(pd, pc, pa);
         if !x.is_finite() || !y.is_finite() {

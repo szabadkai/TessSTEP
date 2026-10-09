@@ -362,17 +362,15 @@ redistributable Onshape export with these features as a hash-pinned exporter fil
   0.25 mm) imports as a spindle torus whose `select_outer` part is the closed v domain
   with the two axis points as singular points. Evidence: `brep-spindle-apple.step`,
   `brep-spindle-lemon.step`, `analytic_spindle_torus_parts_end_at_the_axis_points`.
-- **Remaining Onshape blocker — tessellation refinement, Milestone 22.2.** With
+- **Tessellation refinement — delivered 2026-10-09 (Milestone 22.2).** With
   degenerate tori, seam placement between holes and tangent edges, tolerance-consistent
-  sampling and trimming and sliver-face collapse, the whole 149-face B-rep now passes
-  profile, geometry and topology. Tessellation fails on a torus band (face #2168,
-  R = 2.035 mm, r = 0.3 mm) with `UnresolvedTolerance`: the seam is sampled in rows
-  0.098 rad apart for the 0.1 rad normal angle, longest-edge bisection of a facet
-  spanning two rows inserts a midpoint whose neighbour then spans two rows on the
-  other side, and Lawson flips in the length metric keep recreating such diagonals, so
-  a sliver walks along the band one vertex per round (4,682 vertices, then the round
-  limit). This needs curvature-anisotropic refinement (Milestone 22); after it, the
-  cylinder with 36 holes (face #2164) needs planar work budgets above the 10M default.
+  sampling and trimming and sliver-face collapse, the whole 149-face B-rep passed
+  profile, geometry and topology, but tessellation walked a sliver along a torus band
+  (face #2168, R = 2.035 mm, r = 0.3 mm) to the round limit, the cylinder with 36 holes
+  (face #2164) exceeded the 10M planar work budget, and the 36 two-pole B-spline faces
+  folded their pole fans. With curvature-anisotropic refinement, polar caps and the
+  cheaper planar triangulation of 22.2, the export imports as a closed solid within the
+  default budgets (65,766 vertices, 131,556 triangles, 5.85e-6 m³, about 7 s).
 - **Computed pcurves — delivered 2026-09-26.** Every coedge receives a pcurve computed
   from its 3D curve, exact or a verified fit, with the edge parameter as its parameter
   ([curved import](CURVED_IMPORT.md#computed-pcurves)). The export has no `PCURVE`,
@@ -634,14 +632,30 @@ baseline movements, never a refreshed baseline.
   `entity_count`. Evidence: `every_resource_budget_is_enforced`,
   `import_budgets_are_sized_by_the_document_and_named_in_diagnostics`, the reviewed
   corpus movement in [VALIDATION.md](VALIDATION.md).
-- **22.2 Curvature-anisotropic refinement and tessellation budgets.** Longest-edge
-  bisection in a length metric with Lawson flips walks slivers along tight torus
-  and cylinder bands (24 `UnresolvedTolerance` and 25 `ResourceLimit` faces; the
-  Onshape torus band, face #2168). Refine along the direction of surface-normal
-  turn and make flips respect it; then raise the planar work budget so the 36-hole
-  cylinder face (#2164) meshes. Acceptance: the Onshape export imports as a closed
-  solid, the 51 `tessellation:resource_limit` roots either mesh or name a budget,
-  and the adaptive regression tests still hold their sampled bounds.
+- **22.2 Curvature-anisotropic refinement and tessellation budgets — delivered
+  2026-10-09.** Longest-edge bisection in a length metric with Lawson flips walked
+  slivers along tight torus and cylinder bands (24 `UnresolvedTolerance` and 25
+  `ResourceLimit` faces; the Onshape torus band, face #2168). Refinement and flips now
+  use a per-vertex curvature metric (the shape of |II|, plus a tangential bending term,
+  an isotropic floor and a model-tolerance ceiling), so bands are split across rather
+  than along; pole runs get explicit monotone fans (polar caps); boundary requests wait
+  until the interior settles; faces and facets that already passed are reused; facets
+  are measured through the surface lift of their corners and, below the model
+  tolerance, by chord only. The planar cost was cut rather than the budget raised:
+  bridges are tested in length order and ear tests use a grid, giving identical
+  triangulations (the 36-hole face's 28M work units fell to 2.1M). Every resource
+  limit, round limit and pass limit names its budget and value
+  (`TessellationError::budget`); defaults are unchanged. The Onshape export imports as
+  a closed solid; in the corpus 66 roots newly mesh (643 meshed), none is lost, and
+  all 25 remaining `tessellation:resource_limit` roots name their budget (22 trim
+  reconstruction work in `tessstep-trim`'s quadratic loop checks, two `max_work`, one
+  `max_evaluations`). The thin-cylinder case was not reproduced by an authored band
+  (it meshes on both versions), so its evidence is the Onshape export only. Evidence:
+  `narrow_torus_band_refines_across_the_band`,
+  `planar_face_with_many_holes_meshes_within_default_budgets`,
+  `pole_caps_keep_fans_monotone_beside_seams_and_holes`,
+  `tessellation_budgets_are_named_in_diagnostics`, the existing adaptive and pole
+  tests, the reviewed corpus movement in [VALIDATION.md](VALIDATION.md).
 - **22.3 Tolerance policy for edges off their surfaces.** 71 roots fail because an
   `EDGE_CURVE` lies farther from its face surface than the model tolerance, 19
   because an edge crosses a surface singularity, and 22 because vertices lie off

@@ -2,9 +2,10 @@
 //! Shared boundaries, adaptive regular face triangles and manifold shell/solid assembly.
 #![forbid(unsafe_code)]
 mod adaptive;
+mod metric;
 mod planar;
 pub use adaptive::{
-    TessellationError, TessellationErrorKind, TessellationOptions, tessellate_faces,
+    Budget, TessellationError, TessellationErrorKind, TessellationOptions, tessellate_faces,
     tessellate_shell, tessellate_solid,
 };
 pub use planar::{PlanarError, PlanarMesh, PlanarOptions};
@@ -107,23 +108,34 @@ impl<'a> OrientedSamples<'a> {
         })
     }
 }
-struct Budget {
+/// Which sampling budget a `ResourceLimit` exhausted, for the tessellation diagnostic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Exhausted {
+    Samples,
+    Evaluations,
+}
+struct SampleBudget {
     samples: usize,
     evaluations: usize,
+    exhausted: Option<Exhausted>,
 }
-impl Budget {
+impl SampleBudget {
     fn evaluate(&mut self) -> Result<(), ErrorKind> {
-        self.evaluations = self
-            .evaluations
-            .checked_sub(1)
-            .ok_or(ErrorKind::ResourceLimit)?;
+        self.evaluations = self.evaluations.checked_sub(1).ok_or_else(|| {
+            self.exhausted = Some(Exhausted::Evaluations);
+            ErrorKind::ResourceLimit
+        })?;
         Ok(())
     }
+    fn exhaust_samples(&mut self) -> ErrorKind {
+        self.exhausted = Some(Exhausted::Samples);
+        ErrorKind::ResourceLimit
+    }
     fn push(&mut self, out: &mut Vec<Sample>, sample: Sample) -> Result<(), ErrorKind> {
-        self.samples = self
-            .samples
-            .checked_sub(1)
-            .ok_or(ErrorKind::ResourceLimit)?;
+        self.samples = match self.samples.checked_sub(1) {
+            Some(rest) => rest,
+            None => return Err(self.exhaust_samples()),
+        };
         out.push(sample);
         Ok(())
     }
@@ -133,13 +145,14 @@ pub fn sample_edges(
     tolerance: TessellationTolerance,
     limits: SamplingLimits,
 ) -> Result<SharedEdges<'_>, Error> {
-    sample_edges_seeded(brep, tolerance, limits, &[])
+    sample_edges_seeded(brep, tolerance, limits, &[], &mut None)
 }
 fn sample_edges_seeded<'a>(
     brep: &'a NormalizedBrep,
     tolerance: TessellationTolerance,
     limits: SamplingLimits,
     forced: &[Vec<f64>],
+    exhausted: &mut Option<Exhausted>,
 ) -> Result<SharedEdges<'a>, Error> {
     if limits.max_depth > 48 || limits.max_samples > 10_000_000 {
         return Err(Error {
@@ -147,28 +160,29 @@ fn sample_edges_seeded<'a>(
             kind: ErrorKind::InvalidLimits,
         });
     }
-    let mut budget = Budget {
+    let mut budget = SampleBudget {
         samples: limits.max_samples,
         evaluations: limits.max_evaluations,
+        exhausted: None,
     };
     let mut edges = Vec::new();
     for (i, edge) in brep.data().edges.iter().enumerate() {
-        let sample = |budget: &mut Budget| -> Result<Vec<Sample>, ErrorKind> {
+        let sample = |budget: &mut SampleBudget| -> Result<Vec<Sample>, ErrorKind> {
             let chord = tolerance.chord().as_metres();
             let angle = tolerance.normal_angle().as_radians();
-            let mut seeds = edge
-                .curve
-                .break_parameters(edge.range, budget.samples)
-                .map_err(|_| ErrorKind::ResourceLimit)?;
+            let mut seeds = match edge.curve.break_parameters(edge.range, budget.samples) {
+                Ok(seeds) => seeds,
+                Err(_) => return Err(budget.exhaust_samples()),
+            };
             if let Some(extra) = forced.get(i) {
                 if extra.len() > limits.max_samples {
-                    return Err(ErrorKind::ResourceLimit);
+                    return Err(budget.exhaust_samples());
                 }
                 seeds.extend_from_slice(extra);
                 seeds.sort_by(f64::total_cmp);
                 seeds.dedup();
                 if seeds.len() > budget.samples {
-                    return Err(ErrorKind::ResourceLimit);
+                    return Err(budget.exhaust_samples());
                 }
             }
             // Seeds within numerical noise of each other (a range starting at -5e-17
@@ -193,7 +207,7 @@ fn sample_edges_seeded<'a>(
             seeds = cleaned;
             let evaluate = |u: f64,
                             side: KnotSide,
-                            budget: &mut Budget|
+                            budget: &mut SampleBudget|
              -> Result<Evaluation<ModelSpace, 3>, ErrorKind> {
                 budget.evaluate()?;
                 edge.curve
@@ -326,9 +340,12 @@ fn sample_edges_seeded<'a>(
             }
             Ok(out)
         };
-        let samples = sample(&mut budget).map_err(|kind| Error {
-            edge: EdgeId(i),
-            kind,
+        let samples = sample(&mut budget).map_err(|kind| {
+            *exhausted = budget.exhausted;
+            Error {
+                edge: EdgeId(i),
+                kind,
+            }
         })?;
         edges.push(EdgePolyline {
             edge: EdgeId(i),

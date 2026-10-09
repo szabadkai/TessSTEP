@@ -193,8 +193,11 @@ pub(crate) fn triangulate_uv(
         .collect();
     tessstep_trim::validate_polygons(&polygons[0], &polygons[1..], eps, options.max_work)
         .map_err(PlanarError::InvalidPolygon)?;
-    let expected = uv
-        .len()
+    // Every boundary vertex is used once; other entries of `uv` (polar caps) are not.
+    let expected = boundaries
+        .iter()
+        .map(Vec::len)
+        .sum::<usize>()
         .checked_add(2 * (boundaries.len() - 1))
         .and_then(|n| n.checked_sub(2))
         .ok_or(PlanarError::ResourceLimit)?;
@@ -209,20 +212,7 @@ pub(crate) fn triangulate_uv(
     };
     let mut ring = boundaries[0].clone();
     for hole in &boundaries[1..] {
-        let mut best: Option<(f64, usize, usize)> = None;
-        for (hi, &h) in hole.iter().enumerate() {
-            for (ri, &r) in ring.iter().enumerate() {
-                engine.charge(1)?;
-                let length = distance(engine.p(h), engine.p(r))?;
-                if best.is_some_and(|(d, _, _)| length >= d) {
-                    continue;
-                }
-                if engine.visible(h, r, &ring)? {
-                    best = Some((length, hi, ri));
-                }
-            }
-        }
-        let (_, hi, ri) = best.ok_or(PlanarError::UnresolvedGeometry)?;
+        let (hi, ri) = engine.bridge(hole, &ring)?;
         engine.charge(ring.len() + hole.len() + 2)?;
         // Duplicate bridge endpoints in the walk, not in vertex storage.
         let mut joined = Vec::with_capacity(ring.len() + hole.len() + 2);
@@ -234,17 +224,25 @@ pub(crate) fn triangulate_uv(
     // Best-first ear clipping: the ear with the largest minimum angle in the metric
     // chart is clipped next, so dense parallel boundaries become strips instead of
     // fans. Ear status only changes at the clipped vertex's neighbours; a full rescan
-    // runs if the queue empties early, so no valid ear is ever missed.
+    // runs if the queue empties early, so no valid ear is ever missed. Ear tests visit
+    // only the ring positions a uniform grid places near the ear, not the whole ring.
     let m = ring.len();
     let mut prev: Vec<usize> = (0..m).map(|i| (i + m - 1) % m).collect();
     let mut next: Vec<usize> = (0..m).map(|i| (i + 1) % m).collect();
     let mut alive = vec![true; m];
+    engine.charge(m)?;
+    let grid = Grid::new(&ring.iter().map(|&i| engine.p(i)).collect::<Vec<_>>());
+    let ears = Ears {
+        ring: &ring,
+        grid: &grid,
+        metric,
+    };
     let mut version = vec![0u32; m];
     let mut remaining = m;
     let mut heap = BinaryHeap::new();
     let rank = |q: f64| q.to_bits();
     for p in 0..m {
-        if let Some(q) = engine.ear_quality(&ring, &prev, &next, p, metric)? {
+        if let Some(q) = engine.ear_quality(&ears, &prev, &next, &alive, p)? {
             heap.push((rank(q), std::cmp::Reverse(p), 0u32));
         }
     }
@@ -258,7 +256,7 @@ pub(crate) fn triangulate_uv(
                     continue;
                 }
                 version[p] += 1;
-                if let Some(q) = engine.ear_quality(&ring, &prev, &next, p, metric)? {
+                if let Some(q) = engine.ear_quality(&ears, &prev, &next, &alive, p)? {
                     heap.push((rank(q), std::cmp::Reverse(p), version[p]));
                     found = true;
                 }
@@ -281,7 +279,7 @@ pub(crate) fn triangulate_uv(
         for x in [a, b] {
             version[x] += 1;
             if remaining > 3 {
-                if let Some(q) = engine.ear_quality(&ring, &prev, &next, x, metric)? {
+                if let Some(q) = engine.ear_quality(&ears, &prev, &next, &alive, x)? {
                     heap.push((rank(q), std::cmp::Reverse(x), version[x]));
                 }
             }
@@ -301,6 +299,111 @@ pub(crate) fn triangulate_uv(
     Ok(triangles)
 }
 
+/// A bridge candidate: length, hole position, ring position, in that total order.
+#[derive(Clone, Copy, PartialEq)]
+struct Bridge(f64, usize, usize);
+impl Eq for Bridge {}
+impl PartialOrd for Bridge {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Bridge {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .total_cmp(&other.0)
+            .then(self.1.cmp(&other.1))
+            .then(self.2.cmp(&other.2))
+    }
+}
+/// The ring being clipped, its position grid and the ear-ranking metric.
+struct Ears<'a> {
+    ring: &'a [u32],
+    grid: &'a Grid,
+    metric: [f64; 2],
+}
+/// The bounding box of the points within `eps` of all three edge lines of a
+/// counterclockwise triangle, with a safety factor; `None` when a corner is too sharp
+/// to bound reliably (the caller then scans the whole ring).
+fn widened(a: [f64; 2], b: [f64; 2], c: [f64; 2], eps: f64) -> Option<([f64; 2], [f64; 2])> {
+    let mut reach = 0_f64;
+    for (p, q, r) in [(a, b, c), (b, c, a), (c, a, b)] {
+        let u = [q[0] - p[0], q[1] - p[1]];
+        let v = [r[0] - p[0], r[1] - p[1]];
+        let cos = (u[0] * v[0] + u[1] * v[1]) / (u[0].hypot(u[1]) * v[0].hypot(v[1]));
+        let half = (0.5 * (1. - cos)).max(0.).sqrt();
+        if half.is_nan() || half <= 1e-6 {
+            return None;
+        }
+        reach = reach.max(eps / half);
+    }
+    let reach = 2. * reach + eps;
+    let lo = [0, 1].map(|k| a[k].min(b[k]).min(c[k]) - reach);
+    let hi = [0, 1].map(|k| a[k].max(b[k]).max(c[k]) + reach);
+    (lo.iter().chain(&hi).all(|x| x.is_finite())).then_some((lo, hi))
+}
+/// A uniform grid of ring positions over their bounding box, about one per cell.
+struct Grid {
+    origin: [f64; 2],
+    size: [f64; 2],
+    dims: [usize; 2],
+    cells: Vec<Vec<usize>>,
+}
+impl Grid {
+    fn new(points: &[[f64; 2]]) -> Self {
+        let mut lo = [f64::INFINITY; 2];
+        let mut hi = [f64::NEG_INFINITY; 2];
+        for p in points {
+            for k in 0..2 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        let extent = [0, 1].map(|k| (hi[k] - lo[k]).max(0.));
+        let side = (points.len() as f64).sqrt().ceil().max(1.);
+        let longest = extent[0].max(extent[1]);
+        let dims = [0, 1].map(|k| {
+            if longest > 0. && extent[k] > 0. {
+                ((side * extent[k] / longest).ceil() as usize).clamp(1, 4096)
+            } else {
+                1
+            }
+        });
+        let size = [0, 1].map(|k| {
+            if extent[k] > 0. {
+                extent[k] / dims[k] as f64
+            } else {
+                1.
+            }
+        });
+        let mut grid = Self {
+            origin: lo,
+            size,
+            dims,
+            cells: vec![Vec::new(); dims[0] * dims[1]],
+        };
+        for (q, p) in points.iter().enumerate() {
+            let [i, j] = grid.index(*p);
+            grid.cells[j * dims[0] + i].push(q);
+        }
+        grid
+    }
+    fn index(&self, p: [f64; 2]) -> [usize; 2] {
+        [0, 1].map(|k| {
+            let t = ((p[k] - self.origin[k]) / self.size[k]).floor();
+            if t.is_finite() && t > 0. {
+                (t as usize).min(self.dims[k] - 1)
+            } else {
+                0
+            }
+        })
+    }
+    fn cells(&self, lo: [f64; 2], hi: [f64; 2]) -> impl Iterator<Item = &Vec<usize>> {
+        let [i0, j0] = self.index(lo);
+        let [i1, j1] = self.index(hi);
+        (j0..=j1).flat_map(move |j| (i0..=i1).map(move |i| &self.cells[j * self.dims[0] + i]))
+    }
+}
 struct Engine<'a> {
     uv: Vec<[f64; 2]>,
     loops: &'a [Vec<u32>],
@@ -373,6 +476,43 @@ impl Engine<'_> {
         }
         Ok(inside)
     }
+    /// The shortest visible bridge from a hole vertex to the current ring, ties broken
+    /// by the lowest hole then ring position. Candidates are tested for visibility in
+    /// that order, in bounded batches of the shortest untested ones, so the search
+    /// stops at the first visible bridge instead of testing every shorter candidate
+    /// met in index order (each visibility test is linear in the boundary size).
+    fn bridge(&mut self, hole: &[u32], ring: &[u32]) -> Result<(usize, usize), PlanarError> {
+        const BATCH: usize = 32;
+        let mut tested: Option<Bridge> = None;
+        loop {
+            let mut batch = BinaryHeap::with_capacity(BATCH + 1);
+            for (hi, &h) in hole.iter().enumerate() {
+                for (ri, &r) in ring.iter().enumerate() {
+                    self.charge(1)?;
+                    let candidate = Bridge(distance(self.p(h), self.p(r))?, hi, ri);
+                    if tested.is_some_and(|t| candidate <= t) {
+                        continue;
+                    }
+                    if batch.len() == BATCH {
+                        if batch.peek().is_some_and(|worst| candidate >= *worst) {
+                            continue;
+                        }
+                        batch.pop();
+                    }
+                    batch.push(candidate);
+                }
+            }
+            if batch.is_empty() {
+                return Err(PlanarError::UnresolvedGeometry);
+            }
+            for candidate in batch.into_sorted_vec() {
+                if self.visible(hole[candidate.1], ring[candidate.2], ring)? {
+                    return Ok((candidate.1, candidate.2));
+                }
+                tested = Some(candidate);
+            }
+        }
+    }
     fn visible(&mut self, a: u32, b: u32, ring: &[u32]) -> Result<bool, PlanarError> {
         for poly in self.loops {
             for i in 0..poly.len() {
@@ -394,13 +534,14 @@ impl Engine<'_> {
     /// angle in the metric chart (radians) when it is a valid ear.
     fn ear_quality(
         &mut self,
-        ring: &[u32],
+        ears: &Ears<'_>,
         prev: &[usize],
         next: &[usize],
+        alive: &[bool],
         p: usize,
-        metric: [f64; 2],
     ) -> Result<Option<f64>, PlanarError> {
         self.charge(1)?;
+        let ring = ears.ring;
         let ids = [ring[prev[p]], ring[p], ring[next[p]]];
         let [a, b, c] = ids.map(|j| self.p(j));
         let lengths = [distance(a, b)?, distance(b, c)?, distance(c, a)?];
@@ -409,22 +550,50 @@ impl Engine<'_> {
         }
         // Boundary points on a proposed diagonal block the ear: retaining them
         // prevents a T-junction instead of silently dropping collinear samples.
-        let mut q = next[next[p]];
-        while q != prev[p] {
-            self.charge(1)?;
+        // Blocking points lie within `eps` of every edge line, hence in the ear's
+        // bounding box widened by each corner's offset `eps / sin(angle / 2)`.
+        let mut blocked = false;
+        let test = |engine: &mut Self, q: usize| -> Result<bool, PlanarError> {
+            engine.charge(1)?;
             let j = ring[q];
-            q = next[q];
             if ids.contains(&j) {
-                continue;
+                return Ok(false);
             }
-            let x = self.p(j);
-            if orient(a, b, x)? >= -self.eps * lengths[0]
-                && orient(b, c, x)? >= -self.eps * lengths[1]
-                && orient(c, a, x)? >= -self.eps * lengths[2]
-            {
-                return Ok(None);
+            let x = engine.p(j);
+            Ok(orient(a, b, x)? >= -engine.eps * lengths[0]
+                && orient(b, c, x)? >= -engine.eps * lengths[1]
+                && orient(c, a, x)? >= -engine.eps * lengths[2])
+        };
+        match widened(a, b, c, self.eps) {
+            Some((lo, hi)) => {
+                for cell in ears.grid.cells(lo, hi) {
+                    self.charge(1)?;
+                    for &q in cell {
+                        if alive[q] && q != prev[p] && q != p && q != next[p] && test(self, q)? {
+                            blocked = true;
+                            break;
+                        }
+                    }
+                    if blocked {
+                        break;
+                    }
+                }
+            }
+            None => {
+                let mut q = next[next[p]];
+                while q != prev[p] {
+                    if test(self, q)? {
+                        blocked = true;
+                        break;
+                    }
+                    q = next[q];
+                }
             }
         }
+        if blocked {
+            return Ok(None);
+        }
+        let metric = ears.metric;
         let [a, b, c] = [a, b, c].map(|v| [v[0] * metric[0], v[1] * metric[1]]);
         let angle = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| -> Result<f64, PlanarError> {
             let u = [q[0] - p[0], q[1] - p[1]];

@@ -444,7 +444,7 @@
       "feature": "Pole and apex face tessellation",
       "status": "implemented",
       "test": "pole_and_apex_charts_close_with_collapsed_edges",
-      "limitations": "collapsed-edge charts; polar-wedge probes, dropped pole slivers and limit corner normals; sampled, not certified, error bounds"
+      "limitations": "collapsed-edge charts with explicit monotone polar caps; polar-wedge probes, dropped pole slivers and limit corner normals; sampled, not certified, error bounds"
     },
     {
       "feature": "NURBS knot-cell refinement",
@@ -749,8 +749,8 @@
     {
       "feature": "Metric-aware constrained triangulation and refinement",
       "status": "implemented",
-      "test": "brep_annular_cylinder_inserts_one_seam_and_meshes_as_a_strip",
-      "limitations": "Diagonal RMS-speed UV metric, best-first ear clipping, queue-based Lawson flips and facet-plane chord error; isotropic refinement, no certified bounds"
+      "test": "narrow_torus_band_refines_across_the_band",
+      "limitations": "Best-first ear clipping in a diagonal RMS-speed UV metric; curvature-anisotropic refinement and queue-based Lawson flips in a per-vertex second-fundamental-form metric; facet-plane chord error through corner lifts, chord only below the model tolerance; no certified bounds"
     },
     {
       "feature": "STEP product structure linking",
