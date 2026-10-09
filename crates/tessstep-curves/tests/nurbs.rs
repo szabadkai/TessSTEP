@@ -305,3 +305,61 @@ fn spline_max_degree_and_affine_covariance() {
         near(b.first.components(), [2. * x + y, 3. * y], 1e-12);
     }
 }
+
+/// The Cox-de Boor table as the recurrence reads, one fresh row set per degree: the
+/// reference for `basis_on_side`, which reuses two buffers and must agree bit for bit.
+fn reference_basis(k: &KnotVector, u: f64, side: KnotSide) -> (usize, [Vec<f64>; 3]) {
+    let knots = k.knots();
+    let p = k.degree();
+    let u = k.snap(u).unwrap();
+    let start = k.span(u, side).unwrap() - p;
+    let mut prev = vec![vec![0.; p + 2]; 3];
+    prev[0][p] = 1.;
+    for d in 1..=p {
+        let mut next = vec![vec![0.; p + 2]; 3];
+        for j in p - d..=p {
+            let i = start + j;
+            let l = knots[i + d] - knots[i];
+            let r = knots[i + d + 1] - knots[i + 1];
+            if l != 0. {
+                next[0][j] += (u - knots[i]) / l * prev[0][j];
+                next[1][j] += d as f64 * (prev[0][j] / l);
+                next[2][j] += d as f64 * (prev[1][j] / l);
+            }
+            if r != 0. {
+                next[0][j] += (knots[i + d + 1] - u) / r * prev[0][j + 1];
+                next[1][j] -= d as f64 * (prev[0][j + 1] / r);
+                next[2][j] -= d as f64 * (prev[1][j + 1] / r);
+            }
+        }
+        prev = next;
+    }
+    (start, [0, 1, 2].map(|r| prev[r][..=p].to_vec()))
+}
+
+#[test]
+fn spline_basis_matches_the_full_recurrence_bit_for_bit() {
+    let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    for degree in [1, 2, 3, 4, 5, 7, MAX_DEGREE] {
+        // Clamped ends, uneven spans and one interior knot of full multiplicity.
+        let mut knots = vec![-0.25; degree + 1];
+        knots.extend([0.1, 0.3, 0.3, 0.55]);
+        knots.extend(vec![0.7; degree]);
+        knots.extend([0.71, 0.9]);
+        knots.extend(vec![1.5; degree + 1]);
+        let controls = knots.len() - degree - 1;
+        let k = KnotVector::new(degree, controls, &knots, Default::default()).unwrap();
+        let mut parameters = knots.clone();
+        parameters.extend((0..=40).map(|i| -0.25 + 1.75 * f64::from(i) / 40.));
+        for u in parameters {
+            for side in [KnotSide::Left, KnotSide::Right] {
+                let b = k.basis_on_side(u, side).unwrap();
+                let (start, [values, first, second]) = reference_basis(&k, u, side);
+                assert_eq!(b.start(), start, "degree {degree} at {u} {side:?}");
+                assert_eq!(bits(b.values()), bits(&values), "degree {degree} at {u}");
+                assert_eq!(bits(b.first()), bits(&first), "degree {degree} at {u}");
+                assert_eq!(bits(b.second()), bits(&second), "degree {degree} at {u}");
+            }
+        }
+    }
+}

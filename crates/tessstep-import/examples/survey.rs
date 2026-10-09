@@ -206,7 +206,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Angle::radians(0.1).expect("finite angle"),
             )
             .expect("valid tolerance");
-            session.tessellate(&solid, tolerance, TessellationOptions::default())
+            session.tessellate(&solid, tolerance, tessellation_options())
         });
         if index > 0 {
             out.push(',');
@@ -306,6 +306,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// counted, whatever the import outcome: the coverage survey sees every entity type
 /// a root uses, not only the first one a profile rejects. Bounded traversal; a
 /// closure beyond the bound is marked truncated.
+/// The default tessellation budgets, with the faces of each boundary pass meshed on
+/// up to eight cores (results, budgets and diagnostics do not depend on the count).
+fn tessellation_options() -> TessellationOptions {
+    TessellationOptions {
+        threads: std::thread::available_parallelism().map_or(1, |n| n.get().min(8)),
+        ..TessellationOptions::default()
+    }
+}
 fn closure(out: &mut String, doc: &Document, root: EntityId) -> std::fmt::Result {
     use tessstep_part21::{StepValue, ValueKind};
     const MAX_VISITS: usize = 2_000_000;
@@ -532,7 +540,7 @@ fn surface_models(
                         shell.face_entities().len(),
                         shell.boundary_edges()
                     )?;
-                    match shell.tessellate(tolerance, TessellationOptions::default()) {
+                    match shell.tessellate(tolerance, tessellation_options()) {
                         Ok(mesh) => {
                             vertices += mesh.data().positions.len();
                             triangles += mesh.data().triangles.len();

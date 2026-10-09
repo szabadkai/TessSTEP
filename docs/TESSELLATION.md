@@ -182,6 +182,31 @@ limit). Facets beside an already requested segment would otherwise keep splittin
 into slivers along it, hence the second condition. Within a face, a facet that passed
 is not probed again in later rounds: its corners determine every probe.
 
+Nothing is evaluated or tested twice when the answer is already known, and each
+reuse returns exactly what repeating the work would, so meshes are unchanged:
+
+* A probe at a regular corner is that vertex's own evaluation, a probe at an edge
+  midpoint is shared by the two facets on the edge and by the vertex a split of the
+  edge places there, and a left-sided knot-cell probe off every knot line is the
+  ordinary evaluation.
+* Each face keeps, across boundary passes, the evaluations of its vertices and the
+  facets between regular corners that passed, keyed by exact chart coordinates;
+  meshing a face again after a pass mostly reproduces its interior.
+* Triangles keep their slots across rounds and the edge incidence is updated by
+  splits and flips instead of rebuilt. After the first round the flip queue holds
+  only the edges of triangles the last split created and the edges a flip reaches
+  before their turn, at their place in key order: every other edge's quadrilateral
+  is unchanged since it was last found settled. A call that stopped at the flip
+  ceiling is followed by a full one.
+
+`TessellationOptions::threads` (default 1) meshes the faces of each boundary pass on
+that many threads. Each face runs against the budgets left at the start of the pass;
+their charges are then applied in face order, and if any face ran out or its charges
+exceed what the faces before it left, the whole call is repeated on one thread. The
+mesh, the budgets consumed and every diagnostic therefore do not depend on the
+thread count, and a budget failure costs a second, single-threaded run. The C entry
+points use one thread.
+
 Facets are measured through the surface points (lifts) of their corners, not the
 canonical boundary positions, which may sit off the surface by up to the model
 tolerance; the mesh then deviates from the surface by that offset in addition to the
@@ -347,9 +372,12 @@ Trim reconstruction reports one `Limit` for its two budgets; on that failure pat
 rerun with the sample ceiling raised tells them apart. The defaults are unchanged by
 Milestone 22.2: the algorithmic costs were reduced instead (the curvature metric, the
 caps, deferred boundary requests, reused faces and facets, bisected knot lines and
-skipped single-cell knot probes, the bridge order and the ear grid). The whole Onshape
-export uses 7.65M of the 10M evaluations and 27.8M of the 50M work units. In the
-corpus, `bug33261.stp` root #46035 needs 10–15M evaluations and `bug24593_281946.stp`
-root #30 50–75M work; 22 roots exhaust `planar.trim.max_work` in quadratic trim loop
-checks (15 in `as1_motor.step`; root #143 needs more than 50M), and `bug26889_export.step`
-root #34 needs more than the 50M work and then the 100,000 vertices of one face.
+skipped single-cell knot probes, the bridge order, the ear grid, and the reuse of
+evaluations, facets and edge incidence described above). The whole Onshape export uses
+2.5–2.6M of the 10M evaluations and 15–17.5M of the 50M work units. In the corpus,
+`bug30790.step` meshes all 26 solids within the defaults: each of its 24 B-spline
+solids has 217,000–251,000 triangles and needs 5–7M evaluations and 30–40M work
+units, where it needed 10–15M evaluations before the reuse. The roots that still run
+out are `bug24593_281946.stp` #30 and `bug26889_export.step` #34 (`max_work`; the
+latter then needs more than the 100,000 vertices of one face) and
+`bug24024_slow_import.stp` #76237 (`planar.max_work`).

@@ -24,6 +24,12 @@ pub struct TessellationOptions {
     /// Refinement/assembly work shared across faces and restarts.
     pub max_work: usize,
     pub mesh: tessstep_mesh::Limits,
+    /// Threads that mesh the faces of one boundary pass (1, the default, meshes them
+    /// in order on the calling thread). Results, budgets and diagnostics do not depend
+    /// on it: faces are meshed against the pass's remaining budgets and their charges
+    /// are then applied in face order; if any budget would have run out, the call is
+    /// repeated on one thread.
+    pub threads: usize,
 }
 impl Default for TessellationOptions {
     fn default() -> Self {
@@ -35,6 +41,7 @@ impl Default for TessellationOptions {
             max_evaluations: 10_000_000,
             max_work: 50_000_000,
             mesh: tessstep_mesh::Limits::default(),
+            threads: 1,
         }
     }
 }
@@ -187,28 +194,72 @@ impl Work {
         }
         .map_err(|_| Failure::Geometry)
     }
-    /// Normal and curvature metric of a regular mesh vertex.
-    fn regular(
-        &mut self,
-        surface: &SurfaceGeometry,
-        uv: [f64; 2],
-        sizing: metric::Sizing,
-    ) -> Result<RegularPoint, Failure> {
-        let jet = self.jet(surface, uv, [KnotSide::Right; 2])?;
-        let normal = jet
-            .normal(NumericalTolerance::default())
-            .map_err(|_| Failure::SingularSurface)?;
-        Ok(RegularPoint {
-            position: jet.position,
-            normal,
-            metric: metric::curvature(&jet, normal, sizing),
-        })
-    }
 }
 struct RegularPoint {
     position: Point3<ModelSpace>,
     normal: Direction3<ModelSpace>,
     metric: Option<(metric::Tensor, f64)>,
+}
+impl RegularPoint {
+    fn new(jet: &Evaluation<ModelSpace>, sizing: metric::Sizing) -> Result<Self, Failure> {
+        let normal = jet
+            .normal(NumericalTolerance::default())
+            .map_err(|_| Failure::SingularSurface)?;
+        Ok(Self {
+            position: jet.position,
+            normal,
+            metric: metric::curvature(jet, normal, sizing),
+        })
+    }
+}
+/// Surface evaluations one face mesh reuses: the right-sided jet at each probed edge
+/// midpoint, keyed by edge with its chart point. Both facets on an edge probe that
+/// point, and a split of the edge places its vertex there.
+#[derive(Default)]
+struct Probes {
+    midpoints: BTreeMap<Key, ([f64; 2], Evaluation<ModelSpace>)>,
+}
+/// What a face keeps across boundary passes, keyed by exact chart coordinates: the
+/// jets of its vertices and the facets (between regular corners) that passed.
+/// Meshing a face again after a boundary pass mostly reproduces its interior, and an
+/// evaluation or an acceptance test depends only on those coordinates, so reuse
+/// returns exactly what repeating them would.
+#[derive(Default)]
+struct FaceMemory {
+    jets: BTreeMap<[u64; 2], Evaluation<ModelSpace>>,
+    passed: BTreeSet<[[u64; 2]; 3]>,
+}
+impl FaceMemory {
+    /// A regular vertex at `uv`, evaluated once per face.
+    fn regular(
+        &mut self,
+        surface: &SurfaceGeometry,
+        uv: [f64; 2],
+        sizing: metric::Sizing,
+        work: &mut Work,
+    ) -> Result<RegularPoint, Failure> {
+        let key = uv.map(f64::to_bits);
+        if let Some(jet) = self.jets.get(&key) {
+            work.charge(1)?;
+            return RegularPoint::new(jet, sizing);
+        }
+        let jet = work.jet(surface, uv, [KnotSide::Right; 2])?;
+        self.jets.insert(key, jet);
+        RegularPoint::new(&jet, sizing)
+    }
+}
+/// The chart points of a facet between regular corners, rotated to start at the
+/// smallest; `None` when a corner is singular or a pole copy.
+fn chart_key(corners: &[Vertex; 3]) -> Option<[[u64; 2]; 3]> {
+    if corners
+        .iter()
+        .any(|v| v.normal.is_none() || v.free.is_some())
+    {
+        return None;
+    }
+    let keys = corners.map(|v| v.uv.map(f64::to_bits));
+    let k = (0..3).min_by_key(|&k| keys[k]).expect("three corners");
+    Some([keys[k], keys[(k + 1) % 3], keys[(k + 2) % 3]])
 }
 impl Work {
     /// Parametric speeds |S_u| and |S_v| at a UV point.
@@ -258,6 +309,72 @@ pub fn tessellate_faces(
     tolerance: TessellationTolerance,
     options: TessellationOptions,
 ) -> Result<Mesh, TessellationError> {
+    if options.threads > 1 {
+        let mut speculative = false;
+        let result = run(
+            brep,
+            faces,
+            tolerance,
+            options,
+            options.threads,
+            &mut speculative,
+        );
+        if !speculative {
+            return result;
+        }
+    }
+    run(brep, faces, tolerance, options, 1, &mut false)
+}
+/// One face meshed against the pass's remaining budgets.
+struct Job {
+    face: FaceId,
+    memory: FaceMemory,
+    work: Work,
+    result: Option<Result<Outcome, Failure>>,
+}
+/// Mesh the faces of `jobs` on `threads` threads, each against its own budgets.
+fn mesh_jobs(
+    shared: &SharedEdges<'_>,
+    jobs: &mut [Job],
+    tolerance: TessellationTolerance,
+    options: TessellationOptions,
+    threads: usize,
+) {
+    let next = std::sync::Mutex::new(jobs.iter_mut());
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                loop {
+                    let job = match next.lock() {
+                        Ok(mut jobs) => jobs.next(),
+                        Err(_) => None,
+                    };
+                    let Some(job) = job else { break };
+                    job.result = Some(face_mesh(
+                        shared,
+                        job.face,
+                        tolerance,
+                        options,
+                        &mut job.memory,
+                        &mut job.work,
+                    ));
+                }
+            });
+        }
+    });
+}
+/// The boundary passes. With `threads > 1` each pass meshes its faces in parallel and
+/// sets `speculative` (returning early) when applying their charges in face order
+/// shows that a budget would have run out, which only a run on one thread places.
+#[allow(clippy::result_large_err)]
+fn run(
+    brep: &NormalizedBrep,
+    faces: &[FaceId],
+    tolerance: TessellationTolerance,
+    options: TessellationOptions,
+    threads: usize,
+    speculative: &mut bool,
+) -> Result<Mesh, TessellationError> {
     if options.max_rounds > 48
         || options.max_boundary_passes > 24
         || options.planar.max_vertices > 1_000_000
@@ -294,6 +411,7 @@ pub fn tessellate_faces(
     // Faces completed in the previous pass, reused while their edges' samples are
     // unchanged: meshing is deterministic, so a remesh would reproduce them exactly.
     let mut cached = BTreeMap::<FaceId, FaceMesh>::new();
+    let mut memory = BTreeMap::<FaceId, FaceMemory>::new();
     let mut previous: Vec<Vec<f64>> = Vec::new();
     for pass in 0..=options.max_boundary_passes {
         let mut sampling = options.sampling;
@@ -331,14 +449,67 @@ pub fn tessellate_faces(
         let mut completed = Vec::new();
         let mut vertices = 0usize;
         let mut triangles = 0usize;
-        for &face in faces {
-            let reused = cached
-                .remove(&face)
-                .filter(|_| face_edges(brep, face).all(unchanged));
+        let reused: Vec<Option<FaceMesh>> = faces
+            .iter()
+            .map(|face| {
+                cached
+                    .remove(face)
+                    .filter(|_| face_edges(brep, *face).all(unchanged))
+            })
+            .collect();
+        // Parallel passes mesh every other face first, each against the budgets left
+        // now; the charges are applied in face order below.
+        let mut jobs: BTreeMap<FaceId, Job> = BTreeMap::new();
+        let start = (work.remaining, work.evaluations);
+        let pending = reused.iter().filter(|r| r.is_none()).count();
+        if threads > 1 && pending > 1 {
+            let mut list: Vec<Job> = faces
+                .iter()
+                .zip(&reused)
+                .filter(|(_, r)| r.is_none())
+                .map(|(&face, _)| Job {
+                    face,
+                    memory: memory.remove(&face).unwrap_or_default(),
+                    work: Work {
+                        exhausted: None,
+                        ..work
+                    },
+                    result: None,
+                })
+                .collect();
+            mesh_jobs(&shared, &mut list, tolerance, options, threads.min(pending));
+            jobs = list.into_iter().map(|job| (job.face, job)).collect();
+        }
+        for (&face, reused) in faces.iter().zip(reused) {
             let outcome = match reused {
                 Some(mesh) => Outcome::Complete(mesh),
-                None => face_mesh(&shared, face, tolerance, options, &mut work)
-                    .map_err(|kind| fail(&mut work, Some(face), kind))?,
+                None => match jobs.remove(&face) {
+                    Some(job) => {
+                        // The pass's budgets the job started from, less what it left.
+                        let (spent, evaluated) =
+                            (start.0 - job.work.remaining, start.1 - job.work.evaluations);
+                        memory.insert(face, job.memory);
+                        // A face that ran out of its budgets, or whose charges exceed
+                        // what the faces before it left, is placed by one thread.
+                        if job.work.exhausted.is_some()
+                            || spent > work.remaining
+                            || evaluated > work.evaluations
+                        {
+                            *speculative = true;
+                            return Err(error(Failure::ResourceLimit));
+                        }
+                        work.remaining -= spent;
+                        work.evaluations -= evaluated;
+                        job.result
+                            .expect("meshed")
+                            .map_err(|kind| fail(&mut work, Some(face), kind))?
+                    }
+                    None => {
+                        let memory = memory.entry(face).or_default();
+                        face_mesh(&shared, face, tolerance, options, memory, &mut work)
+                            .map_err(|kind| fail(&mut work, Some(face), kind))?
+                    }
+                },
             };
             match outcome {
                 Outcome::Refine(mut needs) => requests.append(&mut needs),
@@ -539,6 +710,7 @@ fn face_mesh(
     face: FaceId,
     tolerance: TessellationTolerance,
     options: TessellationOptions,
+    memory: &mut FaceMemory,
     work: &mut Work,
 ) -> Result<Outcome, Failure> {
     let raw = shared.brep.data();
@@ -599,7 +771,7 @@ fn face_mesh(
                 let (normal, metric, lifted) = if singular {
                     (None, None, position)
                 } else {
-                    let point = work.regular(surface, uv, sizing)?;
+                    let point = memory.regular(surface, uv, sizing, work)?;
                     (Some(point.normal), point.metric, point.position)
                 };
                 vertices.push(Vertex {
@@ -661,6 +833,7 @@ fn face_mesh(
         &boundaries,
         sizing,
         options.planar.max_vertices,
+        memory,
         work,
     )?;
     let uv: Vec<_> = vertices.iter().map(|v| v.uv).collect();
@@ -677,26 +850,58 @@ fn face_mesh(
     let resolution = shared.brep.model_tolerance();
     let mut requested = BTreeSet::new();
     let mut passed = BTreeSet::new();
+    let mut probes = Probes::default();
+    // Whether each triangle is known to pass, and which ones the last split created.
+    // Triangles keep their slots across rounds (a split's first piece takes its
+    // parent's), so the edge incidence is maintained rather than rebuilt.
+    let mut known = vec![false; triangles.len()];
+    let mut fresh: Option<Vec<bool>> = None;
+    let mut incident = EdgeMap::<Incident>::default();
+    incident.reserve(triangles.len() * 3 / 2 + 1);
+    for slot in 0..triangles.len() {
+        work.charge(3)?;
+        attach(&mut incident, &triangles, slot);
+    }
     for round in 0..=options.max_rounds {
-        improve(&vertices, &mut triangles, &constraints, metric, work)?;
+        let emptied = improve(
+            &vertices,
+            &mut triangles,
+            &mut incident,
+            &constraints,
+            metric,
+            fresh.as_deref(),
+            &mut known,
+            work,
+        )?;
         let mut split = BTreeSet::new();
         let mut requests = Vec::new();
         let mut folded = false;
-        for &tri in &triangles {
+        for (slot, &tri) in triangles.iter().enumerate() {
             work.charge(1)?;
+            if known[slot] {
+                continue;
+            }
             // A facet that passed keeps passing: its corners determine every probe.
             let corners = canonical(tri);
-            if passed.contains(&corners) {
+            let chart = chart_key(&tri.map(|i| vertices[i as usize]));
+            if passed.contains(&corners) || chart.is_some_and(|c| memory.passed.contains(&c)) {
+                known[slot] = true;
                 continue;
             }
             if acceptable(
                 surface,
                 tri.map(|i| vertices[i as usize]),
+                tri,
                 tolerance,
                 resolution,
+                &mut probes,
                 work,
             )? {
                 passed.insert(corners);
+                if let Some(c) = chart {
+                    memory.passed.insert(c);
+                }
+                known[slot] = true;
                 continue;
             }
             if let Some(request) = fold(tri.map(|i| vertices[i as usize]), &poles) {
@@ -766,7 +971,13 @@ fn face_mesh(
             if uv == p.uv || uv == q.uv {
                 return Err(Failure::UnresolvedTolerance);
             }
-            let point = work.regular(surface, uv, sizing)?;
+            let point = match probes.midpoints.get(&key(a, b)) {
+                Some((at, jet)) if *at == uv => {
+                    memory.jets.insert(uv.map(f64::to_bits), *jet);
+                    RegularPoint::new(jet, sizing)?
+                }
+                _ => memory.regular(surface, uv, sizing, work)?,
+            };
             let i = vertices.len();
             vertices.push(Vertex {
                 uv,
@@ -782,8 +993,9 @@ fn face_mesh(
                 rays.insert(r, i as u32);
             }
         }
-        let mut refined = Vec::new();
-        for tri in triangles {
+        let mut created = vec![false; triangles.len()];
+        for slot in 0..triangles.len() {
+            let tri = triangles[slot];
             let mut pieces = vec![tri];
             for k in 0..3 {
                 let a = tri[k];
@@ -810,13 +1022,42 @@ fn face_mesh(
             // Both pole edges of a collapsed sliver share their ray's midpoint, which
             // leaves pieces with a repeated corner; the sliver's rest covers them.
             pieces.retain(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
-            work.charge(pieces.len())?;
-            if refined.len() + pieces.len() > options.planar.max_triangles {
+            if pieces.len() == 1 && pieces[0] == tri {
+                continue;
+            }
+            work.charge(3 * (pieces.len() + 1))?;
+            if triangles.len() + pieces.len() > options.planar.max_triangles + 1 {
                 return Err(work.exhaust("planar.max_triangles", options.planar.max_triangles));
             }
-            refined.extend(pieces);
+            detach(&mut incident, &triangles, slot);
+            let mut slots = Vec::with_capacity(pieces.len());
+            for (n, piece) in pieces.into_iter().enumerate() {
+                let at = if n == 0 {
+                    triangles[slot] = piece;
+                    slot
+                } else {
+                    triangles.push(piece);
+                    known.push(false);
+                    created.push(false);
+                    triangles.len() - 1
+                };
+                known[at] = false;
+                created[at] = true;
+                slots.push(at);
+            }
+            // At most two edges of a triangle share a ray midpoint, so a piece remains.
+            if slots.is_empty() {
+                return Err(Failure::Geometry);
+            }
+            for at in slots {
+                attach(&mut incident, &triangles, at);
+            }
         }
-        triangles = refined;
+        if triangles.len() > options.planar.max_triangles {
+            return Err(work.exhaust("planar.max_triangles", options.planar.max_triangles));
+        }
+        // After a flip ceiling the next call starts from the full queue again.
+        fresh = emptied.then_some(created);
     }
     unreachable!("bounded refinement loop returns")
 }
@@ -1125,16 +1366,59 @@ fn finish(
         uvs,
     })
 }
-fn probe(
+/// The surface position and (unless singular) normal at a probe. A right-sided probe
+/// at a regular corner is that vertex's own evaluation, and one at the midpoint of an
+/// edge between regular corners is shared through `probes`; anything else is
+/// evaluated. Reuse returns exactly what a new evaluation would.
+#[allow(clippy::too_many_arguments)]
+fn sample(
     surface: &SurfaceGeometry,
-    vertices: &[Vertex; 3],
+    corners: &[Vertex; 3],
+    tri: [u32; 3],
     patch: &Patch,
     uv: [f64; 2],
     sides: [KnotSide; 2],
-    facet: Facet,
+    edge: Option<(usize, usize)>,
+    probes: &mut Probes,
     work: &mut Work,
+) -> Result<(Point3<ModelSpace>, Option<Direction3<ModelSpace>>), Failure> {
+    let right = sides == [KnotSide::Right; 2];
+    if right {
+        for (k, v) in corners.iter().enumerate() {
+            if v.normal.is_some() && v.free.is_none() && patch.uv[k] == uv {
+                work.charge(1)?;
+                return Ok((v.lifted, v.normal));
+            }
+        }
+    }
+    let shared = edge.filter(|&(i, j)| {
+        right
+            && [i, j]
+                .iter()
+                .all(|&k| corners[k].normal.is_some() && corners[k].free.is_none())
+    });
+    if let Some((i, j)) = shared {
+        let key = key(tri[i], tri[j]);
+        if let Some((at, jet)) = probes.midpoints.get(&key) {
+            if *at == uv {
+                work.charge(1)?;
+                return Ok((jet.position, jet.normal(NumericalTolerance::default()).ok()));
+            }
+        }
+        let jet = work.jet(surface, uv, sides)?;
+        probes.midpoints.insert(key, (uv, jet));
+        return Ok((jet.position, jet.normal(NumericalTolerance::default()).ok()));
+    }
+    work.eval_any(surface, uv, sides)
+}
+/// Whether one probe meets the facet's chord and angle limits.
+fn judge(
+    vertices: &[Vertex; 3],
+    patch: &Patch,
+    uv: [f64; 2],
+    (position, n): (Point3<ModelSpace>, Option<Direction3<ModelSpace>>),
+    facet: Facet,
 ) -> Result<bool, Failure> {
-    let (position, n) = work.eval_any(surface, uv, sides)?;
     let (normal, chord) = (facet.normal, facet.chord);
     // Geometric chord error: distance from the surface probe to the facet plane.
     // A tangential parametric offset (for example across a cone generator) is not
@@ -1175,11 +1459,14 @@ struct Facet {
 /// sit that far off the surface): a facet no wider than it (twice its area over its
 /// longest edge) must meet the chord, but its plane orientation is not resolved, so
 /// it is not compared with surface normals.
+#[allow(clippy::too_many_arguments)]
 fn acceptable(
     surface: &SurfaceGeometry,
     vertices: [Vertex; 3],
+    tri: [u32; 3],
     tolerance: TessellationTolerance,
     resolution: f64,
+    probes: &mut Probes,
     work: &mut Work,
 ) -> Result<bool, Failure> {
     // A sliver along a pole line has no 3D extent; the fans around it cover the
@@ -1228,27 +1515,25 @@ fn acceptable(
                 .min(std::f64::consts::FRAC_PI_2 - 1e-12)
         },
     };
-    for weights in [
-        [1., 0., 0.],
-        [0., 1., 0.],
-        [0., 0., 1.],
-        [0.5, 0.5, 0.],
-        [0., 0.5, 0.5],
-        [0.5, 0., 0.5],
-        [1. / 3.; 3],
-        [0.5, 0.25, 0.25],
-        [0.25, 0.5, 0.25],
-        [0.25, 0.25, 0.5],
+    for (weights, edge) in [
+        ([1., 0., 0.], None),
+        ([0., 1., 0.], None),
+        ([0., 0., 1.], None),
+        ([0.5, 0.5, 0.], Some((0, 1))),
+        ([0., 0.5, 0.5], Some((1, 2))),
+        ([0.5, 0., 0.5], Some((0, 2))),
+        ([1. / 3.; 3], None),
+        ([0.5, 0.25, 0.25], None),
+        ([0.25, 0.5, 0.25], None),
+        ([0.25, 0.25, 0.5], None),
     ] {
-        if !probe(
-            surface,
-            &vertices,
-            &patch,
-            patch.at(weights),
-            [KnotSide::Right; 2],
-            facet,
-            work,
-        )? {
+        let uv = patch.at(weights);
+        let sides = [KnotSide::Right; 2];
+        let edge = edge.filter(|_| patch.polar.is_none());
+        let at = sample(
+            surface, &vertices, tri, &patch, uv, sides, edge, probes, work,
+        )?;
+        if !judge(&vertices, &patch, uv, at, facet)? {
             return Ok(false);
         }
     }
@@ -1259,6 +1544,8 @@ fn acceptable(
         // Whether a knot line meets the closed extent: only there do one-sided limits
         // differ, so a facet inside one cell repeats its stencil probes and is done.
         let mut touches = [false; 2];
+        // The knot lines through the closed extent, where one-sided limits differ.
+        let mut lines = [Vec::new(), Vec::new()];
         for (axis, cut) in cuts.iter_mut().enumerate() {
             let lo = patch
                 .uv
@@ -1280,6 +1567,7 @@ fn acceptable(
                 let closed = knots.partition_point(|&k| k + shift <= hi);
                 work.charge(2 + closed.saturating_sub(start))?;
                 touches[axis] |= closed > start;
+                lines[axis].extend(knots[start..closed.max(start)].iter().map(|&k| k + shift));
                 cut.extend(knots[open..end.max(open)].iter().map(|&k| k + shift));
                 Ok::<(), Failure>(())
             };
@@ -1325,21 +1613,20 @@ fn acceptable(
                 }
                 let center = [0, 1, 2]
                     .map(|k| polygon.iter().map(|p| p[k]).sum::<f64>() / polygon.len() as f64);
-                let check = |p: [f64; 3], work: &mut Work| -> Result<bool, Failure> {
+                // A left limit off every knot line is the ordinary evaluation.
+                let mut check = |p: [f64; 3], work: &mut Work| -> Result<bool, Failure> {
                     let uv = patch.linear(p);
-                    let sides = [
-                        if uv[0] >= u[1] {
+                    let sides = [0, 1].map(|axis| {
+                        if uv[axis] >= [u[1], v[1]][axis] && lines[axis].contains(&uv[axis]) {
                             KnotSide::Left
                         } else {
                             KnotSide::Right
-                        },
-                        if uv[1] >= v[1] {
-                            KnotSide::Left
-                        } else {
-                            KnotSide::Right
-                        },
-                    ];
-                    probe(surface, &vertices, &patch, uv, sides, facet, work)
+                        }
+                    });
+                    let at = sample(
+                        surface, &vertices, tri, &patch, uv, sides, None, probes, work,
+                    )?;
+                    judge(&vertices, &patch, uv, at, facet)
                 };
                 if !check(center, work)? {
                     return Ok(false);
@@ -1388,45 +1675,127 @@ fn clip(
 fn orient(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> f64 {
     (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 }
+/// A fixed multiplicative hash of an edge key. Maps keyed with it are only looked
+/// up, never iterated for a decision, so results stay deterministic.
+#[derive(Clone, Copy, Default)]
+struct EdgeHasher(u64);
+impl std::hash::Hasher for EdgeHasher {
+    fn finish(&self) -> u64 {
+        self.0 ^ (self.0 >> 29)
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(8) ^ u64::from(b)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        }
+    }
+    fn write_u32(&mut self, n: u32) {
+        self.0 = (self.0.rotate_left(32) ^ u64::from(n)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+}
+type EdgeMap<V> = std::collections::HashMap<Key, V, std::hash::BuildHasherDefault<EdgeHasher>>;
+/// The triangles on one edge (a third use only counts).
+#[derive(Clone, Copy)]
+struct Incident {
+    count: u8,
+    tris: [usize; 2],
+}
+/// Record the edges of the triangle in `slot`.
+fn attach(incident: &mut EdgeMap<Incident>, triangles: &[[u32; 3]], slot: usize) {
+    let t = triangles[slot];
+    for k in 0..3 {
+        let entry = incident
+            .entry(key(t[k], t[(k + 1) % 3]))
+            .or_insert(Incident {
+                count: 0,
+                tris: [usize::MAX; 2],
+            });
+        if entry.count < 2 {
+            entry.tris[usize::from(entry.count)] = slot;
+        }
+        entry.count = entry.count.saturating_add(1);
+    }
+}
+/// Forget the edges of the triangle in `slot`.
+fn detach(incident: &mut EdgeMap<Incident>, triangles: &[[u32; 3]], slot: usize) {
+    let t = triangles[slot];
+    for k in 0..3 {
+        let edge = key(t[k], t[(k + 1) % 3]);
+        if let Some(entry) = incident.get_mut(&edge) {
+            if let Some(n) = entry.tris.iter().position(|&s| s == slot) {
+                entry.tris[n] = entry.tris[1 - n];
+                entry.tris[1] = usize::MAX;
+            }
+            entry.count = entry.count.saturating_sub(1);
+            if entry.count == 0 {
+                incident.remove(&edge);
+            }
+        }
+    }
+}
+/// Queue-based Lawson flips in the quadrilaterals' curvature-metric charts: only edges
+/// around a flip are revisited, so an ear-clipping fan unwinds in one pass instead of
+/// one sweep per fan triangle. Constraints are never flipped. A strict angular margin
+/// avoids cycling on cocircular floating-point inputs, and the flip count is bounded;
+/// shape improvement is optional because the error checks still run.
+///
+/// The queue holds every interior edge in key order, popped from the largest, with
+/// edges around a flip pushed on top unless already queued. With `fresh` (the
+/// triangles the last split created) a call after a settled one processes only the
+/// edges of fresh triangles and those a flip reaches before their turn, at their
+/// place in that order: every other edge's quadrilateral is unchanged since it was
+/// last found settled, so popping it would flip nothing and the flips are the same.
+/// Flipped triangles are marked not `known` to pass. Returns whether the queue
+/// emptied (rather than stopping at the flip ceiling).
+#[allow(clippy::too_many_arguments)]
 fn improve(
     vertices: &[Vertex],
     triangles: &mut [[u32; 3]],
+    incident: &mut EdgeMap<Incident>,
     constraints: &BTreeMap<Key, (EdgeId, f64)>,
     metric: [f64; 2],
+    fresh: Option<&[bool]>,
+    known: &mut [bool],
     work: &mut Work,
-) -> Result<(), Failure> {
-    // Queue-based Lawson flips in the metric-scaled UV chart: only edges around a
-    // flip are revisited, so an ear-clipping fan unwinds in one pass instead of one
-    // sweep per fan triangle. Constraints are never flipped. A strict angular margin
-    // avoids cycling on cocircular floating-point inputs, and the flip count is
-    // bounded; shape improvement is optional because the error checks still run.
-    let mut incident = BTreeMap::<Key, Vec<usize>>::new();
+) -> Result<bool, Failure> {
+    let interior = |incident: &EdgeMap<Incident>, edge: &Key| {
+        incident.get(edge).is_some_and(|e| e.count == 2) && !constraints.contains_key(edge)
+    };
+    // The edges that start in the queue and still have to be popped there, below
+    // `cursor`; only those that may flip are listed.
+    let mut initial = BTreeSet::new();
     for (i, t) in triangles.iter().enumerate() {
-        work.charge(3)?;
-        for k in 0..3 {
-            incident
-                .entry(key(t[k], t[(k + 1) % 3]))
-                .or_default()
-                .push(i);
+        if fresh.is_none_or(|f| f[i]) {
+            work.charge(1)?;
+            for k in 0..3 {
+                let edge = key(t[k], t[(k + 1) % 3]);
+                if interior(incident, &edge) {
+                    initial.insert(edge);
+                }
+            }
         }
     }
-    let mut pending: Vec<Key> = incident
-        .iter()
-        .filter(|(edge, tris)| tris.len() == 2 && !constraints.contains_key(edge))
-        .map(|(&edge, _)| edge)
-        .collect();
-    let mut queued: BTreeSet<Key> = pending.iter().copied().collect();
+    // Diagonals this call created; every other interior edge was in the starting
+    // queue (flips keep the triangle count of the edges around them).
+    let mut created = EdgeMap::<()>::default();
+    let mut cursor: Option<Key> = None;
+    let mut pushed: Vec<Key> = Vec::new();
+    let mut queued_pushed = EdgeMap::<()>::default();
     let mut flips = 0usize;
     let limit = triangles.len().saturating_mul(64).saturating_add(1024);
-    while let Some(edge) = pending.pop() {
+    loop {
+        let edge = if let Some(edge) = pushed.pop() {
+            queued_pushed.remove(&edge);
+            edge
+        } else if let Some(edge) = initial.pop_last() {
+            cursor = Some(edge);
+            edge
+        } else {
+            return Ok(true);
+        };
         work.charge(1)?;
-        queued.remove(&edge);
-        let Some(tris) = incident.get(&edge) else {
+        let Some(&Incident { count: 2, tris }) = incident.get(&edge) else {
             continue;
         };
-        if tris.len() != 2 {
-            continue;
-        }
         let (i, j) = (tris[0], tris[1]);
         // Orient the shared edge a->b as it appears in triangle i.
         let ti = triangles[i];
@@ -1484,17 +1853,26 @@ fn improve(
             continue;
         }
         if flips >= limit {
-            break;
+            return Ok(false);
         }
         flips += 1;
         work.charge(8)?;
         triangles[i] = [c, d, b];
         triangles[j] = [d, c, a];
+        known[i] = false;
+        known[j] = false;
         incident.remove(&edge);
-        incident.insert(key(c, d), vec![i, j]);
+        incident.insert(
+            key(c, d),
+            Incident {
+                count: 2,
+                tris: [i, j],
+            },
+        );
+        created.insert(key(c, d), ());
         for (e, from, to) in [(key(d, b), j, i), (key(c, a), i, j)] {
-            if let Some(list) = incident.get_mut(&e) {
-                for t in list.iter_mut() {
+            if let Some(entry) = incident.get_mut(&e) {
+                for t in entry.tris.iter_mut() {
                     if *t == from {
                         *t = to;
                     }
@@ -1502,10 +1880,24 @@ fn improve(
             }
         }
         for e in [key(b, c), key(c, a), key(a, d), key(d, b)] {
-            if !constraints.contains_key(&e) && queued.insert(e) {
-                pending.push(e);
+            if constraints.contains_key(&e) || queued_pushed.contains_key(&e) {
+                continue;
             }
+            // Still waiting in the starting queue: it is processed at its place.
+            let waiting = match fresh {
+                Some(_) => {
+                    interior(incident, &e)
+                        && !created.contains_key(&e)
+                        && cursor.is_none_or(|c| e < c)
+                }
+                None => initial.contains(&e),
+            };
+            if waiting {
+                initial.insert(e);
+                continue;
+            }
+            queued_pushed.insert(e, ());
+            pushed.push(e);
         }
     }
-    Ok(())
 }

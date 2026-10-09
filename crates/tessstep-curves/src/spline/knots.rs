@@ -119,34 +119,43 @@ impl KnotVector {
         let span = self.span(u, side)?;
         let p = self.degree;
         let start = span - p;
-        let mut prev = [[0.; MAX_DEGREE + 2]; 3];
-        prev[0][p] = 1.;
+        // Two buffers alternate between degrees. Degree d writes entries p - d..=p and
+        // reads p - d..=p + 1 of degree d - 1; the entries it reads beyond those written
+        // were never written, so they are the zeros of the full recurrence.
+        let mut buffers = [[[0.; MAX_DEGREE + 2]; 3]; 2];
+        buffers[0][0][p] = 1.;
         for d in 1..=p {
-            let mut next = [[0.; MAX_DEGREE + 2]; 3];
+            let [even, odd] = &mut buffers;
+            let (prev, next) = if d % 2 == 1 {
+                (&*even, odd)
+            } else {
+                (&*odd, even)
+            };
             for j in p - d..=p {
                 let i = start + j;
                 let l = self.knots[i + d] - self.knots[i];
                 let r = self.knots[i + d + 1] - self.knots[i + 1];
+                let mut value = [0.; 3];
                 if l != 0. {
-                    next[0][j] += (u - self.knots[i]) / l * prev[0][j];
-                    next[1][j] += d as f64 * (prev[0][j] / l);
-                    next[2][j] += d as f64 * (prev[1][j] / l);
+                    value[0] += (u - self.knots[i]) / l * prev[0][j];
+                    value[1] += d as f64 * (prev[0][j] / l);
+                    value[2] += d as f64 * (prev[1][j] / l);
                 }
                 if r != 0. {
-                    next[0][j] += (self.knots[i + d + 1] - u) / r * prev[0][j + 1];
-                    next[1][j] -= d as f64 * (prev[0][j + 1] / r);
-                    next[2][j] -= d as f64 * (prev[1][j + 1] / r);
+                    value[0] += (self.knots[i + d + 1] - u) / r * prev[0][j + 1];
+                    value[1] -= d as f64 * (prev[0][j + 1] / r);
+                    value[2] -= d as f64 * (prev[1][j + 1] / r);
                 }
-                for row in &next {
-                    checked(row[j])?;
+                for (row, value) in next.iter_mut().zip(value) {
+                    row[j] = checked(value)?;
                 }
             }
-            prev = next;
         }
+        let last = &buffers[p % 2];
         Ok(BasisSample {
             start,
             count: p + 1,
-            rows: std::array::from_fn(|r| std::array::from_fn(|j| prev[r][j])),
+            rows: std::array::from_fn(|r| std::array::from_fn(|j| last[r][j])),
         })
     }
 }

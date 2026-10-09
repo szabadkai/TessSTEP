@@ -39,7 +39,7 @@ shared copies do not inflate unique coverage.
 | `reference_errors` | Physical syntax accepted; some references are missing |
 | `rejected` | Parser returned a structured diagnostic, including resource limits |
 | `crash` | Process terminated by signal or Rust panic |
-| `timeout` | Process exceeded the per-input deadline (120 seconds by default; the slowest input takes about 13 s locally, and hosted runners crossed 30 s) |
+| `timeout` | Process exceeded the per-input deadline (120 seconds by default; the slowest input, `bug30790.step`, takes about 20 s locally with the survey's threads, and hosted runners crossed 30 s) |
 | `runner_error` | I/O, CLI, output protocol or output budget failure |
 | `nondeterministic` | Repeated physical parsing produced different JSON bytes |
 
@@ -58,6 +58,9 @@ models as a [separate root class](#surface-model-class-milestone-226). One
 [import session](STEP_IMPORT.md#document-import-sessions) per document runs discovery
 once and decodes each profile's roots together; its results equal per-root imports,
 and the product stage's `assembly` example uses one session per document likewise.
+The survey meshes the faces of each boundary pass on up to eight threads
+(`TessellationOptions::threads`, which changes no result or diagnostic; see
+[TESSELLATION.md](TESSELLATION.md#curved-faces-and-adaptive-refinement-milestones-1516)).
 All use the tolerant default policy (see [STEP_IMPORT.md](STEP_IMPORT.md),
 [CURVED_IMPORT.md](CURVED_IMPORT.md) and
 [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md)). Each root reports profile,

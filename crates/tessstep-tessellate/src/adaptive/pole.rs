@@ -17,7 +17,7 @@
 //! Splitting a pole edge on its ray and splitting ring edges both keep the fan
 //! monotone, and flips never touch it. A ring that would leave the face or cross a
 //! loop is not built; that run keeps the plain triangulation.
-use super::{Failure, Source, Vertex, Work, orient};
+use super::{FaceMemory, Failure, Source, Vertex, Work, orient};
 use crate::metric::Sizing;
 use tessstep_topology::{FaceId, SurfaceGeometry};
 
@@ -70,6 +70,7 @@ pub(super) struct Caps {
 }
 /// Caps every pole run it can. New ring vertices are appended to `vertices`; the
 /// caller discards them if the remaining polygon turns out invalid.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn caps(
     surface: &SurfaceGeometry,
     face: FaceId,
@@ -77,6 +78,7 @@ pub(super) fn caps(
     boundaries: &[Vec<u32>],
     sizing: Sizing,
     max_vertices: usize,
+    memory: &mut FaceMemory,
     work: &mut Work,
 ) -> Result<Caps, Failure> {
     let mut triangles = Vec::new();
@@ -127,7 +129,7 @@ pub(super) fn caps(
                 let mut uv = [0.; 2];
                 uv[k] = value;
                 uv[1 - k] = line + offset;
-                let point = work.regular(surface, uv, sizing)?;
+                let point = memory.regular(surface, uv, sizing, work)?;
                 let i = vertices.len();
                 vertices.push(Vertex {
                     uv,

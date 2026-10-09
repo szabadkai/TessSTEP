@@ -9,7 +9,9 @@ indexed triangles. Positions use model-space metres and triangles use u32 indice
 `MeshData` separates positions/triangles from per-corner unit normals and UVs, plus one
 model-local u64 face identity per triangle. Position welding never erases attribute
 seams. Validated meshes expose immutable slices through `data()`; they own their buffers
-and can outlive the input B-rep and shared-edge cache.
+and can outlive the input B-rep and shared-edge cache. Face IDs are labels that no
+check reads, so `Mesh::relabel_faces` replaces them (the importers' model-local to
+STEP IDs) without validating the mesh again.
 
 Validation checks finite positions/attributes, array lengths, index bounds, nonzero
 triangle area, duplicate triangles, unit normals facing each facet, unused vertices,

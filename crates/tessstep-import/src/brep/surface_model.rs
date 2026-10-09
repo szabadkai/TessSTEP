@@ -68,21 +68,8 @@ impl SurfaceShell {
                     source: None,
                     message: e.to_string(),
                 })?;
-        let mut data = mesh.into_data();
-        for id in &mut data.face_ids {
-            *id = self.faces[*id as usize].get();
-        }
-        tessstep_mesh::Mesh::new(data, options.mesh).map_err(|e| Error {
-            kind: if e == tessstep_mesh::Error::ResourceLimit {
-                ErrorKind::ResourceLimit
-            } else {
-                ErrorKind::InvalidGeometry
-            },
-            stage: Stage::Tessellation,
-            entity: Some(self.entity),
-            source: None,
-            message: e.to_string(),
-        })
+        // Model-local face indices become physical STEP IDs; labels need no new check.
+        Ok(mesh.relabel_faces(|id| self.faces[id as usize].get()))
     }
 }
 

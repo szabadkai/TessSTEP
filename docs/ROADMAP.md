@@ -656,6 +656,18 @@ baseline movements, never a refreshed baseline.
   `pole_caps_keep_fans_monotone_beside_seams_and_holes`,
   `tessellation_budgets_are_named_in_diagnostics`, the existing adaptive and pole
   tests, the reviewed corpus movement in [VALIDATION.md](VALIDATION.md).
+  Follow-up 2026-10-10: `bug30790.step` (24 B-spline solids of 217,000–251,000
+  triangles each) exhausted `max_evaluations` in every solid and the corpus deadline.
+  Its meshes are genuinely large, so the waste went instead: probes reuse vertex and
+  shared midpoint evaluations, faces keep evaluations and passed facets across
+  boundary passes, the edge incidence is maintained rather than rebuilt per round,
+  and mesh labels are rewritten without a second validation; meshes are unchanged and
+  each solid needs 5–7M evaluations instead of 10–15M. Opt-in
+  `TessellationOptions::threads` meshes a pass's faces in parallel with
+  thread-independent results (the survey uses it; C keeps one thread). The file meshes
+  in 19 s locally (83 s on one thread); evidence:
+  `boundary_passes_reuse_evaluations_and_threads_change_nothing`,
+  `spline_basis_matches_the_full_recurrence_bit_for_bit`.
 - **22.3 Tolerance policy for edges off their surfaces — delivered 2026-10-09.**
   Measured first on the reviewed baseline: 77 roots had an edge farther than the model
   tolerance from a face surface (30 synthetic `dodgy-step-files`, 47 from exporter

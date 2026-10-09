@@ -65,6 +65,61 @@ standard library's archive members; the static symbol check ignores those member
 errors and still requires exactly the 90 `ts_` symbols. Linux and Windows results are
 CI-only.
 
+# Milestone 22.2 follow-up: evaluation reuse and the `bug30790.step` deadline — 2026-10-10
+
+On `5a9879a`, `bug30790.step` (OCCT dataset, 26 `MANIFOLD_SOLID_BREP` roots) took
+124 s in the survey and timed out in the corpus: each of its 24 B-spline solids (77
+or 86 rational B-spline surfaces each) exhausted the 10M `max_evaluations` after 5.2 s.
+Diagnosis with a scratch driver: the meshes are genuinely large. Root #7174 has
+217,116 triangles at the survey tolerance (chord 7.7 µm, 0.1 rad); its heaviest
+faces are 0.7 mm blends with radii near 0.35 mm, where the angle tolerance needs
+edges near 31 µm (3,400 triangles, about 1.45 times the equilateral count). Given
+10–15M evaluations `5a9879a` meshes it identically in 7.4 s. The excess was repeated
+work: probes evaluated corners and shared edge midpoints again, each boundary pass
+remeshed a changed face from scratch and probed its passed facets again, each round
+rebuilt the edge incidence, and the importers validated each mesh twice (once more
+to replace face labels).
+
+Delivered: probe reuse of vertex and shared midpoint evaluations; per-face memory of
+evaluations and passed facets across boundary passes; index-stable triangles with
+maintained edge incidence and a flip queue limited to the edges a split or flip can
+have changed; `Mesh::relabel_faces`; opt-in `TessellationOptions::threads` with
+thread-independent results (the survey uses up to eight threads; C keeps one); a
+B-spline basis recurrence on two alternating buffers and one finiteness check per
+surface evaluation (both bit-identical). Budget defaults are unchanged and match the
+C defaults (`max_evaluations` 10M, `max_tessellation_work` 50M).
+
+| Check | Result |
+| --- | --- |
+| `survey bug30790.step 0.001` | all 26 roots accepted (profile, geometry, tessellation), 18.8–19.4 s with eight threads; 82.7 s on one thread with the scratch driver (80 s tessellating; 124 s and 24 `resource_limit` roots before) |
+| Budgets of `bug30790.step` roots | #7174 (217,116 triangles): 5–6M evaluations (10–15M before), 30–40M work; #7182 (250,686 triangles): 6–7M evaluations, 35–40M work |
+| Onshape export | identical mesh (65,766 vertices, 131,556 triangles, 5.8498449326681915e-6 m³); 2.5–2.6M evaluations (7.65M before) and 15–17.5M work (27.8M); 1.91 s on one thread, 0.47 s on eight |
+| Identity | every root of `bug30790.step` and the Onshape export: the same vertex and triangle counts and volumes after each change and on one or eight threads; `5a9879a` with raised budgets gives the same mesh for root #7174 and the Onshape export |
+| `cargo test -p tessstep-tessellate --test anisotropic` | passed, including `boundary_passes_reuse_evaluations_and_threads_change_nothing` (the torus band within 75,000 evaluations, about 109,000 needed before; one and four threads give equal meshes and equal budget failures) |
+| `cargo test -p tessstep-curves --test nurbs` | passed, including `spline_basis_matches_the_full_recurrence_bit_for_bit` (degrees 1–7 and 16, repeated knots, both sides) |
+| `cargo test --workspace --locked` | passed (90 test binaries, 334 tests) |
+| fmt, Clippy (`-D warnings`, all targets and features), `cargo doc` (`-D warnings`) | passed |
+| `check_architecture.py`, `check_geometry.py`, `check_metamorphic.py`, `conformance.py --check` | passed (124 reviewed geometry outcomes, 76 generated expectations) |
+| `check_capi.py --library-dir target/release` (no sanitizers) | passed |
+| `corpus.py --check` with a freshly built `target/release/ap-validator` and `corpus/ap-schema-map.json` | 3,227 inputs, no crash or timeout, 310 s (479 s for the `5a9879a` run); `bug30790.step` 20.1 s (121.8 s timeout before); one baseline regression, present on `5a9879a` too (below) |
+
+**Reviewed corpus movements** (per root, against the `5a9879a` run of 2026-10-09;
+baseline not saved): no root lost its outcome; accepted roots 706 → 728.
+`bug30790.step` moved from `timeout` to 26 accepted solids (the report lists 20 roots);
+its one `SHELL_BASED_SURFACE_MODEL` (#7166, a declared `CLOSED_SHELL` with a single
+open face) now reaches the surface-model stage and is rejected as `OpenShell`, as
+22.6 specifies. `trj6_k1-al-214.stp` #830 and `bug33261.stp` #46035 newly mesh (both
+exhausted `max_evaluations`); no `max_evaluations` failure remains. The remaining
+tessellation budget failures are unchanged: five `max_rounds`, two `max_work`
+(`bug24593_281946.stp` #30, now at face 14 rather than 11, and
+`bug26889_export.step` #34) and one `planar.max_work` (`bug24024_slow_import.stp`
+#76237). The single regression, `bug32596_abc_0_13.step` (geometry accepted →
+rejected: `EDGE_CURVE` #2776 lies 1.624e-6 m off its surface, beyond the 1.600e-6 m
+the 22.3 policy accepts), is identical in the `5a9879a` run: the reviewed baseline
+predates 22.3, and its 1,622 other changed inputs are mostly the `surface_model` stage
+it does not record. The slowest inputs are now `bug30790.step` (20.1 s),
+`OCC5157.stp` (16.8 s, 23.3 s before) and `bug31711.stp` (9.8 s, 13.2 s before).
+
 # Milestone 22.10 first pass: discovery, solid import, import options, static linkage — 2026-10-02
 
 Delivered: the extensible `ts_import_options` (revision 1, 96 bytes) with

@@ -113,6 +113,7 @@ pub fn exercise(data: &[u8]) {
                     max_evaluations: 8192,
                     max_depth: 12,
                 },
+                threads: 1,
             },
         ) {
             assert!(

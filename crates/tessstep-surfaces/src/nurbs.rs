@@ -206,12 +206,21 @@ impl<S: Space> NurbsSurface<S> {
                 let weight = self.weights[index] / scale;
                 let point = self.controls[index].coordinates();
                 for (d, &(du, dv)) in orders.iter().enumerate() {
-                    let coefficient = checked(a[du][i] * b[dv][j] * weight)?;
-                    w[d] = checked(w[d] + coefficient)?;
+                    let coefficient = a[du][i] * b[dv][j] * weight;
+                    w[d] += coefficient;
                     for (k, &coordinate) in point.iter().enumerate() {
-                        h[d][k] = checked(h[d][k] + coefficient * coordinate)?;
+                        h[d][k] += coefficient * coordinate;
                     }
                 }
+            }
+        }
+        // Sums and products never return from infinity or NaN, so a coefficient or
+        // partial sum out of range leaves its sum out of range: one check at the end
+        // fails exactly when a check of every step would.
+        for (h, w) in h.iter().zip(w) {
+            checked(w)?;
+            for &x in h {
+                checked(x)?;
             }
         }
         if w[0] <= 0. {

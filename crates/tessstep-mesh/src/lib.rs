@@ -76,6 +76,14 @@ impl Mesh {
     pub fn data(&self) -> &MeshData {
         &self.data
     }
+    /// Replace every triangle's face ID. IDs are labels: validation and statistics do
+    /// not depend on them, so the mesh stays valid without being checked again.
+    pub fn relabel_faces(mut self, mut label: impl FnMut(u64) -> u64) -> Self {
+        for id in &mut self.data.face_ids {
+            *id = label(*id);
+        }
+        self
+    }
     pub fn statistics(&self) -> Statistics {
         self.statistics
     }

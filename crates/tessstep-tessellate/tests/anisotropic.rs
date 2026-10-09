@@ -555,3 +555,57 @@ fn pole_caps_keep_fans_monotone_beside_seams_and_holes() {
         }
     }
 }
+
+#[test]
+fn boundary_passes_reuse_evaluations_and_threads_change_nothing() {
+    // Each boundary pass used to mesh every changed face from scratch and probe all of
+    // it again; faces now keep their vertex evaluations and accepted facets, probes
+    // reuse corner and shared edge-midpoint evaluations, and the band meshes within
+    // 75,000 evaluations (it needed about 109,000 before, 52,500 now).
+    let band = normalize(torus_band(2.035, 0.3));
+    let t = tol(0.0436, 0.1);
+    let options = TessellationOptions {
+        max_evaluations: 75_000,
+        ..TessellationOptions::default()
+    };
+    let mesh = tessellate_faces(&band, &[FaceId(0)], t, options).unwrap();
+    verify_within(&mesh, &band, t, 1.05);
+    // Faces meshed in parallel within a pass give the same mesh, and a budget that
+    // runs out fails at the same face with the same budget.
+    let solid = normalize(closed_cylinder());
+    let t = tol(0.002, 0.05);
+    let one = tessellate_solid(&solid, SolidId(0), t, TessellationOptions::default()).unwrap();
+    let parallel = TessellationOptions {
+        threads: 4,
+        ..TessellationOptions::default()
+    };
+    let four = tessellate_solid(&solid, SolidId(0), t, parallel).unwrap();
+    assert_eq!(one.data().positions, four.data().positions);
+    assert_eq!(one.data().triangles, four.data().triangles);
+    // 1,000 evaluations run out in face 0, 2,000 in face 1 (after face 0's charges).
+    for max_evaluations in [1_000, 2_000] {
+        let tight = TessellationOptions {
+            max_evaluations,
+            ..TessellationOptions::default()
+        };
+        let e1 = tessellate_solid(&solid, SolidId(0), t, tight).unwrap_err();
+        let e4 = tessellate_solid(
+            &solid,
+            SolidId(0),
+            t,
+            TessellationOptions {
+                threads: 4,
+                ..tight
+            },
+        )
+        .unwrap_err();
+        assert_eq!(e1, e4);
+        assert_eq!(
+            e1.budget,
+            Some(Budget {
+                name: "max_evaluations",
+                limit: max_evaluations
+            })
+        );
+    }
+}
