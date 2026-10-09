@@ -69,9 +69,9 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `CAMERA_MODEL_WITH_LIGHT_SOURCES` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `CARTESIAN_11` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `CARTESIAN_POINT` | adapted | geometric | brep, faceted, pcurve, planar, product, tessellated |  |
-| `CARTESIAN_TRANSFORMATION_OPERATOR` | product | geometric |  | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
+| `CARTESIAN_TRANSFORMATION_OPERATOR` | product | geometric | product | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
 | `CARTESIAN_TRANSFORMATION_OPERATOR_2D` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
-| `CARTESIAN_TRANSFORMATION_OPERATOR_3D` | product | geometric |  | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
+| `CARTESIAN_TRANSFORMATION_OPERATOR_3D` | product | geometric | product | evaluated by the product adapter as representation-map placements (Milestone 5), not as geometry |
 | `CDGC_WITH_DIMENSION` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
 | `CIRCLE` | adapted | geometric | brep, pcurve |  |
 | `CIRCULAR_AREA` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
