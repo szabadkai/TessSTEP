@@ -103,7 +103,10 @@ impl SharedEdges<'_> {
         // Each use includes a repeated endpoint; the map's budget includes those too.
         let boundary = self
             .face_boundary(face, options.trim, options.max_vertices.saturating_mul(2))
-            .map_err(PlanarError::Boundary)?;
+            .map_err(|e| match e {
+                BoundaryError::Resolution(e) => PlanarError::InvalidPolygon(e),
+                e => PlanarError::Boundary(e),
+            })?;
         let mut vertices = Vec::new();
         let mut boundaries = Vec::new();
         for uses in std::iter::once(&boundary.outer).chain(&boundary.holes) {
@@ -163,25 +166,33 @@ impl SharedEdges<'_> {
     }
 }
 
-/// Constrained triangulation of validated UV loops. `metric` scales UV axes when
-/// ranking ears by shape; validity predicates always use the unscaled chart.
+/// Constrained triangulation of UV loops that passed the trim polygon checks at this
+/// resolution ([`SharedEdges::face_boundary`]). `metric` scales UV axes when ranking
+/// ears by shape; validity predicates always use the unscaled chart.
 pub(crate) fn triangulate_uv(
     uv: &[[f64; 2]],
     boundaries: &[Vec<u32>],
     options: PlanarOptions,
     metric: [f64; 2],
 ) -> Result<Vec<[u32; 3]>, PlanarError> {
+    // Polygon validity at the model tolerance is established by trim reconstruction,
+    // and the face boundary checks these loops at this resolution. Ear and bridge
+    // predicates only need to resolve floating-point sign ambiguity, so their
+    // threshold is relative to the polygon extent and coordinate magnitude; the join
+    // tolerance would reject every ear of a finely sampled smooth boundary, and the
+    // UV tolerance is not a distance in charts whose units are not metres.
+    let eps = crate::resolution_tolerance(
+        boundaries.iter().flatten().map(|&i| uv[i as usize]),
+        options.trim.uv_tolerance,
+    )
+    .ok_or(PlanarError::UnresolvedGeometry)?;
+    // The triangulator still needs simple, correctly nested loops at that resolution.
     let polygons: Vec<Vec<_>> = boundaries
         .iter()
         .map(|poly| poly.iter().map(|&i| uv[i as usize]).collect())
         .collect();
-    tessstep_trim::validate_polygons(
-        &polygons[0],
-        &polygons[1..],
-        options.trim.uv_tolerance,
-        options.max_work,
-    )
-    .map_err(PlanarError::InvalidPolygon)?;
+    tessstep_trim::validate_polygons(&polygons[0], &polygons[1..], eps, options.max_work)
+        .map_err(PlanarError::InvalidPolygon)?;
     let expected = uv
         .len()
         .checked_add(2 * (boundaries.len() - 1))
@@ -190,22 +201,6 @@ pub(crate) fn triangulate_uv(
     if expected > options.max_triangles {
         return Err(PlanarError::ResourceLimit);
     }
-    // Polygon validity is established above at the UV tolerance. Ear and bridge
-    // predicates only need to resolve floating-point sign ambiguity, so their
-    // threshold is relative to the polygon extent and coordinate magnitude; the
-    // join tolerance would reject every ear of a finely sampled smooth boundary.
-    let (mut lo, mut hi, mut magnitude) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2], 0_f64);
-    for &i in boundaries.iter().flatten() {
-        let p = uv[i as usize];
-        for k in 0..2 {
-            lo[k] = lo[k].min(p[k]);
-            hi[k] = hi[k].max(p[k]);
-            magnitude = magnitude.max(p[k].abs());
-        }
-    }
-    let extent = (hi[0] - lo[0]).max(hi[1] - lo[1]);
-    let eps =
-        finite(1e-12 * extent + 16. * f64::EPSILON * magnitude)?.min(options.trim.uv_tolerance);
     let mut engine = Engine {
         uv: uv.to_vec(),
         loops: boundaries,

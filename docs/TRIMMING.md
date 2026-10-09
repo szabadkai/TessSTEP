@@ -9,7 +9,12 @@ areas. Point classification returns inside, outside or boundary in that UV chart
 Each coedge must supply a pcurve whose interval maps affinely to the canonical edge
 interval. Reversal changes traversal, not that correspondence. Analytic and NURBS
 pcurves are supported. Knot spans and quarter-period analytic intervals seed iterative
-subdivision. Quarter/mid/three-quarter probes measure UV chord error; each probe also
+subdivision; seeds within 1e-9 of the parameter range of each other or of its ends (a
+knot written a few ulps from an edge end) are dropped, as in shared-edge sampling, so
+they add no segment of zero length. Quarter/mid/three-quarter probes measure UV chord
+error, which must stay within the UV tolerance and within a quarter of the chord (down
+to a thousandth of the tolerance), so a loop much smaller than the UV tolerance (a
+sub-micrometre face in a metre chart) keeps the shape of its curves; each probe also
 checks its surface lift against the corresponding 3D edge point using the model distance
 tolerance. Singular surface normals and evaluation failures are errors. One-sided knot
 sampling diagnoses discontinuous pcurves. General nonlinear parameter correspondence,
@@ -41,9 +46,23 @@ This does not edit the source pcurve. Collapsed polygon segments, backtracking,
 self-intersections, boundary contacts and degenerate loops are rejected; when the
 surface gives an axis scale these checks run in metres with a thousandth of the
 model tolerance, so a corner a few nanometres wide in one axis is not a backtrack.
-Outer winding must be counterclockwise and hole winding clockwise in the surface chart;
-face orientation is separately retained in topology. Holes must be strictly inside the
-outer polygon, mutually disjoint and unnested. No automatic winding repair occurs.
+In that metric chart a conflict within one loop that is confined to the model
+tolerance is a wobble, not a defect: two adjacent segments may double back when one
+of them is at most the model tolerance long, and two other segments may touch when
+the part of the loop between them stays within a box of that diagonal (a fitted
+pcurve's hook at a vertex the edge reaches within the tolerance). Outer winding must
+be counterclockwise and hole winding clockwise in the surface chart; face orientation
+is separately retained in topology. Holes must be strictly inside the outer polygon,
+mutually disjoint and unnested, decided in the face's metric chart (the larger scale
+of its loops per axis). No automatic winding repair occurs.
+
+Every failure is located where it can be: `Error::coedge` names the coedge of the
+failing use or segment, `Error::other` the coedge of the second segment of a crossing,
+touching or backtracking pair, `Error::wire` the loop (for a conflict between two
+loops, the later one), and `Error::budget` the exhausted budget with its configured
+value (`Budget::MaxSamples` or `Budget::MaxWork`). The
+[curved importer](CURVED_IMPORT.md#uv-loop-failures) maps these to STEP entities and a
+cause class.
 
 Segment proximity and orientation use finite f64 arithmetic with an explicit UV distance
 tolerance. Tests establish polygon behavior, not exact predicates. The chord checks are
@@ -53,7 +72,13 @@ sampling quality does not replace exact geometric validity checks. Classificatio
 to the reconstructed polygons, not the exact continuous curves.
 
 Logical sample/work limits and a hard subdivision depth ceiling of 48 bound execution.
-Self-intersection tests are quadratic and charge the work budget before comparison.
+`Options::max_samples` (pcurve evaluations across the face's loops) defaults to its
+ceiling of one million: a plane with a thousand sampled holes needs a few hundred
+thousand. Self-intersection and hole tests sweep segment (and hole) boxes along the
+wider chart axis and compare only boxes that overlap within the tolerance, charging
+one work unit per comparison; the worst case (every box overlapping) stays quadratic
+and bounded by the budget, but spread-out boundaries no longer pay for every pair (a
+4,096-sample loop used to need 16.7 million units).
 Failure to satisfy a tolerance within depth/evaluation limits returns a typed error;
 no partial face is published. Tests include planar holes, curved analytic/NURBS boundaries,
 full cylinder seams, wrapped pcurve chart alignment, missing/mismatched pcurves, singular
@@ -61,6 +86,10 @@ surfaces, winding, intersections, noncontractible loops and resource exhaustion.
 
 `validate_polygons(outer, holes, uv_tolerance, max_work)` exposes the same winding,
 intersection, containment and hole-relationship checks for callers with an existing
-polygon resolution. Planar triangulation uses it on canonical shared-edge samples;
-passing trim reconstruction at a different resolution is not sufficient. The function
-neither changes vertices nor evaluates source curves, and charges a finite work budget.
+polygon resolution, in the unscaled chart at the given tolerance and without the
+wobble allowance. `TrimmedFace::validate_resolution(loops, uv_tolerance, max_work)`
+runs them on a face's loops at another resolution whose points carry their coedges,
+and locates failures like reconstruction. The shared-edge face boundary uses it at
+floating-point resolution ([tessellation](TESSELLATION.md)); passing trim
+reconstruction at a different resolution is not sufficient. Neither function changes
+vertices or evaluates source curves, and both charge a finite work budget.

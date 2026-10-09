@@ -649,11 +649,29 @@ baseline movements, never a refreshed baseline.
   model tolerance as a counted adaptation, project or reject beyond it, and report
   the measured distance. Acceptance: each of the three kinds is either meshed with a
   reported adaptation or a typed rejection naming the distance and the tolerance.
-- **22.4 UV loop validity.** 34 `SelfIntersection`, 21 `DegenerateLoop` and 19
-  trim-`Limit` faces fail after topology passes. Classify each by cause (seam
-  choice, pcurve fit, collapsed edges, chart limits) with authored fixtures, fix the
-  causes that are ours, and name the rest. Acceptance: no face fails with an
-  unclassified polygon error in the baseline.
+- **22.4 UV loop validity — delivered 2026-10-09.** The baseline had 92 roots whose
+  first failure was an unlocated polygon error after topology passed: 34
+  `SelfIntersection` and 21 `DegenerateLoop` at the mesh boundary, 22 trim `Limit`,
+  11 trim `WrongOrientation` and 4 trim `SelfIntersection`. Classified by cause in
+  [VALIDATION.md](VALIDATION.md); the causes that were the importer's are fixed: the
+  mesh-boundary check used the 1e-5 UV chord tolerance as a distance (10 µm on metre
+  plane charts; 55 faces) and now checks simplicity at floating-point resolution;
+  polygon checks charged all n² segment pairs (21 faces) and now sweep boxes, with
+  trim `max_samples` raised to its 1M ceiling (2 faces); and, one baseline face each
+  plus 14 faces that surfaced behind the first fixes, trim seeds a few ulps apart,
+  fitted-pcurve wobbles within the model tolerance, sub-micrometre loops against the
+  UV tolerance, a seam line crossed between scan samples, a closed B-spline flagged
+  `.U.` and a sphere lying outside its only loop. Every remaining loop failure names
+  its `EDGE_CURVE`(s), vertex or loop and a cause class (`trim::Error::{coedge,
+  other, wire, budget}`, [curved import](CURVED_IMPORT.md#uv-loop-failures)): 10
+  wrong orientations (a `FACE_OUTER_BOUND` on a hole, reversed dodgy loops), 2
+  self-touching loops and 1 cusp thinner than the tolerance, all in the input (the
+  cusp would need trim refinement on conflict). 30 more roots mesh (607); 51 now stop
+  at later tessellation budgets, refinement or the triangulator (22.2). Evidence:
+  `tessstep-trim/tests/loop_validity.rs`, `tests/boundary_resolution.rs`,
+  `uv_loops::tests`, `brep::scan::tests` and `tests/uv_loops.rs` with
+  `brep-unknown-closure-cylinder.step`, `brep-cut-sphere.step` and
+  `brep-pinched-pocket.step`.
 - **22.5 Opt-in sewing and orientation repair.** 123 `OpenShell`, 38 `BrokenWire`
   and 35 `InconsistentOrientation` roots. Strict rejection stays the default. Add an
   explicit, tolerance-bounded repair stage that sews coincident edges and vertices,

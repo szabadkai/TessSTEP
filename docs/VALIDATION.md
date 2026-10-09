@@ -204,6 +204,60 @@ edge lies 4.2e-7 m off its face surface and the root is rejected with that dista
 never meshed (tessellation was rejected before), so no meshed root is lost; the edge
 distance policy is Milestone 22.3. The baseline was not saved.
 
+# Milestone 22.4: UV loop validity — 2026-10-09
+
+Delivered: located trim and boundary failures (`trim::Error::{coedge, other, wire,
+budget}`, `BoundaryError::Resolution`), mesh-boundary checks at floating-point
+resolution, overlap-only polygon work, trim sampling and wobble rules, `.U.` closure
+checks, turning-point seam crossings and sphere re-charts through a loop; the
+importer names each loop failure's `EDGE_CURVE`(s), vertex or loop and a cause class
+([curved import](CURVED_IMPORT.md#uv-loop-failures)).
+
+Measurement first. Every root of the 2026-09-27 baseline whose first failure was an
+unlocated polygon error after topology passed (92 roots in 44 files) was rerun with
+a probe that reconstructed its failing face's trim at larger budgets and finer UV
+tolerances, revalidated its first-pass mesh boundary in the unscaled and the metric
+chart, and printed the conflicting samples. Classes, by baseline face and by faces
+that surfaced behind the first fixes:
+
+| Class (cause) | Ours | Baseline | Surfaced | Representative faces | Outcome |
+| --- | --- | ---: | ---: | --- | --- |
+| Mesh-boundary check used the 1e-5 UV chord tolerance as a distance (10 µm in metre plane charts): edges and sample spacings under it flagged | yes | 55 | | `OCC5099` #4207 (34 `SelfIntersection`, 21 `DegenerateLoop`; `bug24383` 15, `bug30790` 14, `trj*` 14) | fixed: checked at floating-point resolution, located |
+| Polygon checks charged all n² segment pairs (5M work): 4,096-sample loops, 32 holes | yes | 21 | | `as1_motor` #145, `nist_ctc_04_asme1_rd` #10102 | fixed: box sweep |
+| Trim `max_samples` (100,000) below a plane with 1,116 holes | yes | 1 | 1 | `bug24024_slow_import` #69299, `as1_motor` #5376 | fixed: default 1M (the cap) |
+| Knot seed a few ulps from an edge end: zero-length trim segment | yes | 1 | | `bug23202_Leuchte` #472 | fixed: noise seeds dropped |
+| Inserted seam crossed by a B-spline dipping 0.7 µm across it between scan samples (seam choice) | yes | 1 | | `bug25823_280612` #116 | fixed: turning-point scan |
+| Fitted-pcurve hook or sub-nanometre span at an edge end, within the model tolerance (pcurve fit) | yes | 1 | 2 | `bug27693_cornetta` #140, `trj4_pm2-ec` #21161 | fixed: wobble rule |
+| Closed B-spline with `U_CLOSED .U.` in a non-periodic chart: closing-line edges took the other preimage | yes | 1 | | `trj3_s1-al` #1306 | fixed: `.U.` checked |
+| Sub-micrometre loops sampled at a 10 µm UV chord: fewer than 3 points | yes | | 12 | `bug30790` #6143 | fixed: quarter-chord rule |
+| Sphere face outside its only loop (a cap cut away): clockwise in every frame tried | yes | 1 | | `nist_ftc_06_asme1_rd` #304 | fixed: re-chart through the loop |
+| `FACE_OUTER_BOUND` on a hole loop, or a reversed loop | input | 10 | | `nist_stc_06` #412, `sp7_04-dx-242` #325, dodgy `M008` #5850 ×7 | named: wrong orientation |
+| Loop passes through a vertex twice (a sub-loop hanging at a boundary vertex) | input | | 2 | `OCC5099` #7746 (VERTEX_POINT #4280), #18012 | named: self-touching loop |
+| Adjacent edges leave a vertex tangentially, 22 nm apart at 0.4 µm under a 0.1 µm tolerance; trim chords cross | input (cusp) | | 1 | `bug32596_abc_0_13` #145 | named: tangent edges at a vertex |
+
+No class was a collapsed-edge (pole) failure. The cusp would need trimming refinement
+on conflicting segments, which is not implemented; the input is ambiguous at its model
+tolerance there.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), rustdoc | passed |
+| `check_geometry.py` (3 new authored fixtures), `check_metamorphic.py`, `check_architecture.py`, `conformance.py --check`, script unit tests (45) | passed (86 reviewed geometry outcomes) |
+| `corpus.py --check --repeat 2` with the AP validator | 3,227 compatible, 13 changed, no regressions |
+
+Reviewed movements (13 changed files, roots counted across them): 30 more roots mesh
+(577 → 607: `as1_motor` 6 → 16, `bug24383_224013` 0 → 15, `bug30790` 0 → 2, `pr1sy`,
+`pr_3-sy` and `trj3_s1-ac` one each); every new mesh is one closed component with
+positive volume, filling 15–98 % of its bounding box. `trj3_s1-al` passes geometry for
+2 more roots (745 → 747; they fail at tessellation). Of the 94 roots that failed with
+or behind an unlocated polygon error, 30 mesh, 13 fail with a named loop error (the
+input classes above) and 51 fail later in tessellation: 24 `ResourceLimit`, 13
+`UnresolvedTolerance`, 6 `Polygon(ResourceLimit)` (Milestone 22.2) and 8
+`Polygon(UnresolvedGeometry)` (the ear-clipping triangulator cannot resolve a
+boundary that is simple at floating-point resolution; `bug24593_281946` #50,
+`nist_ctc_04_asme1_ap203` #1250). No root lost its mesh or an accepted stage, and no
+category reads `coedge: None` any more. The baseline was not refreshed.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

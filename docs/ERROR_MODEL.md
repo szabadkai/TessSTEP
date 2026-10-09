@@ -33,7 +33,9 @@ semantics were checked. `expressc --strict` rejects this diagnostic category as 
 errors; ordinary mode returns structural IR with the diagnostics visible.
 
 Tessellation returns `TessellationError` with an optional model-local face and a typed
-kind, retaining nested sampling, trim, polygon or mesh errors. Invalid handles/options,
+kind, retaining nested sampling, trim, polygon or mesh errors; trim and boundary
+polygon errors name their coedges, loop and exhausted budget, and the STEP importers
+report them at the `EDGE_CURVE` with a cause class. Invalid handles/options,
 resource exhaustion, singular surfaces and unresolved sampled tolerances are distinct
 failures. Mesh validation separately reports invalid attributes/indices, degeneracy,
 orientation/manifold defects, open/disconnected components and nonpositive solid volume.

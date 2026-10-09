@@ -712,6 +712,107 @@ def fixtures():
     s.lines[s.lines.index(line)] = line.replace("(#", f"(#{bound},#", 1)
     s.write("brep-ambiguous-outer.step", faces)
 
+    # Solid cylinder r=10 h=20 mm whose side is a rational quadratic B-spline surface
+    # (a nine-point circle swept along z) with U_CLOSED unknown (.U.). The surface is
+    # closed, so its u axis gets a periodic chart and the annular side face an inserted
+    # seam; a non-periodic chart would give every point of its closing line two chart
+    # preimages and the edges there either one.
+    s = Step("Original solid cylinder r=10 h=20 mm whose side is a closed B-spline surface flagged U_CLOSED .U.")
+    v0 = s.vertex((10, 0, 0))
+    v1 = s.vertex((10, 0, 20))
+    bottom = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    top = s.edge(v1, v1, s.circle((0, 0, 20), (0, 0, 1), (1, 0, 0), 10))
+    ring = [(10, 0), (10, 10), (0, 10), (-10, 10), (-10, 0), (-10, -10), (0, -10), (10, -10), (10, 0)]
+    half = num(math.sqrt(0.5))
+    columns = ["(" + ",".join(f"#{s.point((x, y, z))}" for z in (0, 20)) + ")" for x, y in ring]
+    weights = ",".join(f"({w},{w})" for w in ("1." if i % 2 == 0 else half for i in range(9)))
+    surface = s.add(f"(BOUNDED_SURFACE()B_SPLINE_SURFACE(2,1,({','.join(columns)}),.CYLINDRICAL_SURF.,.U.,.F.,.F.)"
+                    "B_SPLINE_SURFACE_WITH_KNOTS((3,2,2,2,3),(2,2),(0.,0.25,0.5,0.75,1.),(0.,1.),.UNSPECIFIED.)"
+                    f"GEOMETRIC_REPRESENTATION_ITEM()RATIONAL_B_SPLINE_SURFACE(({weights}))REPRESENTATION_ITEM('')SURFACE())")
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], surface),
+        s.face([s.bound([(bottom, False)], outer=True)], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(top, True)], outer=True)], s.plane((0, 0, 20), (0, 0, 1))),
+    ]
+    s.write("brep-unknown-closure-cylinder.step", faces)
+
+    # Sphere R=10 below z=6 (a cap cut away), on a sphere whose STEP axis is x: in that
+    # chart the rim does not wind around the axis and the face lies outside it, around
+    # both poles. The importer plans it in a frame whose axis passes through the rim,
+    # where it closes at the far pole (one re-chart, a pole seam, a collapsed edge).
+    s = Step("Original sphere R=10 mm below z=6 mm on a planar top, with its STEP axis along x")
+    v = s.vertex((8, 0, 6))
+    rim = s.edge(v, v, s.circle((0, 0, 6), (0, 0, 1), (1, 0, 0), 8))
+    sphere = s.add(f"SPHERICAL_SURFACE('',#{s.placement((0, 0, 0), (1, 0, 0), (0, 1, 0))},10.)")
+    faces = [
+        s.face([s.bound([(rim, False)])], sphere),
+        s.face([s.bound([(rim, True)])], s.plane((0, 0, 6), (0, 0, 1))),
+    ]
+    s.write("brep-cut-sphere.step", faces)
+
+    # Negative: a 20 x 20 x 10 mm box with a triangular frustum pocket in its top face
+    # whose opening touches the top face's outer boundary at one vertex, C = (10, 0, 10)
+    # on the front edge. The top face has one loop that passes through C twice (the
+    # opening hangs off the outer boundary there); every vertex link is still one fan.
+    # Trimming rejects the self-touching loop and names C.
+    s = Step("Original rejected solid: box whose pocket opening touches the top face boundary at a vertex")
+    points = {
+        "b00": (0, 0, 0), "b20": (20, 0, 0), "b22": (20, 20, 0), "b02": (0, 20, 0),
+        "t00": (0, 0, 10), "t20": (20, 0, 10), "t22": (20, 20, 10), "t02": (0, 20, 10),
+        "C": (10, 0, 10), "P": (14, 6, 10), "Q": (6, 6, 10),
+        # The floor is the opening scaled by 1/2 about its centroid (10, 4), so every
+        # pocket wall is a planar trapezoid.
+        "c": (10, 2, 5), "p": (12, 5, 5), "q": (8, 5, 5),
+    }
+    vertices = {name: s.vertex(p) for name, p in points.items()}
+    edges = {}
+
+    def use(a, b):
+        if (b, a) in edges:
+            return edges[(b, a)], False
+        if (a, b) not in edges:
+            pa, pb = points[a], points[b]
+            edges[(a, b)] = s.edge(vertices[a], vertices[b], s.line(pa, [pb[k] - pa[k] for k in range(3)]))
+        return edges[(a, b)], True
+
+    def polygon(ring, normal):
+        """Planar face over a ring of point names, counterclockwise about its outward
+        normal (the ring is reversed when its Newell normal disagrees)."""
+        p = [points[n] for n in ring]
+        newell = [sum((p[i][(k + 1) % 3] - p[(i + 1) % len(p)][(k + 1) % 3]) *
+                      (p[i][(k + 2) % 3] + p[(i + 1) % len(p)][(k + 2) % 3]) for i in range(len(p)))
+                  for k in range(3)]
+        if sum(newell[k] * normal[k] for k in range(3)) < 0:
+            ring = ring[::-1]
+            p = p[::-1]
+        uses = [use(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring))]
+        d = [p[1][k] - p[0][k] for k in range(3)]
+        length = math.sqrt(sum(x * x for x in d))
+        size = math.sqrt(sum(x * x for x in normal))
+        return s.face([s.bound(uses, outer=True)],
+                      s.plane(p[0], [x / size for x in normal], [x / length for x in d]))
+
+    faces = [
+        polygon(["b00", "b02", "b22", "b20"], (0, 0, -1)),
+        polygon(["t00", "C", "Q", "P", "C", "t20", "t22", "t02"], (0, 0, 1)),
+        polygon(["b00", "b20", "t20", "C", "t00"], (0, -1, 0)),
+        polygon(["b20", "b22", "t22", "t20"], (1, 0, 0)),
+        polygon(["b22", "b02", "t02", "t22"], (0, 1, 0)),
+        polygon(["b02", "b00", "t00", "t02"], (-1, 0, 0)),
+        polygon(["c", "p", "q"], (0, 0, 1)),
+    ]
+    # Pocket walls face into the pocket (towards the opening's centroid axis).
+    for a, b, fa, fb in (("C", "P", "c", "p"), ("P", "Q", "p", "q"), ("Q", "C", "q", "c")):
+        pa, pb, qa = points[a], points[b], points[fa]
+        d = [pb[k] - pa[k] for k in range(3)]
+        w = [qa[k] - pa[k] for k in range(3)]
+        n = [d[1] * w[2] - d[2] * w[1], d[2] * w[0] - d[0] * w[2], d[0] * w[1] - d[1] * w[0]]
+        centre = (10, 4, 7.5)
+        if sum(n[k] * (centre[k] - pa[k]) for k in range(3)) < 0:
+            n = [-x for x in n]
+        faces.append(polygon([a, b, fb, fa], n))
+    s.write("brep-pinched-pocket.step", faces)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)

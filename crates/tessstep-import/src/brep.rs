@@ -1,4 +1,6 @@
 //! Edge-based B-rep solids with elementary, B-spline and swept geometry.
+mod scan;
+mod sphere;
 mod supplied;
 mod surface_model;
 mod swept;
@@ -772,11 +774,15 @@ impl Builder {
             )
             .map_err(|e| c.error(ErrorKind::InvalidGeometry, e))?;
             // A closed axis gets a periodic chart when its boundary curves agree within
-            // the model tolerance; the STEP flag alone is advisory.
-            let closed = [
-                matches!(&c.attr(v, "U_CLOSED")?.kind, ValueKind::Enumeration(e) if e.as_ref() == "T"),
-                matches!(&c.attr(v, "V_CLOSED")?.kind, ValueKind::Enumeration(e) if e.as_ref() == "T"),
-            ];
+            // the model tolerance; the STEP flag alone is advisory. An unknown flag
+            // (.U.) is checked the same way: a closed surface in a non-periodic chart
+            // has two chart preimages for every point of its closing line, and edges
+            // there would take either one.
+            let flag = |name: &str| -> Result<bool, Error> {
+                Ok(matches!(&c.attr(v, name)?.kind,
+                    ValueKind::Enumeration(e) if e.as_ref() == "T" || e.as_ref() == "U"))
+            };
+            let closed = [flag("U_CLOSED")?, flag("V_CLOSED")?];
             let mut periods = [None; 2];
             for axis in 0..2 {
                 if !closed[axis] {
@@ -1378,6 +1384,10 @@ impl Builder {
                     + self.unreadable_pcurves,
                 ..self.adaptations
             },
+            topology: crate::uv_loops::TopologyEntities {
+                edges: self.edges.iter().map(|e| e.entity).collect(),
+                vertices: std::mem::take(&mut c.point_entities),
+            },
         })
     }
 }
@@ -1507,7 +1517,7 @@ fn crossings(pcurve: &Pcurve, k: usize, value: f64, period: f64) -> Vec<(f64, [f
         return found;
     };
     let mut previous = (t0, start);
-    for t in scan_parameters(pcurve.range) {
+    for t in scan::with_turning_points(pcurve, k, scan_parameters(pcurve.range)) {
         let Some(uv) = at(t) else {
             return found;
         };
@@ -1639,7 +1649,7 @@ impl Builder {
         let mut native = None;
         for singular in [false, true] {
             let saved = self.snapshot(c);
-            match self.plan_chart(c, face, tolerance, singular) {
+            match self.plan_sphere_chart(c, face, tolerance, singular) {
                 Err(e) if e.kind == ErrorKind::Unsupported => {
                     self.restore(c, saved);
                     if singular {
@@ -1658,7 +1668,7 @@ impl Builder {
                 // STEP parameters no longer describe the rotated chart.
                 candidate.step_map = None;
                 let saved = self.snapshot(c);
-                match self.plan_chart(c, &candidate, tolerance, singular) {
+                match self.plan_sphere_chart(c, &candidate, tolerance, singular) {
                     Ok(Planned::Face(mut plan)) => {
                         plan.surface = Some(candidate.surface);
                         self.adaptations.recharted_spheres += 1;
@@ -1839,6 +1849,12 @@ impl Builder {
                     }
                 }
             }
+        }
+        // Last, the mean boundary direction itself: its axis passes through a small
+        // loop, around which a face covering the rest of the sphere then winds once
+        // (see `sphere.rs`).
+        if norm(mean) > 1e-9 {
+            candidates.push(scale(mean, 1. / norm(mean)));
         }
         Ok(candidates
             .into_iter()

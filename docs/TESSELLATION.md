@@ -46,8 +46,16 @@ anisotropic charts.
 sample through each use's pcurve, applying its recorded chart shift and checking the
 surface lift again. Its positions are references into the shared edge cache; two seam
 uses have distinct UV coordinates and identical position references. Output is ordered
-outer/hole boundary uses for later constrained triangulation. Planar triangulation rechecks
-UV polygon validity at the actual shared-edge boundary resolution.
+outer/hole boundary uses for later constrained triangulation. The mapped loops (each
+use's samples but its last) are then checked again with
+`TrimmedFace::validate_resolution` at the resolution the triangulator resolves: simple,
+correctly nested and wound loops at floating-point resolution (1e-12 of the boundary
+extent plus 16 ulps of its coordinate magnitude, at most the UV tolerance). Validity at
+the model tolerance is the trim reconstruction's; the UV tolerance is a chord tolerance
+in chart units, not a distance (10 µm on a metre plane chart), so it is not used to
+reject a 5 µm edge or samples refined closer than it. A failure is
+`BoundaryError::Resolution` and names the coedges involved (for example a coarse chord
+of one edge crossing a nearby edge).
 
 ## Bounds and limitations
 
@@ -78,8 +86,10 @@ strictly contained disjoint holes, collinear boundary vertices and sampled curve
 NURBS surfaces, including geometrically planar patches, and non-plane analytic surfaces
 return `UnsupportedSurface`; no sampled planarity inference occurs.
 
-The method reconstructs the supplied-pcurve chart, maps cached samples, and calls
-`tessstep_trim::validate_polygons` on the actual mesh-resolution boundaries. Coedge
+The method reconstructs the supplied-pcurve chart, maps cached samples, and checks the
+actual mesh-resolution boundaries (a face boundary resolution failure is
+`InvalidPolygon` here, located at its coedges); the triangulator rechecks them with
+`tessstep_trim::validate_polygons` at the same floating-point resolution. Coedge
 joins keep the next use's start, as in trimming. Duplicate closing endpoints are omitted;
 all other samples and every boundary segment are retained. A coarse approximation that
 moves a hole outside the outer polygon fails explicitly, even when the separately

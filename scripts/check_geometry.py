@@ -111,6 +111,12 @@ BREP_EXPECTED = {
     "brep-inverted-cavity.step": (("accepted", "accepted", "rejected"), None, None),
     "brep-regular-vertex-loop.step": (("accepted", "unsupported", "not_run"), None, None),
     "brep-ambiguous-outer.step": (("accepted", "rejected", "not_run"), None, None),
+    # Milestone 22.4: a closed B-spline side flagged U_CLOSED .U. gets a periodic chart;
+    # a sphere with a cap cut away is re-charted through its rim; a face loop through a
+    # vertex twice is a named tessellation rejection.
+    "brep-unknown-closure-cylinder.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
+    "brep-cut-sphere.step": (("accepted",) * 3, (0, 1, 0, 1, 1), (3584 / 3 * math.pi * 1e-9, 0.01)),
+    "brep-pinched-pocket.step": (("accepted", "accepted", "rejected"), None, None),
 }
 BREP_CHORD = 1e-5
 # Mesh components of accepted solids with BREP_WITH_VOIDS cavities (others have one).

@@ -37,6 +37,7 @@ mod planar;
 mod schema;
 mod style;
 mod tessellated;
+mod uv_loops;
 pub use assembly::{
     AssemblyImportOptions, AssemblyNode, AssemblyOptions, ExcludedRecord, ImportedAssembly,
     LinkedAssembly, ProductInfo, RootImport, ShapeAsset, ShapeRootKind, import_assembly,
@@ -156,8 +157,13 @@ pub struct ImportedSolid {
     faces: Vec<EntityId>,
     root: EntityId,
     adaptations: Adaptations,
+    /// STEP identity of edges and vertices, for locating tessellation errors.
+    topology: uv_loops::TopologyEntities,
 }
 impl ImportedSolid {
+    pub(crate) fn topology(&self) -> &uv_loops::TopologyEntities {
+        &self.topology
+    }
     /// Representation adaptations applied by the importer; all zero for planar profiles.
     pub fn adaptations(&self) -> Adaptations {
         self.adaptations
@@ -176,21 +182,37 @@ impl ImportedSolid {
     ) -> Result<tessstep_mesh::Mesh, Error> {
         let mesh =
             tessstep_tessellate::tessellate_solid(&self.brep, SolidId(0), tolerance, options)
-                .map_err(|e| Error {
-                    kind: if e.kind == tessstep_tessellate::TessellationErrorKind::InvalidOptions {
-                        ErrorKind::InvalidOptions
-                    } else if tessellation_limit(&e.kind) {
-                        ErrorKind::ResourceLimit
-                    } else {
-                        ErrorKind::InvalidGeometry
-                    },
-                    stage: Stage::Tessellation,
-                    entity: e
-                        .face
-                        .and_then(|f| self.faces.get(f.0).copied())
-                        .or(Some(self.root)),
-                    source: None,
-                    message: e.to_string(),
+                .map_err(|e| {
+                    // UV loop failures are located at their edge and name their cause.
+                    if let Some((kind, entity, message)) =
+                        e.face.and_then(|f| uv_loops::describe(self, f, &e.kind))
+                    {
+                        return Error {
+                            kind,
+                            stage: Stage::Tessellation,
+                            entity: entity.or(Some(self.root)),
+                            source: None,
+                            message,
+                        };
+                    }
+                    Error {
+                        kind: if e.kind
+                            == tessstep_tessellate::TessellationErrorKind::InvalidOptions
+                        {
+                            ErrorKind::InvalidOptions
+                        } else if tessellation_limit(&e.kind) {
+                            ErrorKind::ResourceLimit
+                        } else {
+                            ErrorKind::InvalidGeometry
+                        },
+                        stage: Stage::Tessellation,
+                        entity: e
+                            .face
+                            .and_then(|f| self.faces.get(f.0).copied())
+                            .or(Some(self.root)),
+                        source: None,
+                        message: e.to_string(),
+                    }
                 })?;
         let mut data = mesh.into_data();
         for id in &mut data.face_ids {
@@ -451,6 +473,15 @@ fn import_solid(
         closed: true,
     });
     c.raw.solids.push(Solid::new(ShellId(0)));
+    let mut topology = uv_loops::TopologyEntities {
+        edges: vec![None; c.raw.edges.len()],
+        vertices: c.point_entities.clone(),
+    };
+    for (&entity, &(edge, _)) in &c.edge_entities {
+        if let Some(slot) = topology.edges.get_mut(edge.0) {
+            *slot = Some(entity);
+        }
+    }
     let brep = c
         .raw
         .validate(
@@ -477,6 +508,7 @@ fn import_solid(
         faces,
         root,
         adaptations: Adaptations::default(),
+        topology,
     })
 }
 struct Context<'d, 'a> {

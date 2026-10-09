@@ -52,8 +52,10 @@ outside (0°, 90°) in the supplied angle unit is rejected. `DEGENERATE_TOROIDAL
 part is the chart's closed v domain, with the two axis points as singular points
 handled like sphere poles; a `TOROIDAL_SURFACE` with major radius at or below the
 minor radius (a horn torus, or a spindle without the degenerate entity) is rejected.
-A B-spline axis flagged closed in STEP receives a **periodic chart** when
-its two boundary curves agree within the model tolerance; the flag alone is advisory.
+A B-spline axis flagged closed (`.T.`) or of unknown closure (`.U.`) in STEP receives
+a **periodic chart** when its two boundary curves agree within the model tolerance;
+the flag alone is advisory. A closed surface in a non-periodic chart would give every
+point of its closing line two chart preimages, and edges there either one.
 Periodic NURBS axes wrap evaluation (see [NURBS](NURBS.md)) so seams, chart shifts and
 annular faces behave as on analytic surfaces.
 
@@ -161,7 +163,11 @@ Each loop is classified by its winding in the periodic surface axes.
   a seam that no edge crosses or touches; a hit that is not a vertex splits its edge
   there, and the next planning pass finds the aligned pair. Wavy annuli whose
   vertex-aligned lines cross other edges, holes all around a cylinder, and edges that
-  meet their vertex tangentially to the line all resolve this way.
+  meet their vertex tangentially to the line all resolve this way. Crossings are
+  found between the samples of a fixed scan (64 uniform parameters plus geometric
+  ones near the ends) and at every turning point of the edge's coordinate across the
+  line between two samples, so an edge that runs beside the line and dips across it
+  between samples (a B-spline 0.7 µm across over 0.2 % of its length) is seen.
 * **Sliver faces.** A face bounded by one loop of two open edges with the same
   vertices whose curves coincide within the model tolerance (typically a B-spline
   written beside the arc it approximates, 0.1 µm apart under a 20 µm uncertainty) is
@@ -180,7 +186,11 @@ Each loop is classified by its winding in the periodic surface axes.
   its orientation and every 3D curve are unchanged. Rotated frames are tried before
   pole charts, so a sphere uses a pole chart only when no frame avoids one (for
   example a hemisphere bounded by a great circle). A face with `VERTEX_LOOP` bounds
-  first tries the frames whose pole is that vertex.
+  first tries the frames whose pole is that vertex. A face with one loop that does not
+  wind around the chart's axis and runs clockwise in it lies outside the loop, around
+  both poles (a sphere with a cap cut away); that chart is rejected and the mean
+  boundary direction is the last candidate axis, through the loop, where the loop
+  winds once and the face closes at the far pole.
 * **Pole and apex charts.** Sphere poles and the cone apex are singular lines of their
   charts. The chart is closed there by a **collapsed edge**
   ([topology](TOPOLOGY.md#collapsed-edges)): a closed edge whose curve is the singular
@@ -209,6 +219,31 @@ and pole seams), split edges, re-charted spheres and collapsed edges. All are
 representation choices, not repairs: no coordinate, curve or surface is modified and
 no topology is merged; the only inserted vertices are split points and poles that no
 `VERTEX_LOOP` names.
+
+## UV loop failures
+
+A face whose trimming loops or mesh-resolution boundary fail the polygon checks
+([trimming](TRIMMING.md)) fails the tessellation stage with the failing coedge's
+`EDGE_CURVE` as the error entity (the face when the failure names no coedge, or only
+an inserted edge) and a message that names the face, the check (`UV trimming` or `the
+mesh boundary`), the entities involved and a cause class in parentheses:
+
+| Class | Located at | Meaning |
+| --- | --- | --- |
+| `self-touching loop` | the two edges and the vertex | the loop passes through that vertex twice and touches itself there |
+| `tangent edges at a vertex` | the two edges and their shared vertex | adjacent edges cross or touch again beyond the model tolerance (a cusp, or an edge running back over the previous one) |
+| `crossing trims` | the two edges | edges of one loop cross or touch in the chart |
+| `intersecting loops` | the two edges, or the hole | loops cross, touch or nest |
+| `self-intersecting edge` | the edge | one edge's image doubles back or crosses itself beyond the model tolerance |
+| `seam choice` | the edge and the inserted seam | an inserted seam meets a loop edge |
+| `collapsed edge` | the edges | a conflict at a pole or apex line |
+| `hole outside`, `wrong orientation`, `degenerate loop`, `non-contractible loop`, `open loop` | the loop (and edge) | loop-level failures |
+| `budget` | the face | a trim budget (`max_samples` or `max_work`) and its value |
+
+The class follows from topology alone (which coedges conflict, whether they meet,
+whether the importer inserted them); it does not decide whether the STEP input or
+an importer chart caused it. [VALIDATION.md](VALIDATION.md) classifies the corpus
+failures by cause. Evidence: `uv_loops::tests`, `tests/uv_loops.rs`.
 
 ## Root and unit discovery
 
@@ -306,8 +341,13 @@ hyperbola arc, a seamed cylinder whose circle edges carry supplied pcurves on bo
 faces, one of them 1 mm off (elementary faces keep their exact images; none used,
 the wrong one rejected), and the B-spline cube with
 supplied pcurves on its B-spline face, one of them rational (four used; with one
-shifted 0.1 mm, one rejected and none used). Negative fixtures cover an off-surface edge, a
-`VERTEX_LOOP` away from the apex and an ambiguous outer bound. Cavity fixtures cover a cube
+shifted 0.1 mm, one rejected and none used), a cylinder whose side is a closed rational
+B-spline flagged `U_CLOSED .U.` (periodic chart, one inserted seam) and a sphere with a
+cap cut away whose STEP axis misses the cap (re-charted through the rim: a pole seam
+and a collapsed edge). Negative fixtures cover an off-surface edge, a
+`VERTEX_LOOP` away from the apex, an ambiguous outer bound and a box whose pocket
+opening touches the top face's boundary at a vertex (a self-touching loop, rejected
+at tessellation). Cavity fixtures cover a cube
 with a cubical void and a cylinder with a spherical void bounded by a `VERTEX_LOOP`
 (each void an outward shell reversed by `ORIENTED_CLOSED_SHELL(.F.)`), and a cube whose
 void faces out of its cavity (rejected at tessellation). `tests/brep.rs` checks volumes against the

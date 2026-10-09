@@ -364,12 +364,37 @@ fn segment_distance(
     .map_err(|_| ErrorKind::Geometry)
 }
 
+/// The distance below which UV boundary points are not resolved apart: relative to
+/// the boundary extent and coordinate magnitude (floating-point sign ambiguity), and
+/// at most `uv_tolerance`. `None` for non-finite points.
+pub(crate) fn resolution_tolerance(
+    points: impl Iterator<Item = [f64; 2]>,
+    uv_tolerance: f64,
+) -> Option<f64> {
+    let (mut lo, mut hi, mut magnitude) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2], 0_f64);
+    for p in points {
+        for k in 0..2 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+            magnitude = magnitude.max(p[k].abs());
+        }
+    }
+    let extent = (hi[0] - lo[0]).max(hi[1] - lo[1]);
+    let eps = 1e-12 * extent + 16. * f64::EPSILON * magnitude;
+    eps.is_finite()
+        .then(|| eps.min(uv_tolerance).max(f64::MIN_POSITIVE))
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum BoundaryError {
     Trim(tessstep_trim::Error),
     ResourceLimit,
     Geometry(CoedgeId),
     CurveSurfaceMismatch(CoedgeId),
+    /// The loops at the shared edge sample resolution are not simple, correctly
+    /// wound and nested at floating-point resolution although their trim
+    /// reconstruction passed; located at the coedges involved (for example a coarse
+    /// chord of one edge crossing a nearby edge).
+    Resolution(tessstep_trim::Error),
 }
 impl std::fmt::Display for BoundaryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -471,11 +496,30 @@ impl SharedEdges<'_> {
             Ok(out)
         };
         let outer = map_loop(trim.outer())?;
-        let holes = trim
+        let holes: Vec<Vec<BoundaryPolyline<'_>>> = trim
             .holes()
             .iter()
             .map(&mut map_loop)
             .collect::<Result<_, _>>()?;
+        // The polygons a mesh uses (each use's samples but its last, as joins keep the
+        // next use's start) must be simple and correctly nested at the resolution the
+        // triangulator resolves; failures are located at their coedges.
+        let loops: Vec<Vec<([f64; 2], CoedgeId)>> = std::iter::once(&outer)
+            .chain(&holes)
+            .map(|uses| {
+                uses.iter()
+                    .flat_map(|u| {
+                        u.samples[..u.samples.len() - 1]
+                            .iter()
+                            .map(|s| (s.uv, u.coedge))
+                    })
+                    .collect()
+            })
+            .collect();
+        let eps = resolution_tolerance(loops.iter().flatten().map(|p| p.0), options.uv_tolerance)
+            .ok_or(BoundaryError::Geometry(trim.outer().uses()[0].coedge))?;
+        trim.validate_resolution(&loops, eps, options.max_work)
+            .map_err(BoundaryError::Resolution)?;
         Ok(FaceBoundary { outer, holes })
     }
 }

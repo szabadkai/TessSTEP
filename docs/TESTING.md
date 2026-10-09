@@ -193,6 +193,13 @@ intervals, then exercises each successful downstream stage with finite budgets.
 The same harness is a libFuzzer target in nightly CI. External STEP corpus acceptance
 continues to measure physical parsing until a real geometry adapter is implemented.
 
+Milestone 22.4 adds `tessstep-trim/tests/loop_validity.rs` (located failures, named
+budgets, overlap-only polygon work on a 20,000-segment loop and 400 holes, noise
+seeds, sub-tolerance loops and wobbles) and `tessstep-tessellate/tests/
+boundary_resolution.rs` (a 5 µm edge below the UV tolerance triangulates; a coarse
+chord crossing a hole fails at its coedges). The importer's `uv_loops` unit tests
+check each cause class and `tests/uv_loops.rs` the authored fixtures.
+
 ## Adaptive tessellation and meshes (Milestones 15–17)
 
 Run `cargo test -p tessstep-tessellate -p tessstep-mesh -p tessstep-topology`
