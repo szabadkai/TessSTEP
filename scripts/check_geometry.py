@@ -148,7 +148,7 @@ REPAIR_EXPECTED = {
     "brep-repair-broken-wire.step": ("BrokenWire at wire 1", ("accepted",) * 3, (1, 0, 0, 0, 0, 0), (6e-6, 1e-12), None),
     "brep-repair-flipped-face.step": ("InconsistentOrientation at shell 0", ("accepted",) * 3, (0, 0, 0, 1, 0, 0), (6e-6, 1e-12), None),
     "brep-repair-reversed-loop.step": ("InconsistentOrientation at shell 0", ("accepted",) * 3, (0, 0, 0, 0, 1, 0), (6e-6, 1e-12), None),
-    "brep-repair-wrong-sense.step": ("WrongOrientation", ("accepted",) * 3, (0, 0, 0, 0, 1, 0), (6e-6, 1e-12), None),
+    "brep-repair-wrong-sense.step": ("(wrong orientation)", ("accepted",) * 3, (0, 0, 0, 0, 1, 0), (6e-6, 1e-12), None),
     "brep-repair-inside-out.step": ("NonPositiveVolume", ("accepted",) * 3, (0, 0, 0, 0, 0, 1), (6e-6, 1e-12), None),
     "brep-inverted-cavity.step": ("CavityOrientation", ("accepted",) * 3, (0, 0, 0, 0, 0, 1), (7e-6, 1e-12), None),
     "brep-repair-unsewn.step": ("UnsewnShell at shell 0", ("accepted",) * 3, (16, 12, 1, 0, 0, 0), (6e-6, 1e-12), None),

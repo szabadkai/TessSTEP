@@ -326,7 +326,9 @@ impl<'a> ImportSession<'a> {
     ) -> Result<ImportedSolid, Error> {
         let options = self.options;
         self.import_with(ImportProfile::Brep, root, |decoded, closure| {
-            brep::adapt(decoded, closure, root, length, angle, tolerance, options, None)
+            brep::adapt(
+                decoded, closure, root, length, angle, tolerance, options, None,
+            )
         })
     }
     /// [`import_tessellated`] with the session's options and decodes; the mesh counts

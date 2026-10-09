@@ -1,7 +1,7 @@
 //! Edge-based B-rep solids with elementary, B-spline and swept geometry.
 mod scan;
-mod sphere;
 mod sewing;
+mod sphere;
 mod supplied;
 mod surface_model;
 mod swept;
@@ -118,7 +118,9 @@ fn import_shells(
     surface: Option<&mut Vec<(EntityId, bool)>>,
 ) -> Result<ImportedSolid, Error> {
     let decoded = decode_roots(document, &[root], options)?;
-    adapt(&decoded, None, root, length, angle, tolerance, options, surface)
+    adapt(
+        &decoded, None, root, length, angle, tolerance, options, surface,
+    )
 }
 
 /// The profile's link slots: decoded records keep them, traversal never follows them.
