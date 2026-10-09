@@ -302,7 +302,7 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   explicit-outer rule. Evidence:
   `brep_elementary_surfaces_close_with_expected_volumes` (washer) and
   `brep_rejections_are_typed_and_located`.
-- **Default parse budgets — Milestone 22.1.** The defaults (4M total values, 1M entities, 2M records)
+- **Default parse budgets — delivered 2026-09-27 (Milestone 22.1).** The defaults (4M total values, 1M entities, 2M records)
   reject well-formed exports of a few tens of megabytes. Size defaults against
   realistic industrial files, or derive them from input size, while keeping every
   budget explicit. Expose them in `stepdump` and the corpus runner, and name the
@@ -409,7 +409,8 @@ in general. Each item needs authored fixtures, typed outcomes and corpus-stage
 evidence. A rare entity may be delivered as a named, typed rejection instead of an
 adapter. These items feed Milestone 21.
 
-- **Supplied pcurves — 3D curves delivered 2026-09-26.** `SURFACE_CURVE`, `SEAM_CURVE`
+- **Supplied pcurves — 3D curves delivered 2026-09-26; supplied pcurves read
+  2026-09-27 (Milestone 21.6).** `SURFACE_CURVE`, `SEAM_CURVE`
   and `INTERSECTION_CURVE` import through their 3D curves with computed pcurves;
   supplied pcurves are retained as links, and reading them remains open. 14,062 edges
   (671 files) wrap their 3D curve in `SURFACE_CURVE` and 345 (28 files) in
@@ -427,12 +428,13 @@ adapter. These items feed Milestone 21.
   `TRIMMED_CURVE`s. A revolved profile that meets its axis creates poles, covered by
   the pole item above.
 - **Implicit-knot B-spline forms — quasi-uniform forms delivered 2026-09-26;
-  `UNIFORM_*` and `BEZIER_*` remain.** `QUASI_UNIFORM_SURFACE` (163 faces, 18 files)
+  `UNIFORM_*` and `BEZIER_*` delivered 2026-09-27 (Milestone 21.6).** `QUASI_UNIFORM_SURFACE` (163 faces, 18 files)
   and `QUASI_UNIFORM_CURVE` (761 edges, 24 files), including rational complex
   instances, carry no knot list. Derive knots as ISO 10303-42 defines them and reuse
   the NURBS evaluators. `UNIFORM_*` and `BEZIER_*` forms follow the same rule (3 uses
   in total).
-- **Hyperbolic and parabolic edges.** `HYPERBOLA` / `PARABOLA` edge geometry (22 edges,
+- **Hyperbolic and parabolic edges — delivered 2026-09-27 (Milestone 21.6) as exact
+  quadratic arcs.** `HYPERBOLA` / `PARABOLA` edge geometry (22 edges,
   4 files) has evaluators but no adapter or trim-parameter mapping.
 - **Cavity shells — delivered 2026-09-26:** `Solid::voids`, composed
   `ORIENTED_CLOSED_SHELL` orientation and per-shell volume checks. The 29
@@ -448,18 +450,20 @@ adapter. These items feed Milestone 21.
   `tessellate_shell` already meshes open shells. Decide whether STEP import accepts
   `OPEN_SHELL` / `CLOSED_SHELL` surface models, reporting open results as shells,
   never as solids. Decided: it does, as shells (22.6 below).
-- **Topology-free trimmed surfaces — scope decision.** `CURVE_BOUNDED_SURFACE`
+- **Topology-free trimmed surfaces — decided 2026-09-27 (Milestone 21.6): named
+  unsupported for v1.0.** `CURVE_BOUNDED_SURFACE`
   (3,216 records, 18 files) occurs almost only in `GEOMETRIC_SET`s, not as face
   geometry. Meshing it needs boundary-curve trimming without B-rep topology. Decide
   whether it is in scope; otherwise name it as unsupported.
-- **Rare edge and face geometry.** These occur almost only in `dodgy-step-files`:
+- **Rare edge and face geometry — named typed rejections delivered 2026-09-27
+  (Milestone 21.6).** These occur almost only in `dodgy-step-files`:
   `RECTANGULAR_TRIMMED_SURFACE` (38 faces), `OFFSET_SURFACE` (13),
   `RECTANGULAR_COMPOSITE_SURFACE` (4), `TRIMMED_CURVE` (42 edges; delivered),
   `PCURVE` used directly as edge geometry (17), `COMPOSITE_CURVE` (14),
   `OFFSET_CURVE_3D` (5), `DEGENERATE_PCURVE` (4) and `INTERSECTION_CURVE` (2;
   delivered). Give each a named, typed
   unsupported outcome first; add an adapter when a reviewed exporter file needs one.
-- **Reproducible coverage survey.** Add this survey to `scripts/corpus.py`: count
+- **Reproducible coverage survey — delivered 2026-09-27 (Milestone 21.5).** Add this survey to `scripts/corpus.py`: count
   face-surface, edge-curve and root types per source from decoded records and keep
   them in the baseline. The existing `unsupported_entity_types` summary names only
   the first rejection per root, so it hides entities behind an earlier failure.
