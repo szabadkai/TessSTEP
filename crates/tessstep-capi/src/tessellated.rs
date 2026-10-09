@@ -452,17 +452,31 @@ pub unsafe extern "C" fn ts_document_import_presentation(
                 max_depth: depth,
             },
         );
-        match result {
-            Ok(p) => {
-                let handle = Arc::into_raw(Arc::new(TsPresentation::from(p)));
-                // SAFETY: cleared output slot; ownership transfers once after all work.
-                unsafe { out.write(handle) };
-                TS_OK
-            }
-            // SAFETY: the optional error record follows the header contract.
-            Err(e) => unsafe { report(document, &e, error) },
-        }
+        // SAFETY: the outputs cleared above.
+        unsafe { publish_presentation(document, result, out, error) }
     })
+}
+
+/// Publish imported presentation graphics or their located error.
+///
+/// # Safety
+/// Cleared, writable output slots of the header contract.
+pub(crate) unsafe fn publish_presentation(
+    document: &tessstep_model::Document,
+    result: Result<tessstep_import::ImportedPresentation, tessstep_import::Error>,
+    out: *mut *const TsPresentation,
+    error: *mut TsImportError,
+) -> u32 {
+    match result {
+        Ok(p) => {
+            let handle = Arc::into_raw(Arc::new(TsPresentation::from(p)));
+            // SAFETY: cleared output slot; ownership transfers once after all work.
+            unsafe { out.write(handle) };
+            TS_OK
+        }
+        // SAFETY: the optional error record follows the header contract.
+        Err(e) => unsafe { report(document, &e, error) },
+    }
 }
 
 /// # Safety

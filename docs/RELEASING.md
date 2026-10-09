@@ -67,7 +67,7 @@ headers, relocatable CMake package, documentation, MIT license, and authored exa
 library consumers. This workflow does not publish crates to crates.io.
 
 Packaging installs and relocates the C/C++ SDK, compiles/runs standalone C11/C++17
-consumers in both Debug and Release, and checks the exact exported ABI symbol set.
+consumers in both Debug and Release, and checks the exported symbols against the frozen ABI record `abi/exports.txt`, which the archive also ships.
 No Rust toolchain is used by those consumers. The existing Linux/Windows/macOS release
 matrix runs this gate before creating archives; Linux/macOS CI also instruments native
 consumers with ASan/UBSan. The package ships the shared library and a static archive

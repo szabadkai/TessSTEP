@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated and presentation tessellation import with discovery, representation selection and C/C++ entry points (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery; C/C++ discovery, representation selection, single-root solid import, extensible import options and static linkage (Milestone 22.10 first pass); C/C++ tolerance policy, opt-in repair, surface models, import sessions and assembly import with the extensible options (second pass)",
+  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated and presentation tessellation import with discovery, representation selection and C/C++ entry points (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery; C/C++ discovery, representation selection, single-root solid import, extensible import options and static linkage (Milestone 22.10 first pass); C/C++ tolerance policy, opt-in repair, surface models, import sessions and assembly import with the extensible options (second pass); failure text, per-root reports and the frozen ABI 1.0 export set (final pass)",
   "features": [
     {
       "feature": "streaming lexer",
@@ -208,21 +208,21 @@
     },
     {
       "feature": "public C ABI",
-      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, surface models, existing/presentation tessellation import, schema selection, assembly import, discovery, import sessions and import options implemented",
+      "status": "ABI 1.0 export set frozen (95 functions): physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, surface models, existing/presentation tessellation import, schema selection, assembly import, discovery, import sessions, failure text and import options",
       "test": "c_abi_document_and_diagnostic_contract",
-      "limitations": "additive ABI 1 (90 exports); physical documents, triangle meshes, explicit scenes and appearance; selected faceted, planar and curved solid import with the tolerance policy and opt-in repair, surface models as shell meshes, existing tessellation import, presentation graphics, schema selection, assembly import with imported colours, root and unit discovery with representation selection, import sessions, extensible import options (revision 2); export set not yet frozen; per-root tolerated encodings, session presentation import and general schema decoding pending"
+      "limitations": "frozen ABI 1.0 record abi/exports.txt (95 exports), checked against sources, header and installed libraries; 1.x may only add; physical documents, triangle meshes, explicit scenes and appearance; selected faceted, planar and curved solid import with the tolerance policy and opt-in repair, surface models as shell meshes, existing tessellation import, presentation graphics, schema selection, assembly import with imported colours and per-root reports, root and unit discovery with representation selection, import sessions, extensible import options; failure text only through sessions and per-root reports; general schema decoding not exposed"
     },
     {
       "feature": "public C++ wrapper / CMake package",
-      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, surface models, existing/presentation tessellation import, schema selection, assembly import, discovery, import sessions and import options implemented",
+      "status": "physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, surface models, existing/presentation tessellation import, schema selection, assembly import, discovery, import sessions, failure text and import options implemented",
       "test": "tests/capi/consumer.cpp",
-      "limitations": "C++17 RAII for documents/meshes/scenes/appearance/presentations/assemblies/discoveries/surface models/import sessions, retained zero-copy mesh and presentation views and typed results; installed TessSTEP::TessSTEP (shared) and TessSTEP::TessSTEP_static targets, static consumers tested in Release only; broader schema/B-rep APIs pending"
+      "limitations": "C++17 RAII for documents/meshes/scenes/appearance/presentations/assemblies/discoveries/surface models/import sessions, retained zero-copy mesh and presentation views and typed results with failure text where the C API keeps it; installed TessSTEP::TessSTEP (shared) and TessSTEP::TessSTEP_static targets, static consumers tested in Release only; broader schema/B-rep APIs pending"
     },
     {
       "feature": "C/C++ extensible import options",
       "status": "implemented",
       "test": "c_abi_import_options_revisions_defaults_and_document_sizing",
-      "limitations": "struct_size names a published revision (96-byte revision 1); strict flag, budgets, model and tessellation tolerances; document sizing as ImportOptions::for_document; unknown sizes rejected without writing; tolerance-policy and repair fields pending"
+      "limitations": "struct_size names a published revision (ABI 1.0 publishes revision 1, 168 bytes; 1.x may append); strict, repair and surface-model flags, decode, tessellation, assembly, session and presentation budgets, model and tessellation tolerances, sewing and deviation factors; document sizing as the Rust for_document rules; unknown and draft sizes rejected without writing"
     },
     {
       "feature": "C/C++ single-root solid import",
@@ -240,7 +240,7 @@
       "feature": "C/C++ opt-in repair and tolerance policy",
       "status": "implemented",
       "test": "c_abi_repair_is_opt_in_and_reported_in_the_second_info_revision",
-      "limitations": "TS_IMPORT_REPAIR_SEW / _ORIENT flags, sewing and deviation factors in options revision 2; RepairReport, deviation counters, largest deviation and working tolerance in solid-info revision 2; strict rejection stays the default; evidence also c_abi_tolerance_policy_counts_deviations_and_names_the_working_tolerance"
+      "limitations": "TS_IMPORT_REPAIR_SEW / _ORIENT flags, sewing and deviation factors in the options; RepairReport, deviation counters, largest deviation and working tolerance in the solid info; strict rejection stays the default; evidence also c_abi_tolerance_policy_counts_deviations_and_names_the_working_tolerance"
     },
     {
       "feature": "C/C++ surface models",
@@ -252,13 +252,25 @@
       "feature": "C/C++ import sessions",
       "status": "implemented",
       "test": "c_abi_session_owns_its_document_and_shares_discovery_and_decodes",
-      "limitations": "uniquely owned handle retaining its document, calls serialized; cached discovery, prepared shared decodes, solid, tessellation and assembly import, statistics and session budgets; presentation and surface-model import through a session not exposed"
+      "limitations": "uniquely owned handle retaining its document, calls serialized; cached discovery, prepared shared decodes, solid, tessellation, presentation and assembly import, surface-model import without sharing, statistics, session budgets and the last failure's text"
     },
     {
       "feature": "C/C++ assembly import with extensible options",
       "status": "implemented",
       "test": "c_abi_assembly_import_with_options_reports_placements_and_encodings",
-      "limitations": "strictness, repair, deviation policy, tolerances, budgets and preference from ts_import_options; mapped-item placements and product-closure tolerated encodings per assembly; per-root tolerated encodings Rust-only"
+      "limitations": "strictness, repair, deviation policy, tolerances, budgets and preference from ts_import_options; mapped-item placements and product-closure tolerated encodings per assembly; per-root tolerated context encodings and failure text"
+    },
+    {
+      "feature": "C/C++ failure text",
+      "status": "implemented",
+      "test": "c_abi_session_keeps_the_last_failure_message",
+      "limitations": "handle state, no global or per-thread error state: a session's last discover, prepare or import failure copied into a caller buffer with the full length; per-root text in assembly and discovery reports (c_abi_root_reports_carry_tolerated_encodings_and_failure_text); C++ Error::message; document-level calls keep no text"
+    },
+    {
+      "feature": "C ABI 1.0 export record",
+      "status": "frozen",
+      "test": "c_abi_1_0_export_set_is_frozen",
+      "limitations": "abi/exports.txt lists the 95 functions of ABI 1.0; c_abi_export_record_matches_sources_and_header and check_capi.py require exports, declarations and record to agree; the 1.0 set is pinned; 1.x additions are recorded with their version"
     },
     {
       "feature": "Generated schema validator and corpus stage",

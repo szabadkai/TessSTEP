@@ -32,7 +32,7 @@ pub struct TsSolidInfo {
     pub collapsed_faces: u64,
     pub supplied_pcurves: u64,
     pub rejected_pcurves: u64,
-    // Revision 2: the tolerance policy (22.3) and the opt-in repair stage (22.5).
+    // The tolerance policy (22.3) and the opt-in repair stage (22.5).
     pub off_surface_edges: u64,
     pub off_curve_vertices: u64,
     pub uncollapsed_sides: u64,
@@ -48,12 +48,10 @@ pub struct TsSolidInfo {
     pub undecided_shells: u64,
     pub sewing_tolerance_m: f64,
 }
-pub const TS_SOLID_INFO_SIZE_1: u32 = 104;
-pub const TS_SOLID_INFO_SIZE_2: u32 = 216;
-const _: () = assert!(std::mem::offset_of!(TsSolidInfo, off_surface_edges) == 104);
-const _: () = assert!(size_of::<TsSolidInfo>() == TS_SOLID_INFO_SIZE_2 as usize);
+pub const TS_SOLID_INFO_SIZE_1: u32 = 216;
+const _: () = assert!(size_of::<TsSolidInfo>() == TS_SOLID_INFO_SIZE_1 as usize);
 impl Extensible for TsSolidInfo {
-    const REVISIONS: &'static [u32] = &[TS_SOLID_INFO_SIZE_1, TS_SOLID_INFO_SIZE_2];
+    const REVISIONS: &'static [u32] = &[TS_SOLID_INFO_SIZE_1];
     fn header(&mut self, struct_size: u32) {
         self.struct_size = struct_size;
         self.abi_version = 1;

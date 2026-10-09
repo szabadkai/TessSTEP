@@ -1,3 +1,39 @@
+# Milestone 22.10 final pass: folded revisions, failure text, ABI 1.0 freeze — 2026-10-10
+
+Delivered on main at c51e109:
+
+- **Folded revisions.** No release shipped a revision of the extensible records
+  (v0.1.0 had 64 exports and none of them), so ABI 1.0 publishes exactly one revision
+  of each: `ts_import_options` 168 bytes (the second pass's fields, the assembly
+  budgets renamed `max_assembly_instances` / `max_assembly_depth`, and the presentation
+  limits `max_polyline_points` / `max_presentation_depth`), `ts_solid_info` 216 bytes,
+  `ts_surface_model_info` 136 bytes. The draft sizes (96 and 152 bytes, 104 bytes) are
+  rejected; the revision mechanism stays for 1.x.
+- **Session presentation and surface-model import**:
+  `ts_import_session_import_presentation` (the Rust session's shared tessellated
+  decode) and `ts_import_session_import_surface_model` (the free import, without
+  sharing; the Rust session has no surface models).
+- **Failure text without global state.** The header promises "No callbacks, global
+  error state", so instead of a per-thread last diagnostic the text is handle state:
+  `ts_import_session_last_message` and the per-root reports
+  `ts_assembly_root_report_at` / `ts_discovery_root_report_at` (which also carry the
+  22.7 tolerated encodings of each root's context). C++ `Error::message`,
+  `AssemblyRoot::{message, tolerated}`, `DiscoveredRoot::tolerated`.
+- **Freeze.** `abi/exports.txt` records the 95 functions of ABI 1.0;
+  `tessstep-capi/tests/abi.rs` checks exports, header and record and pins the 1.0
+  set; `check_capi.py` checks the installed shared library and static archive against
+  the record; the release archive ships it. Policy in C_API.md.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), `cargo doc -D warnings` | passed (345 tests), including the new `--test abi`, `c_abi_session_keeps_the_last_failure_message`, `c_abi_session_imports_presentations_and_surface_models` and `c_abi_root_reports_carry_tolerated_encodings_and_failure_text` |
+| `check_capi.py --library-dir target/release` (no sanitizers; local ASan hang) | passed: shared consumers in Debug, Release and C-only, exactly the 95 recorded exports, static C and C++ consumers against a package copy without the shared library, the archive defining exactly the 95 symbols |
+| `package_release.py --target aarch64-apple-darwin` | passed; the archive ships `abi/exports.txt` |
+| `check_architecture.py`, `conformance.py --check`, script unit tests (74) | passed |
+
+No `tessstep-import` code changed in this pass, so the external corpus was not rerun.
+Linux and Windows results are CI-only.
+
 # Milestone 22.10 second pass: repair, tolerance policy, surface models, sessions — 2026-10-09
 
 Delivered on top of 22.2–22.8 (main at 5a9879a): revision 2 of `ts_import_options`

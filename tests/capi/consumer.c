@@ -403,8 +403,8 @@ static void presentation_contract(void) {
     ts_presentation_release(NULL);
 }
 static void import_options_contract(void) {
-    _Static_assert(sizeof(ts_import_options) == TS_IMPORT_OPTIONS_SIZE_2, "import options revision 2");
-    _Static_assert(sizeof(ts_import_options) == 152 && TS_IMPORT_OPTIONS_SIZE_1 == 96, "import options layout");
+    _Static_assert(sizeof(ts_import_options) == TS_IMPORT_OPTIONS_SIZE_1, "import options revision 1");
+    _Static_assert(sizeof(ts_import_options) == 168, "import options layout");
     _Static_assert(offsetof(ts_import_options, max_work) == 16, "import budgets offset");
     _Static_assert(offsetof(ts_import_options, model_distance_m) == 32, "model tolerance offset");
     _Static_assert(offsetof(ts_import_options, max_tessellation_work) == 64, "tessellation budgets offset");
@@ -428,7 +428,7 @@ static void import_options_contract(void) {
     assert(options.struct_size == 0 && options.max_work == 0);
 }
 static void solid_contract(void) {
-    _Static_assert(sizeof(ts_solid_info) == TS_SOLID_INFO_SIZE_2 && TS_SOLID_INFO_SIZE_1 == 104, "solid info revision 2");
+    _Static_assert(sizeof(ts_solid_info) == TS_SOLID_INFO_SIZE_1 && TS_SOLID_INFO_SIZE_1 == 216, "solid info revision 1");
     _Static_assert(offsetof(ts_solid_info, root_id) == 16, "solid info root offset");
     _Static_assert(offsetof(ts_solid_info, inferred_outer_bounds) == 40, "solid adaptations offset");
     ts_document *doc = load("cylinder.step");
@@ -584,19 +584,21 @@ static ts_status solid_with(const ts_document *doc, const ts_import_options *opt
     ts_mesh_release(mesh);
     return status;
 }
-static void revision_two_contract(void) {
-    _Static_assert(offsetof(ts_import_options, sewing_factor) == 96, "revision 2 appends");
-    _Static_assert(offsetof(ts_import_options, max_session_triangles) == 144, "options tail");
-    _Static_assert(offsetof(ts_solid_info, off_surface_edges) == 104, "solid revision 2 appends");
+static void repair_and_deviation_contract(void) {
+    _Static_assert(offsetof(ts_import_options, sewing_factor) == 96, "options repair offset");
+    _Static_assert(offsetof(ts_import_options, max_session_triangles) == 144, "options session offset");
+    _Static_assert(offsetof(ts_import_options, max_presentation_depth) == 160, "options tail");
+    _Static_assert(offsetof(ts_solid_info, off_surface_edges) == 104, "solid policy offset");
     _Static_assert(offsetof(ts_solid_info, sewing_tolerance_m) == 208, "solid info tail");
-    ts_import_options options, older;
+    ts_import_options options, draft;
     assert(ts_import_options_init(&options, sizeof options) == TS_OK);
     assert(options.sewing_factor == 10 && options.deviation_factor == 16);
-    assert(options.max_instances == 100000 && options.max_session_triangles == 20000000);
-    /* A revision-1 record is written and read up to 96 bytes only. */
-    memset(&older, 0xff, sizeof older);
-    assert(ts_import_options_init(&older, TS_IMPORT_OPTIONS_SIZE_1) == TS_OK);
-    assert(older.struct_size == TS_IMPORT_OPTIONS_SIZE_1 && older.max_work == 5000000);
+    assert(options.max_assembly_instances == 100000 && options.max_session_triangles == 20000000);
+    assert(options.max_polyline_points == 4000000 && options.max_presentation_depth == 16);
+    /* Sizes of unreleased drafts are not revisions. */
+    memset(&draft, 0xff, sizeof draft);
+    assert(ts_import_options_init(&draft, 96) == TS_INVALID_ARGUMENT && draft.max_work == UINT64_MAX);
+    assert(ts_import_options_init(&draft, 152) == TS_INVALID_ARGUMENT);
     ts_solid_info info;
     ts_import_error error;
     double volume = 0;
@@ -604,10 +606,9 @@ static void revision_two_contract(void) {
     /* Topology defects are rejected unless repair is asked for. */
     assert(solid_with(doc,&options,&info,&error,&volume) == TS_INVALID_GEOMETRY);
     assert(error.stage == TS_IMPORT_STAGE_TOPOLOGY && info.merged_vertices == 0);
-    assert(solid_with(doc,&older,&info,&error,&volume) == TS_INVALID_GEOMETRY);
     options.flags = TS_IMPORT_REPAIR_SEW | TS_IMPORT_REPAIR_ORIENT;
     assert(solid_with(doc,&options,&info,&error,&volume) == TS_OK);
-    assert(info.struct_size == TS_SOLID_INFO_SIZE_2 && info.merged_vertices == 1 && info.merged_edges == 3);
+    assert(info.struct_size == TS_SOLID_INFO_SIZE_1 && info.merged_vertices == 1 && info.merged_edges == 3);
     assert(info.sewing_tolerance_m > 0.99e-6 && info.sewing_tolerance_m < 1.01e-6);
     assert(info.max_merge_distance_m > 4.9e-8 && info.max_merge_distance_m < 5.1e-8);
     assert(info.working_tolerance_m > 1.4e-7 && info.working_tolerance_m < 1.6e-7);
@@ -751,8 +752,75 @@ static void assembly_options_contract(void) {
     ts_document_release(doc);
     assert(ts_assembly_get_adaptations(NULL,&adaptations) == TS_INVALID_ARGUMENT && adaptations.mapped_placements == 0);
 }
+static void diagnostics_contract(void) {
+    _Static_assert(sizeof(ts_root_report) == 56, "root report layout");
+    _Static_assert(offsetof(ts_root_report, message) == 40, "root report message offset");
+    /* A session keeps its last failure text: the measured deviation and the bound. */
+    ts_document *doc = load("near.step");
+    ts_import_options options;
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    options.model_distance_m = 1e-6;
+    options.deviation_factor = 1;
+    ts_import_session *session = NULL;
+    assert(ts_import_session_create(doc,&options,&session) == TS_OK);
+    ts_document_release(doc);
+    ts_mesh *mesh = NULL;
+    assert(ts_import_session_import_solid(session,1000,0.001,1.0,&mesh,NULL,NULL) == TS_INVALID_GEOMETRY);
+    char text[512];
+    size_t length = 0;
+    assert(ts_import_session_last_message(session,text,sizeof text,&length) == TS_OK);
+    assert(length > 0 && length < sizeof text && strlen(text) == length);
+    assert(strstr(text, "3.000e-6 m") && strstr(text, "1.000e-6 m"));
+    char tiny[4];
+    size_t full = 0;
+    assert(ts_import_session_last_message(session,tiny,sizeof tiny,&full) == TS_OK);
+    assert(full == length && strlen(tiny) == 3 && memcmp(tiny, text, 3) == 0);
+    assert(ts_import_session_last_message(session,NULL,0,&full) == TS_OK && full == length);
+    assert(ts_import_session_last_message(session,NULL,4,&full) == TS_INVALID_ARGUMENT);
+    ts_discovery *discovery = NULL;
+    assert(ts_import_session_discover(session,TS_PREFER_EXACT,&discovery,NULL) == TS_OK);
+    ts_discovery_release(discovery);
+    assert(ts_import_session_last_message(session,text,sizeof text,&length) == TS_OK && length == 0 && text[0] == 0);
+    ts_import_session_release(session);
+
+    /* Session presentation and surface-model imports. */
+    doc = load("presentation.step");
+    assert(ts_import_session_create(doc,NULL,&session) == TS_OK);
+    ts_document_release(doc);
+    ts_presentation *presentation = NULL;
+    assert(ts_import_session_import_presentation(session,300,0.001,&presentation,NULL) == TS_OK);
+    ts_presentation_info presentation_info;
+    assert(ts_presentation_get_info(presentation,&presentation_info) == TS_OK && presentation_info.item_count == 4);
+    ts_presentation_release(presentation);
+    ts_import_session_release(session);
+    doc = load("surface-open.step");
+    assert(ts_import_session_create(doc,NULL,&session) == TS_OK);
+    ts_document_release(doc);
+    ts_surface_model *model = NULL;
+    assert(ts_import_session_import_surface_model(session,1000,0.001,1.0,&model,NULL) == TS_OK);
+    ts_surface_model_release(model);
+    ts_import_session_release(session);
+
+    /* Per-root reports: tolerated encodings and failure text. */
+    doc = load("inch.step");
+    ts_assembly *assembly = NULL;
+    assert(ts_document_import_assembly(doc,NULL,&assembly,NULL) == TS_OK);
+    ts_root_report report;
+    assert(ts_assembly_root_report_at(assembly,0,&report) == TS_OK);
+    assert(report.tolerated.omitted_conversion_dimensions == 1 && !report.message.data && report.message.size == 0);
+    assert(ts_assembly_root_report_at(assembly,5,&report) == TS_NOT_FOUND);
+    ts_assembly_release(assembly);
+    ts_document_release(doc);
+    doc = load("cavity.step");
+    assert(ts_document_discover(doc,TS_PREFER_EXACT,NULL,&discovery,NULL) == TS_OK);
+    ts_document_release(doc);
+    assert(ts_discovery_root_report_at(discovery,0,&report) == TS_OK);
+    assert(text_is(report.message, "no supported representation contains the root"));
+    ts_discovery_release(discovery);
+}
 int main(void) {
-    revision_two_contract();
+    diagnostics_contract();
+    repair_and_deviation_contract();
     surface_model_contract();
     session_contract();
     assembly_options_contract();

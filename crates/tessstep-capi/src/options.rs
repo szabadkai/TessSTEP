@@ -1,11 +1,12 @@
-//! Extensible import options (Milestone 22). The only ABI 1 records that grow:
-//! `struct_size` names the caller's revision, later revisions only append fields,
-//! and the bridge reads or writes exactly that many bytes of a published revision.
+//! Extensible import options (Milestone 22). Extensible records name their revision
+//! in `struct_size`; ABI 1.0 publishes revision 1 of each, a later 1.x revision only
+//! appends fields, and the bridge reads or writes exactly the bytes of the revision a
+//! caller names.
 use crate::{TS_IMPORT_STRICT, TS_INVALID_ARGUMENT, TS_OK, TsDocument, boundary};
 use std::ptr;
 use tessstep_import::{
-    AssemblyImportOptions, ImportOptions, RepairOptions, RepresentationPreference, SessionBudgets,
-    TessellationOptions, TessellationTolerance,
+    AssemblyImportOptions, ImportOptions, PresentationLimits, RepairOptions,
+    RepresentationPreference, SessionBudgets, TessellationOptions, TessellationTolerance,
 };
 use tessstep_math::{Angle, Length, ModelTolerance};
 
@@ -35,30 +36,28 @@ pub struct TsImportOptions {
     pub max_evaluations: u64,
     pub max_vertices: u64,
     pub max_triangles: u64,
-    // Revision 2: repair and deviation tolerances, assembly and session budgets.
     pub sewing_factor: f64,
     pub deviation_factor: f64,
-    pub max_instances: u64,
-    pub max_depth: u64,
+    pub max_assembly_instances: u64,
+    pub max_assembly_depth: u64,
     pub max_session_decoded_entities: u64,
     pub max_session_adapted_entities: u64,
     pub max_session_triangles: u64,
+    pub max_polyline_points: u64,
+    pub max_presentation_depth: u64,
 }
 /// Published revision sizes, oldest first; the newest is the whole current record.
-pub const TS_IMPORT_OPTIONS_SIZE_1: u32 = 96;
-pub const TS_IMPORT_OPTIONS_SIZE_2: u32 = 152;
-const _: () = assert!(std::mem::offset_of!(TsImportOptions, sewing_factor) == 96);
-const _: () = assert!(size_of::<TsImportOptions>() == TS_IMPORT_OPTIONS_SIZE_2 as usize);
-pub(crate) const IMPORT_OPTIONS_REVISIONS: [u32; 2] =
-    [TS_IMPORT_OPTIONS_SIZE_1, TS_IMPORT_OPTIONS_SIZE_2];
+pub const TS_IMPORT_OPTIONS_SIZE_1: u32 = 168;
+const _: () = assert!(size_of::<TsImportOptions>() == TS_IMPORT_OPTIONS_SIZE_1 as usize);
+pub(crate) const IMPORT_OPTIONS_REVISIONS: [u32; 1] = [TS_IMPORT_OPTIONS_SIZE_1];
 
 impl Default for TsImportOptions {
     fn default() -> Self {
         let (import, solid) = (ImportOptions::default(), AssemblyImportOptions::default());
         let tessellation = TessellationOptions::default();
-        let session = SessionBudgets::default();
+        let (session, presentation) = (SessionBudgets::default(), PresentationLimits::default());
         Self {
-            struct_size: TS_IMPORT_OPTIONS_SIZE_2,
+            struct_size: TS_IMPORT_OPTIONS_SIZE_1,
             abi_version: 1,
             flags: 0,
             reserved: 0,
@@ -74,11 +73,13 @@ impl Default for TsImportOptions {
             max_triangles: tessellation.mesh.max_triangles as u64,
             sewing_factor: import.repair.sewing_factor,
             deviation_factor: import.deviation_factor,
-            max_instances: solid.assembly.expansion.max_instances as u64,
-            max_depth: solid.assembly.expansion.max_depth as u64,
+            max_assembly_instances: solid.assembly.expansion.max_instances as u64,
+            max_assembly_depth: solid.assembly.expansion.max_depth as u64,
             max_session_decoded_entities: session.max_decoded_entities as u64,
             max_session_adapted_entities: session.max_adapted_entities as u64,
             max_session_triangles: session.max_triangles as u64,
+            max_polyline_points: presentation.max_polyline_points as u64,
+            max_presentation_depth: presentation.max_depth as u64,
         }
     }
 }
@@ -91,6 +92,7 @@ pub(crate) struct Options {
     pub tolerance: TessellationTolerance,
     pub tessellation: TessellationOptions,
     pub session: SessionBudgets,
+    pub presentation: PresentationLimits,
     pub surface_models: bool,
     minimum_model_tolerance: f64,
     max_instances: usize,
@@ -168,9 +170,15 @@ impl TsImportOptions {
                 max_triangles: count(self.max_session_triangles)?,
             },
             surface_models: self.flags & TS_DISCOVER_SURFACE_MODELS != 0,
+            presentation: PresentationLimits {
+                max_vertices: vertices,
+                max_triangles: triangles,
+                max_polyline_points: count(self.max_polyline_points)?,
+                max_depth: count(self.max_presentation_depth)?,
+            },
             minimum_model_tolerance: self.model_distance_m,
-            max_instances: count(self.max_instances)?,
-            max_depth: count(self.max_depth)?,
+            max_instances: count(self.max_assembly_instances)?,
+            max_depth: count(self.max_assembly_depth)?,
         })
     }
 }
@@ -370,6 +378,10 @@ mod tests {
         );
         assert_eq!(rust.deviation_factor, c.deviation_factor);
         assert_eq!(o.session, SessionBudgets::default());
+        assert_eq!(
+            format!("{:?}", o.presentation),
+            format!("{:?}", PresentationLimits::default())
+        );
         let assembly = AssemblyImportOptions::default();
         let mapped = o.assembly(RepresentationPreference::Exact);
         assert_eq!(

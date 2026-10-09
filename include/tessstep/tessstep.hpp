@@ -39,6 +39,9 @@ struct Error {
     ErrorCode code;
     std::vector<Diagnostic> diagnostics;
     ImportFailure import_failure{};
+    // The importer's failure text where the C API keeps one: import-session calls and
+    // discovered roots' unit failures. Empty otherwise.
+    std::string message{};
 };
 template<class T> class [[nodiscard]] Result {
     std::variant<T, Error> data_;
@@ -405,6 +408,7 @@ public:
 // Placed annotation graphics (polylines, points, fill triangles); not a mesh.
 class Presentation {
     friend class Document;
+    friend class ImportSession;
     std::unique_ptr<ts_presentation, detail::PresentationDeleter> handle_;
     explicit Presentation(ts_presentation* raw) noexcept : handle_(raw) {}
 public:
@@ -591,12 +595,15 @@ struct AssemblyProduct {
     std::string id, name; // owned copies
 };
 // status is TS_OK (0) for an imported root, else its failure and located error.
+using ToleratedEncodings = ts_tolerated_encodings;
 struct AssemblyRoot {
     uint64_t root_id = 0;
     RootKind kind = RootKind::manifold_solid_brep;
     bool selected = false;
     ts_status status = TS_OK;
     ImportFailure failure{};
+    std::string message{}; // the failure text; empty for an imported root
+    ToleratedEncodings tolerated{}; // in the root's context units
 };
 struct AssemblyExclusion {
     uint64_t record_id = 0;
@@ -640,8 +647,10 @@ public:
     Result<AssemblyRoot> root_at(size_t index) const {
         ts_assembly_root r{}; auto status = ts_assembly_root_at(handle_.get(), index, &r);
         if (status != TS_OK) return detail::error(status);
+        ts_root_report report{}; status = ts_assembly_root_report_at(handle_.get(), index, &report);
+        if (status != TS_OK) return detail::error(status);
         return AssemblyRoot{r.root_id, static_cast<RootKind>(r.kind), r.selected != 0, r.status,
-            detail::failure(r.error)};
+            detail::failure(r.error), detail::copy(report.message), report.tolerated};
     }
     Result<AssemblyExclusion> excluded_at(size_t index) const {
         ts_assembly_exclusion x{}; auto status = ts_assembly_excluded_at(handle_.get(), index, &x);
@@ -711,7 +720,8 @@ struct DiscoveredRoot {
     RootKind kind = RootKind::manifold_solid_brep;
     uint64_t link_id = 0;
     std::vector<uint64_t> representations;
-    Result<ContextUnits> units;
+    Result<ContextUnits> units; // a failure carries the unit problem in Error::message
+    ToleratedEncodings tolerated{}; // in the root's context units
 };
 struct DiscoveredPresentation {
     uint64_t occurrence_id = 0;
@@ -726,8 +736,13 @@ struct RepresentationChoice {
 };
 namespace detail {
 struct DiscoveryDeleter { void operator()(ts_discovery* p) const noexcept { ts_discovery_release(p); } };
-inline Result<ContextUnits> units(ts_status status, const ts_context_units& u, const ts_import_error& e) {
-    if (status != TS_OK) return import_error(status, e);
+inline Result<ContextUnits> units(ts_status status, const ts_context_units& u, const ts_import_error& e,
+    ts_string_view message = {}) {
+    if (status != TS_OK) {
+        auto failure = import_error(status, e);
+        failure.message = copy(message);
+        return failure;
+    }
     ContextUnits result{u.context_id, u.metres_per_unit, u.radians_per_unit, std::nullopt};
     if (u.has_distance_uncertainty) result.distance_uncertainty_m = u.distance_uncertainty_m;
     return result;
@@ -756,9 +771,11 @@ public:
     Result<DiscoveredRoot> root_at(size_t index) const {
         ts_discovered_root r{}; auto status = ts_discovery_root_at(handle_.get(), index, &r);
         if (status != TS_OK) return detail::error(status);
+        ts_root_report report{}; status = ts_discovery_root_report_at(handle_.get(), index, &report);
+        if (status != TS_OK) return detail::error(status);
         return DiscoveredRoot{r.root_id, static_cast<RootKind>(r.kind), r.link_id,
             detail::copy(r.representations, r.representation_count),
-            detail::units(r.status, r.units, r.error)};
+            detail::units(r.status, r.units, r.error, report.message), report.tolerated};
     }
     Result<DiscoveredPresentation> presentation_at(size_t index) const {
         ts_discovered_presentation p{};
@@ -835,6 +852,7 @@ struct SurfaceModelDeleter {
 // The shells of an imported surface model and their meshes; never a solid.
 class SurfaceModel {
     friend class Document;
+    friend class ImportSession;
     std::unique_ptr<ts_surface_model, detail::SurfaceModelDeleter> handle_;
     explicit SurfaceModel(ts_surface_model* raw) noexcept : handle_(raw) {}
 public:
@@ -898,6 +916,12 @@ class ImportSession {
     friend class Document;
     std::unique_ptr<ts_import_session, detail::SessionDeleter> handle_;
     explicit ImportSession(ts_import_session* raw) noexcept : handle_(raw) {}
+    // A failed call's located error with the session's message for it.
+    Error failed(ts_status status, const ts_import_error& failure) const {
+        auto e = detail::import_error(status, failure);
+        e.message = last_message();
+        return e;
+    }
 public:
     ImportSession(const ImportSession&) = delete;
     ImportSession& operator=(const ImportSession&) = delete;
@@ -910,7 +934,7 @@ public:
         const auto status = ts_import_session_discover(handle_.get(),
             static_cast<uint32_t>(preference), &raw, &failure);
         Discovery discovery(raw);
-        if (status != TS_OK) return detail::import_error(status, failure);
+        if (status != TS_OK) return failed(status, failure);
         return discovery;
     }
     // Decode these roots' closures together; returns how many roots a shared decode
@@ -931,7 +955,7 @@ public:
         const auto status = ts_import_session_import_solid(handle_.get(), entity_id,
             metres_per_unit, radians_per_unit, &raw, &info, &failure);
         Mesh mesh(raw);
-        if (status != TS_OK) return detail::import_error(status, failure);
+        if (status != TS_OK) return failed(status, failure);
         return SolidImport{std::move(mesh), info};
     }
     Result<SolidImport> import_solid(const DiscoveredRoot& root) {
@@ -946,7 +970,7 @@ public:
         const auto status = ts_import_session_import_tessellated(handle_.get(), entity_id,
             metres_per_unit, &raw, &info, &failure);
         Mesh mesh(raw);
-        if (status != TS_OK) return detail::import_error(status, failure);
+        if (status != TS_OK) return failed(status, failure);
         return TessellatedImport{std::move(mesh), info};
     }
     Result<Assembly> import_assembly(Preference preference = Preference::exact) {
@@ -955,8 +979,40 @@ public:
         const auto status = ts_import_session_import_assembly(handle_.get(),
             static_cast<uint32_t>(preference), &raw, &failure);
         Assembly assembly(raw);
-        if (status != TS_OK) return detail::import_error(status, failure);
+        if (status != TS_OK) return failed(status, failure);
         return assembly;
+    }
+    Result<Presentation> import_presentation(uint64_t entity_id, double metres_per_unit) {
+        ts_presentation* raw = nullptr;
+        ts_import_error failure{};
+        const auto status = ts_import_session_import_presentation(handle_.get(), entity_id,
+            metres_per_unit, &raw, &failure);
+        Presentation presentation(raw);
+        if (status != TS_OK) return failed(status, failure);
+        return presentation;
+    }
+    // Shares no decode with the session's other imports; see tessstep.h.
+    Result<SurfaceModel> import_surface_model(uint64_t entity_id, double metres_per_unit,
+        double radians_per_unit) {
+        ts_surface_model* raw = nullptr;
+        ts_import_error failure{};
+        const auto status = ts_import_session_import_surface_model(handle_.get(), entity_id,
+            metres_per_unit, radians_per_unit, &raw, &failure);
+        SurfaceModel model(raw);
+        if (status != TS_OK) return failed(status, failure);
+        return model;
+    }
+    // The failure text of the most recent discover, prepare or import call (owned
+    // copy); empty after a success, an argument error or on a moved-from session.
+    std::string last_message() const {
+        size_t length = 0;
+        if (ts_import_session_last_message(handle_.get(), nullptr, 0, &length) != TS_OK || !length)
+            return {};
+        std::string text(length + 1, '\0');
+        if (ts_import_session_last_message(handle_.get(), text.data(), text.size(), &length) != TS_OK)
+            return {};
+        text.resize(length < text.size() ? length : text.size() - 1);
+        return text;
     }
     Result<SessionStatistics> statistics() const {
         SessionStatistics s{}; auto status = ts_import_session_get_statistics(handle_.get(), &s);

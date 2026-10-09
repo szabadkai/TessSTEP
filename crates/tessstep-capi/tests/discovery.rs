@@ -90,22 +90,22 @@ unsafe fn import(
 #[test]
 fn c_abi_milestone_22_layouts() {
     use std::mem::offset_of;
-    assert_eq!(size_of::<TsImportOptions>(), 152);
+    assert_eq!(size_of::<TsImportOptions>(), 168);
     assert_eq!(offset_of!(TsImportOptions, flags), 8);
     assert_eq!(offset_of!(TsImportOptions, max_work), 16);
     assert_eq!(offset_of!(TsImportOptions, model_distance_m), 32);
     assert_eq!(offset_of!(TsImportOptions, chord_m), 48);
     assert_eq!(offset_of!(TsImportOptions, max_tessellation_work), 64);
     assert_eq!(offset_of!(TsImportOptions, max_triangles), 88);
-    // Revision 2 appends to revision 1.
     assert_eq!(offset_of!(TsImportOptions, sewing_factor), 96);
     assert_eq!(offset_of!(TsImportOptions, deviation_factor), 104);
-    assert_eq!(offset_of!(TsImportOptions, max_instances), 112);
+    assert_eq!(offset_of!(TsImportOptions, max_assembly_instances), 112);
     assert_eq!(
         offset_of!(TsImportOptions, max_session_decoded_entities),
         128
     );
     assert_eq!(offset_of!(TsImportOptions, max_session_triangles), 144);
+    assert_eq!(offset_of!(TsImportOptions, max_presentation_depth), 160);
     assert_eq!(size_of::<TsSolidInfo>(), 216);
     assert_eq!(offset_of!(TsSolidInfo, off_surface_edges), 104);
     assert_eq!(offset_of!(TsSolidInfo, largest_deviation_m), 128);
@@ -129,7 +129,7 @@ fn c_abi_milestone_22_layouts() {
 #[test]
 fn c_abi_import_options_revisions_defaults_and_document_sizing() {
     let o = options();
-    assert_eq!((o.struct_size, o.abi_version, o.flags), (152, 1, 0));
+    assert_eq!((o.struct_size, o.abi_version, o.flags), (168, 1, 0));
     assert_eq!((o.max_work, o.max_records), (5_000_000, 100_000));
     assert_eq!(
         (o.model_distance_m, o.chord_m, o.normal_angle_rad),
@@ -141,7 +141,14 @@ fn c_abi_import_options_revisions_defaults_and_document_sizing() {
     );
     assert_eq!((o.max_vertices, o.max_triangles), (1_000_000, 2_000_000));
     assert_eq!((o.sewing_factor, o.deviation_factor), (10., 16.));
-    assert_eq!((o.max_instances, o.max_depth), (100_000, 1024));
+    assert_eq!(
+        (o.max_assembly_instances, o.max_assembly_depth),
+        (100_000, 1024)
+    );
+    assert_eq!(
+        (o.max_polyline_points, o.max_presentation_depth),
+        (4_000_000, 16)
+    );
     assert_eq!(
         (
             o.max_session_decoded_entities,
@@ -152,8 +159,9 @@ fn c_abi_import_options_revisions_defaults_and_document_sizing() {
     );
     // SAFETY: writable records, live documents, balanced releases.
     unsafe {
-        // Unknown revision sizes, smaller or larger, write nothing.
-        for size in [0, 4, 95, 97, 104, 128, 144, 160] {
+        // Unknown revision sizes, smaller or larger, write nothing; 96 and 152 were
+        // unreleased drafts of the record and are not revisions.
+        for size in [0, 4, 95, 96, 97, 104, 152, 160, 176] {
             let mut untouched = TsImportOptions {
                 max_work: 7,
                 ..TsImportOptions::default()
@@ -162,31 +170,28 @@ fn c_abi_import_options_revisions_defaults_and_document_sizing() {
                 ts_import_options_init(&mut untouched, size),
                 TS_INVALID_ARGUMENT
             );
-            assert_eq!((untouched.struct_size, untouched.max_work), (152, 7));
+            assert_eq!((untouched.struct_size, untouched.max_work), (168, 7));
         }
-        // A revision-1 caller's record ends at 96 bytes: nothing beyond is written,
-        // and nothing beyond is read (an invalid factor there is never seen).
-        let mut older = TsImportOptions {
-            deviation_factor: 0.5,
-            ..TsImportOptions::default()
-        };
-        assert_eq!(ts_import_options_init(&mut older, 96), TS_OK);
-        assert_eq!((older.struct_size, older.deviation_factor), (96, 0.5));
+        // A record naming an unpublished size is rejected by every entry point.
         let doc = parse(include_str!("../../../corpus/geometry/brep-cylinder.step"));
-        assert_eq!(import(doc, 1000, 0.001, 1., &older).0, TS_OK);
-        older.struct_size = 152;
-        assert_eq!(import(doc, 1000, 0.001, 1., &older).0, TS_INVALID_ARGUMENT);
+        for size in [96, 152] {
+            let draft = TsImportOptions {
+                struct_size: size,
+                ..options()
+            };
+            assert_eq!(import(doc, 1000, 0.001, 1., &draft).0, TS_INVALID_ARGUMENT);
+        }
         ts_document_release(doc);
         assert_eq!(
-            ts_import_options_init(ptr::null_mut(), 96),
+            ts_import_options_init(ptr::null_mut(), 168),
             TS_INVALID_ARGUMENT
         );
         // Sized from the document, at least 512 work units and a record per entity.
         let doc = parse(include_str!("../../../corpus/geometry/brep-cylinder.step"));
         let mut sized = TsImportOptions::default();
-        assert_eq!(ts_import_options_for_document(doc, &mut sized, 152), TS_OK);
+        assert_eq!(ts_import_options_for_document(doc, &mut sized, 168), TS_OK);
         assert_eq!((sized.max_work, sized.max_records), (5_000_000, 100_000));
-        assert_eq!((sized.struct_size, sized.chord_m), (152, 1e-4));
+        assert_eq!((sized.struct_size, sized.chord_m), (168, 1e-4));
         assert_eq!(sized.max_session_triangles, 20_000_000);
         ts_document_release(doc);
         let big = (0..20_000)
@@ -197,13 +202,13 @@ fn c_abi_import_options_revisions_defaults_and_document_sizing() {
              FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));ENDSEC;DATA;{big}ENDSEC;END-ISO-10303-21;"
         );
         let doc = parse(&text);
-        assert_eq!(ts_import_options_for_document(doc, &mut sized, 152), TS_OK);
+        assert_eq!(ts_import_options_for_document(doc, &mut sized, 168), TS_OK);
         assert_eq!((sized.max_work, sized.max_records), (20_000 * 512, 100_000));
         // 256 triangles per entity stays below the 20M floor at 20,000 entities.
         assert_eq!(sized.max_session_decoded_entities, 1_000_000);
         ts_document_release(doc);
         assert_eq!(
-            ts_import_options_for_document(ptr::null(), &mut sized, 152),
+            ts_import_options_for_document(ptr::null(), &mut sized, 168),
             TS_INVALID_ARGUMENT
         );
         assert_eq!(
@@ -243,7 +248,7 @@ fn c_abi_solid_import_reports_curved_adaptations_units_and_cavities() {
         let (status, view, info, error) = import(doc, 1000, 0.001, 1., &o);
         assert_eq!((status, error.stage), (TS_RESOURCE_LIMIT, 1));
         assert!(view.is_none());
-        assert_eq!((info.struct_size, info.abi_version, info.kind), (104, 1, 0));
+        assert_eq!((info.struct_size, info.abi_version, info.kind), (216, 1, 0));
         o = options();
         o.max_vertices = 0;
         let (status, _, _, error) = import(doc, 1000, 0.001, 1., &o);

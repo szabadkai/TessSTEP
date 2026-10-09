@@ -112,13 +112,16 @@ in Release with `TessSTEP::TessSTEP_static` against a copy of the package withou
 shared library or its `bin` directory on PATH, and on Linux and macOS the archive must
 define exactly the exported C symbols; Debug static builds and sanitizers on static
 consumers are not run. `cargo test -p tessstep-capi --test discovery` covers the
-import-option revisions, solid import and discovery records; `--test session` covers
-revision 2 (repair, tolerance policy), surface models, import sessions and assembly
-import with the extensible options; the crate's unit test
+import-option revision rule, solid import and discovery records; `--test session`
+covers repair and the tolerance policy, surface models, import sessions, session and
+per-root failure text and assembly import with the extensible options; `--test abi`
+requires the bridge's exports, the header's declarations and the ABI record
+`abi/exports.txt` to agree and pins the frozen 1.0 set; the crate's unit test
 `default_options_are_the_rust_defaults` pins the initialized C options to the Rust
 defaults, tessellation budgets included. The installed consumers repeat these
-contracts in C and C++, including a revision-1 options record and a session that
-outlives its document.
+contracts in C and C++, including rejected draft record sizes and a session that
+outlives its document, and `check_capi.py` checks the installed libraries against the
+ABI record.
 
 ## Milestone 4 structural completion
 

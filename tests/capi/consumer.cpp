@@ -331,7 +331,7 @@ static void discovery_contract() {
     }
     auto parsed = Document::parse(read_file("cylinder.step")); assert(parsed);
     auto options = default_import_options();
-    assert(options.struct_size == TS_IMPORT_OPTIONS_SIZE_2 && options.chord_m == 1e-4);
+    assert(options.struct_size == TS_IMPORT_OPTIONS_SIZE_1 && options.chord_m == 1e-4);
     auto cylinder = parsed.value().import_solid(1000, 0.001, 1.0, &options); assert(cylinder);
     assert(cylinder.value().info.inserted_seams == 1 && cylinder.value().info.face_count == 3);
     options.flags = 32u;
@@ -350,14 +350,14 @@ static void second_pass_contract() {
     static_assert(std::is_nothrow_move_constructible_v<ImportSession>);
     static_assert(std::is_nothrow_destructible_v<ImportSession>);
     {
-        // Opt-in repair, reported in the second solid-info revision.
+        // Opt-in repair, reported in the solid info.
         auto parsed = Document::parse(read_file("duplicated.step")); assert(parsed);
         auto strict = parsed.value().import_solid(1000, 0.001, 1.0);
         assert(!strict && strict.error().import_failure.stage == ImportStage::topology);
         auto options = default_import_options();
         options.flags |= TS_IMPORT_REPAIR_SEW | TS_IMPORT_REPAIR_ORIENT;
         auto repaired = parsed.value().import_solid(1000, 0.001, 1.0, &options); assert(repaired);
-        assert(repaired.value().info.struct_size == TS_SOLID_INFO_SIZE_2);
+        assert(repaired.value().info.struct_size == TS_SOLID_INFO_SIZE_1);
         assert(repaired.value().info.merged_vertices == 1 && repaired.value().info.merged_edges == 3);
     }
     {
@@ -422,7 +422,55 @@ static void second_pass_contract() {
         assert(again.value().info().value().occurrence_count == 4);
     }
 }
+static void diagnostics_contract() {
+    {
+        // Session failures carry the importer's text in the typed error.
+        auto parsed = Document::parse(read_file("near.step")); assert(parsed);
+        auto options = default_import_options();
+        options.model_distance_m = 1e-6;
+        options.deviation_factor = 1;
+        auto session = parsed.value().import_session(&options); assert(session);
+        auto failed = session.value().import_solid(1000, 0.001, 1.0);
+        assert(!failed && failed.error().code == ErrorCode::invalid_geometry);
+        const auto& message = failed.error().message;
+        assert(message.find("3.000e-6 m") != std::string::npos && message == session.value().last_message());
+        assert(session.value().discover());
+        assert(session.value().last_message().empty());
+        ImportSession moved = std::move(session).value();
+        assert(moved.last_message().empty());
+    }
+    {
+        auto parsed = Document::parse(read_file("presentation.step")); assert(parsed);
+        auto session = parsed.value().import_session(); assert(session);
+        auto graphics = session.value().import_presentation(300, 0.001); assert(graphics);
+        assert(graphics.value().info().value().item_count == 4);
+        auto missing = session.value().import_presentation(110, 0.001);
+        assert(!missing && !missing.error().message.empty());
+    }
+    {
+        auto parsed = Document::parse(read_file("surface-open.step")); assert(parsed);
+        auto session = parsed.value().import_session(); assert(session);
+        auto model = session.value().import_surface_model(1000, 0.001, 1.0); assert(model);
+        assert(model.value().info().value().shell_count == 1);
+    }
+    {
+        // Per-root text and tolerated encodings in assemblies and discoveries.
+        auto parsed = Document::parse(read_file("inch.step")); assert(parsed);
+        auto assembly = parsed.value().import_assembly(); assert(assembly);
+        auto root = assembly.value().root_at(0).value();
+        assert(root.message.empty() && root.tolerated.omitted_conversion_dimensions == 1);
+        auto found = parsed.value().discover(); assert(found);
+        assert(found.value().root_at(0).value().tolerated.omitted_conversion_dimensions == 1);
+        parsed = Document::parse(read_file("cavity.step")); assert(parsed);
+        found = parsed.value().discover(); assert(found);
+        auto cavity = found.value().root_at(0).value();
+        assert(!cavity.units && cavity.units.error().message == "no supported representation contains the root");
+        auto imported = parsed.value().import_solid(cavity);
+        assert(!imported && imported.error().code == ErrorCode::unsupported);
+    }
+}
 int main(int argc, char** argv) {
+    diagnostics_contract();
     second_pass_contract();
     discovery_contract();
     assembly_contract();

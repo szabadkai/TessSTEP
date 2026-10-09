@@ -12,39 +12,10 @@ import tempfile
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-SYMBOLS = {
-    "ts_planar_options_init", "ts_document_tessellate_planar",
-    "ts_import_policy_init", "ts_document_tessellate_planar_with_policy",
-    "ts_faceted_options_init", "ts_document_tessellate_faceted",
-    "ts_tessellated_options_init", "ts_document_import_tessellated",
-    "ts_presentation_options_init", "ts_document_import_presentation", "ts_presentation_retain",
-    "ts_presentation_release", "ts_presentation_get_info", "ts_presentation_item_at",
-    "ts_presentation_style_at", "ts_presentation_get_view",
-    "ts_appearance_options_init", "ts_appearance_create", "ts_appearance_retain", "ts_appearance_release",
-    "ts_appearance_get_info", "ts_appearance_material_at", "ts_appearance_binding_at",
-    "ts_appearance_resolve_triangle", "ts_appearance_get_scene",
-    "ts_scene_options_init", "ts_scene_create", "ts_scene_retain", "ts_scene_release",
-    "ts_scene_get_info", "ts_scene_instance_at", "ts_scene_asset_mesh", "ts_scene_bake_instance",
-    "ts_api_version", "ts_parse_options_init", "ts_document_parse", "ts_document_retain",
-    "ts_document_release", "ts_document_get_info", "ts_document_entity_at",
-    "ts_document_record_name", "ts_document_diagnostics", "ts_diagnostics_release",
-    "ts_diagnostics_count", "ts_diagnostics_get",
-    "ts_mesh_options_init", "ts_mesh_create", "ts_mesh_retain", "ts_mesh_release", "ts_mesh_get_view",
-    "ts_document_get_schema", "ts_assembly_options_init", "ts_document_import_assembly",
-    "ts_assembly_retain", "ts_assembly_release", "ts_assembly_get_info", "ts_assembly_node_at",
-    "ts_assembly_product_at", "ts_assembly_root_at", "ts_assembly_excluded_at", "ts_assembly_unplaced_at",
-    "ts_assembly_get_style_info", "ts_assembly_get_scene", "ts_assembly_get_appearance",
-    "ts_import_options_init", "ts_import_options_for_document", "ts_document_import_solid",
-    "ts_document_discover", "ts_discovery_retain", "ts_discovery_release", "ts_discovery_get_info",
-    "ts_discovery_root_at", "ts_discovery_presentation_at", "ts_discovery_choice_at",
-    "ts_document_import_surface_model", "ts_surface_model_retain", "ts_surface_model_release",
-    "ts_surface_model_get_info", "ts_surface_model_shell_at", "ts_surface_model_shell_mesh",
-    "ts_document_import_assembly_with_options", "ts_assembly_get_adaptations",
-    "ts_import_session_create", "ts_import_session_release", "ts_import_session_discover",
-    "ts_import_session_prepare", "ts_import_session_import_solid",
-    "ts_import_session_import_tessellated", "ts_import_session_import_assembly",
-    "ts_import_session_get_statistics",
-}
+# The ABI record: every exported C symbol and the ABI 1.x version that added it.
+# Additions are deliberate edits of abi/exports.txt; ABI 1 never removes a symbol.
+SYMBOLS = {line.split()[1] for line in (ROOT / "abi/exports.txt").read_text(encoding="utf-8").splitlines()
+           if line.strip() and not line.startswith("#")}
 # Authored fixtures copied beside the standalone consumers, by consumer file name.
 FIXTURES = {
     "faceted.step": "box.step", "planar.step": "planar-box.step",
@@ -94,8 +65,8 @@ def check_symbols(library, consumer_build):
         raise RuntimeError("Runtime dependency leaks a source-tree path")
     print(dependencies, flush=True)
     if exported != SYMBOLS:
-        raise RuntimeError(f"ABI export mismatch: missing={SYMBOLS-exported}, extra={exported-SYMBOLS}")
-    print(f"ABI: exactly {len(SYMBOLS)} C symbols exported; no Rust exports", flush=True)
+        raise RuntimeError(f"ABI export mismatch with abi/exports.txt: missing={SYMBOLS-exported}, extra={exported-SYMBOLS}")
+    print(f"ABI: exactly the {len(SYMBOLS)} C symbols of abi/exports.txt exported; no Rust exports", flush=True)
 
 
 def verify_installed(package, *, sanitizers=False):
@@ -181,7 +152,7 @@ def check_static_archive(package):
              for line in output.splitlines() if line.strip() and not line.endswith(":")}
     defined = {name for name in names if re.fullmatch(r"ts_[a-z0-9_]+", name)}
     if defined != SYMBOLS:
-        raise RuntimeError(f"Static ABI mismatch: missing={SYMBOLS-defined}, extra={defined-SYMBOLS}")
+        raise RuntimeError(f"Static ABI mismatch with abi/exports.txt: missing={SYMBOLS-defined}, extra={defined-SYMBOLS}")
     print(f"Static ABI archive: exactly {len(SYMBOLS)} C symbols defined", flush=True)
 
 

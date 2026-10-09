@@ -7,11 +7,11 @@ ABI 1 physical-document operations, a C++17 wrapper and a shared CMake package.
 Owned triangle-mesh import/read-only views, explicit assembly asset scenes and appearance layers are also implemented, as are
 existing-tessellation and presentation-graphics import from STEP documents (Milestone 20),
 schema selection, assembly import and imported appearance (Milestone 21), and
-extensible import options, root and unit discovery, representation selection,
-single-root curved solid import and a static library target (Milestone 22.10, first
-pass), and the tolerance policy, opt-in repair, surface models, import sessions and
-assembly import with the extensible options (second pass). General schema decoding is
-not exposed.
+extensible import options with the tolerance policy and opt-in repair, root and unit
+discovery, representation selection, single-root curved solid and surface-model
+import, import sessions, failure text and a static library target (Milestone 22.10).
+The export set of ABI 1.0 is frozen at 95 functions ([ABI 1 freeze](#abi-1-freeze)).
+General schema decoding is not exposed.
 The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
 The planar profile's conformance policy is a separate 16-byte `ts_import_policy`
 record with a flags word (`TS_IMPORT_STRICT`), passed to
@@ -80,14 +80,16 @@ report requires `ts_diagnostics_release`. C++ wraps both paths in RAII, includin
 when C++ string/vector allocation throws. C++ document copies are disabled; moves
 and destructors are nonthrowing. Queries on moved-from documents return a typed
 invalid-argument result. Diagnostics and names returned by C++ are owned copies.
-There are no callbacks, global last-error slots or file access. Mesh operations below
-are independent of physical document parsing.
+There are no callbacks, global or per-thread last-error slots or file access: failure
+text is state of an explicit handle ([diagnostic text](#diagnostic-text)). Mesh
+operations below are independent of physical document parsing.
 
 ABI 1 freezes the header's fixed-width status values and record layouts. Options
 must have the exact size and ABI version initialized by the library; zero budgets
 mean zero. Future incompatible records receive new names, never appended fields.
-The two extensible records of Milestone 22 (`ts_import_options`, `ts_solid_info`)
-are the only exception: they grow by published revisions (see below).
+The three extensible records of Milestone 22 (`ts_import_options`, `ts_solid_info`,
+`ts_surface_model_info`) are the only exception: they may grow by published revisions
+in ABI 1.x (see below).
 NULL, empty input, failure outputs, borrowed-text lifetimes and concurrent reads are
 specified in the header. C opaque handles never expose Rust storage layouts.
 Unwinding panics become internal failures; an unexpected panic payload is deliberately
@@ -385,35 +387,58 @@ product, 56-byte root, 48-byte exclusion and 96-byte style info records on suppo
 64-bit targets. Existing ABI-1 records, symbols and statuses keep their contract.
 Curved B-rep import of a single root remained Rust-only until Milestone 22.10.
 
-## Import options, discovery and solid import (Milestone 22.10, first pass)
+## Import options, discovery and solid import (Milestone 22.10)
 
 **Extensible import options.** `ts_import_options` carries what the whole import path
-shares: `flags` (`TS_IMPORT_STRICT`; other bits and a nonzero `reserved` are rejected),
-the profile decoding, adapter and discovery budgets `max_work` / `max_records`, the
-B-rep model tolerance (`model_distance_m`, `model_angle_rad`), the tessellation
-tolerance (`chord_m`, `normal_angle_rad`), the budgets a solid's faces share
-(`max_tessellation_work`, `max_evaluations`) and the mesh output limits
-(`max_vertices`, `max_triangles`). Per-face polygon, trimming and sampling budgets keep
-the library defaults, capped by the tessellation fields, so lowering any field binds
-and zero means zero. `ts_import_options_init(&options, sizeof options)` writes the
-defaults (those of the Rust `ImportOptions`, the assembly import's tolerance and
-1e-7 m minimum model tolerance, and `TessellationOptions`; listed in the header);
-`ts_import_options_for_document` also sizes `max_work` (512 units per entity) and
-`max_records` (one per entity) as `ImportOptions::for_document` does, so C callers no
-longer apply that rule themselves. Every entry point validates every field.
+shares:
 
-Unlike every earlier record, this one grows. `struct_size` names the revision a
-caller was compiled with (its `sizeof`); revision 1 is 96 bytes
-(`TS_IMPORT_OPTIONS_SIZE_1`), and a later revision only appends fields. The library
-accepts each published revision size, reads exactly that many bytes and gives the
-fields of later revisions their defaults, so a consumer built against this header
-keeps working when fields are added. The initializer takes the size instead of
-assuming the library's, so it never writes past an older caller's record; any other
-size returns `TS_INVALID_ARGUMENT` and writes nothing. A newer consumer on an older
-library is rejected the same way, never silently ignored. `ts_solid_info` follows the
-same rule for output: the caller sets `struct_size` (revision 1 is 104 bytes,
-`TS_SOLID_INFO_SIZE_1`) and the library writes only that revision. Both records gained
-a revision 2 in the second pass (below).
+- `flags`: `TS_IMPORT_STRICT`, the opt-in repairs `TS_IMPORT_REPAIR_SEW` (merge
+  coincident boundary vertices and free edges) and `TS_IMPORT_REPAIR_ORIENT` (flip
+  faces into a consistent orientation, reverse loops that run against their surface,
+  reverse inside-out closed shells), and `TS_DISCOVER_SURFACE_MODELS`. Other bits and
+  a nonzero `reserved` are rejected; only this record accepts the last three bits.
+- the profile decoding, adapter and discovery budgets `max_work` / `max_records`;
+- the B-rep model tolerance (`model_distance_m`, `model_angle_rad`) and the
+  tessellation tolerance (`chord_m`, `normal_angle_rad`);
+- the budgets a solid's faces share (`max_tessellation_work`, `max_evaluations`) and
+  the mesh limits (`max_vertices`, `max_triangles`, also used for presentation
+  graphics). Per-face polygon, trimming and sampling budgets keep the library
+  defaults, capped by these fields, so lowering any field binds and zero means zero;
+- `sewing_factor` (sewing tolerance as a multiple of the model distance, default 10)
+  and `deviation_factor` (the 22.3 tolerance policy, default 16, at least 1: an edge
+  farther than the model distance from its face surface, or a vertex from its edge
+  curve, is accepted and counted up to that multiple and rejected beyond it with
+  `TS_INVALID_GEOMETRY` at the geometry stage; `TS_IMPORT_STRICT` forces 1,
+  [curved import](CURVED_IMPORT.md#tolerance-policy));
+- `max_assembly_instances` / `max_assembly_depth` (product-structure expansion),
+  the session budgets `max_session_decoded_entities`, `max_session_adapted_entities`
+  and `max_session_triangles`, and the presentation limits `max_polyline_points` /
+  `max_presentation_depth` of session presentation import.
+
+`ts_import_options_init(&options, sizeof options)` writes the Rust defaults
+(`ImportOptions`, `TessellationOptions`, the assembly tolerance and 1e-7 m minimum
+model tolerance, `SessionBudgets`, `PresentationLimits`; the values are in the
+header), and `ts_import_options_for_document` also sizes `max_work` (512 units per
+entity), `max_records` (one per entity) and the session budgets as the Rust
+`for_document` rules do. The unit test `default_options_are_the_rust_defaults` keeps
+the initialized record equal to the Rust defaults, tessellation budgets included.
+Every entry point validates every field.
+
+**Extensible records.** `ts_import_options` (168 bytes), `ts_solid_info` (216 bytes)
+and `ts_surface_model_info` (136 bytes) are the only records that may grow.
+`struct_size` names the revision a caller was compiled with (its `sizeof`). ABI 1.0
+publishes revision 1 of each (`TS_IMPORT_OPTIONS_SIZE_1`, `TS_SOLID_INFO_SIZE_1`,
+`TS_SURFACE_MODEL_INFO_SIZE_1`); a 1.x release may publish later revisions that only
+append fields. The library accepts each published size and reads or writes exactly
+that many bytes: an input's later fields take their defaults, an output's are not
+written, so a consumer built against an older header keeps working. Initializers take
+the size rather than assume the library's, so they never write past an older
+caller's record. Any other size returns `TS_INVALID_ARGUMENT` and writes nothing; a
+newer consumer on an older library is rejected the same way, never silently ignored.
+Outputs (`ts_solid_info`, `ts_surface_model_info`) follow the same rule: the caller
+sets `struct_size` and the library writes only that revision. No release ever shipped
+the draft sizes of the development passes (96 and 152 bytes for the options, 104 for
+the solid info); they are not revisions and are rejected.
 
 **Single-root solid import.** `ts_document_import_solid` / C++
 `Document::import_solid` imports a selected `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`
@@ -422,39 +447,53 @@ through `tessstep_import::import_brep_solid` (the curved profile of
 chosen from the root's physical record, and tessellates it to an owned `ts_mesh` whose
 `face_ids` are the STEP face IDs. Units stay explicit arguments: `metres_per_unit` and
 `radians_per_unit` (cone semi-angles and supplied pcurve parameters), both finite and
-positive; tolerances come from the options. The optional `ts_solid_info` reports the
-root's kind, face and shell counts (outer shell plus cavities) and the eight
-representation adaptations of `Adaptations` (inferred outer bounds, inserted seams,
-split edges, re-charted spheres, collapsed edges and faces, supplied and rejected
-pcurves); none changes geometry. Output clearing, ownership, status mapping and the
-located `ts_import_error` follow `ts_document_import_tessellated`. C++ `SolidImport`
-holds the `Mesh` and the info; an overload takes a `DiscoveredRoot` and uses its
-discovered units, or returns the typed reason they are missing.
+positive; tolerances, strictness, repair and the deviation policy come from the
+options. The optional `ts_solid_info` reports the root's kind, face and shell counts
+(outer shell plus cavities), the representation adaptations of `Adaptations`
+(inferred outer bounds, inserted seams, split edges, re-charted spheres, collapsed
+edges and faces, supplied and rejected pcurves, edges off their surfaces, vertices
+off their curves, uncollapsed B-spline sides), the largest accepted deviation and the
+working tolerance every later stage used (`ImportedSolid::largest_deviation`,
+`brep().model_tolerance()`), and the `RepairReport` (merged vertices and edges and
+their largest distance, disconnected shells, flipped faces, reversed loops,
+reoriented and undecided shells, sewing tolerance). None moves a coordinate. Output
+clearing, ownership, status mapping and the located `ts_import_error` follow
+`ts_document_import_tessellated`. C++ `SolidImport` holds the `Mesh` and the info; an
+overload takes a `DiscoveredRoot` and uses its discovered units, or returns the typed
+reason they are missing.
 
 **Discovery and representation selection.** `ts_document_discover` / C++
 `Document::discover` runs `discover_solids`, `discover_tessellations`,
 `select_representations` with the given preference (`TS_PREFER_EXACT` or
-`TS_PREFER_TESSELLATED`) and `discover_presentations`, each pass with its own
+`TS_PREFER_TESSELLATED`), `discover_presentations` and, with
+`TS_DISCOVER_SURFACE_MODELS`, `discover_surface_models`, each pass with its own
 `max_work`, and transfers one retained, read-only `ts_discovery` acquisition,
 independent of the document:
 
-- `ts_discovery_get_info` counts shape roots (solids first, then tessellations),
-  solids, tessellations, annotation occurrences and choices, and repeats the preference.
+- `ts_discovery_get_info` counts shape roots (solids, then tessellations, then any
+  surface models), solids, tessellations, annotation occurrences and choices, and
+  repeats the preference.
 - `ts_discovery_root_at` returns a root's ID, `TS_ROOT_*` kind, tessellation link, its
   containing representations as a zero-copy array borrowed from the discovery, and
   either its `ts_context_units` (context ID, metres and radians per unit, optional
   length uncertainty in metres) with `TS_OK`, or the per-root unit failure status
   with a located `ts_import_error`; units are never defaulted.
+  `ts_discovery_root_report_at` adds the encodings tolerated in the root's context
+  units and the text of a unit failure ([diagnostic text](#diagnostic-text)).
 - `ts_discovery_presentation_at` returns an annotation occurrence with its containing
   callouts and annotation planes and representations (zero-copy) and units or error.
 - `ts_discovery_choice_at` returns one shape's selected shape-root index, its
   alternative indices (zero-copy) and the pairing (`TS_PAIRING_NONE`, `_LINK`,
   `_RELATIONSHIP`); an alternative is meant for a failed selection.
 
-Arrays are NULL exactly when their count is zero and stay valid until the last
-release of the discovery; concurrent immutable queries are allowed. C++ `Discovery` is
-move-only RAII and returns owned copies (`DiscoveredRoot`, `DiscoveredPresentation`,
-`RepresentationChoice`), with each root's units as a typed `Result<ContextUnits>`.
+Surface-model roots (`TS_ROOT_SHELL_BASED_SURFACE_MODEL`) follow every solid and
+tessellation and take no part in selection, so solid and tessellation indices, counts
+and choices do not depend on the flag; their count is `root_count - solid_count -
+tessellation_count`. Arrays are NULL exactly when their count is zero and stay valid
+until the last release of the discovery; concurrent immutable queries are allowed.
+C++ `Discovery` is move-only RAII and returns owned copies (`DiscoveredRoot`,
+`DiscoveredPresentation`, `RepresentationChoice`), with each root's units as a typed
+`Result<ContextUnits>` whose error carries the unit failure's text in `message`.
 
 ```cpp
 auto parsed = tessstep::Document::parse(bytes);
@@ -502,65 +541,20 @@ statically in Release, against a copy of the package without the shared library,
 on Linux and macOS checks that the archive defines exactly the ABI's C symbols.
 Debug static consumers and sanitizers on static consumers are not tested.
 
-Ten new functions bring the library to 74 C exports. New layouts on supported 64-bit
-targets: 96-byte import options and 104-byte solid info (revision 1, extensible),
-48-byte discovery info, 40-byte context units, 112-byte discovered root, 120-byte
-discovered presentation and 32-byte choice (frozen). Existing ABI-1 records, symbols
-and statuses keep their contract.
+## Surface models, sessions, assembly options and failure text (Milestone 22.10)
 
-## Repair, tolerance policy, surface models and sessions (Milestone 22.10, second pass)
-
-**Revision 2 of the import options** (152 bytes, `TS_IMPORT_OPTIONS_SIZE_2`) appends
-the fields of the Rust items that landed after the first pass; revision-1 callers
-(96 bytes) are read and written as before, with defaults for the rest:
-
-- **Opt-in repair (22.5).** `flags` bits `TS_IMPORT_REPAIR_SEW` (merge coincident
-  boundary vertices and free edges within `sewing_factor` times the model distance,
-  default 10) and `TS_IMPORT_REPAIR_ORIENT` (flip faces into a consistent orientation,
-  reverse loops that run against their surface, reverse inside-out closed shells) map
-  to `RepairOptions`. Both are off by default, so topology defects are still rejected;
-  strict and repair combine. Only `ts_import_options` accepts these bits.
-- **Tolerance policy (22.3).** `deviation_factor` (default 16, finite and at least 1)
-  is `ImportOptions::deviation_factor`: an edge farther than the model distance from
-  its face surface, or a vertex from its edge curve, is accepted and counted up to that
-  multiple and rejected beyond it with `TS_INVALID_GEOMETRY` at the geometry stage;
-  `TS_IMPORT_STRICT` forces 1, as in Rust ([curved import](CURVED_IMPORT.md#tolerance-policy)).
-- **Assembly expansion and session budgets.** `max_instances` and `max_depth` bound the
-  product-structure expansion of the assembly import below; `max_session_decoded_entities`,
-  `max_session_adapted_entities` and `max_session_triangles` are a session's
-  `SessionBudgets`. `ts_import_options_init` writes the Rust defaults;
-  `ts_import_options_for_document` also sizes the session budgets as
-  `SessionBudgets::for_document` does.
-
-The initialized record maps to exactly the Rust defaults, including every
-tessellation budget after Milestone 22.2 (`default_options_are_the_rust_defaults`).
-
-**Revision 2 of the solid info** (216 bytes, `TS_SOLID_INFO_SIZE_2`) appends the
-tolerance-policy counters (`off_surface_edges`, `off_curve_vertices`,
-`uncollapsed_sides`), the largest accepted deviation and the working tolerance every
-later stage used (`ImportedSolid::largest_deviation`, `brep().model_tolerance()`), and
-the `RepairReport` (merged vertices and edges and their largest distance, disconnected
-shells, flipped faces, reversed loops, reoriented and undecided shells, sewing
-tolerance). A revision-1 info record receives revision 1 only.
-
-**Surface models (22.6).** `TS_DISCOVER_SURFACE_MODELS` makes discovery report every
-`SHELL_BASED_SURFACE_MODEL` with its units, as roots of the new kind
-`TS_ROOT_SHELL_BASED_SURFACE_MODEL` after every solid and tessellation. Without the flag
-results are unchanged; with it, solid and tessellation indices, counts and choices are
-unchanged too, and surface models (count `root_count - solid_count -
-tessellation_count`) take no part in selection. `ts_document_import_surface_model` /
-C++ `Document::import_surface_model` imports one with the units, tolerances, strictness
-and deviation policy of solid import, meshes every shell, and transfers a retained,
-read-only `ts_surface_model`: `ts_surface_model_get_info` fills the extensible
-`ts_surface_model_info` (136-byte revision 1: shell, closed-shell, face and boundary-edge
+**Surface models (22.6).** `ts_document_import_surface_model` / C++
+`Document::import_surface_model` imports a `SHELL_BASED_SURFACE_MODEL` with the units,
+tolerances, strictness and deviation policy of solid import, meshes every shell, and
+transfers a retained, read-only `ts_surface_model`: `ts_surface_model_get_info` fills
+the extensible `ts_surface_model_info` (shell, closed-shell, face and boundary-edge
 counts and the eleven adaptation counters), `ts_surface_model_shell_at` returns each
 shell's entity, declared closure, zero-copy face IDs, open boundary edges and working
 tolerance, and `ts_surface_model_shell_mesh` an independent mesh acquisition. Shells
 are meshes, never solids: closed shells are watertight, open shells keep their
-boundary, and no volume or orientation is checked. Repair flags are validated and not
-applied: the Rust profile documents that surface models are never sewn, while its
-importer would sew if `repair.sew` were passed, so the bridge clears the repair
-options for this call.
+boundary, and no volume or orientation is checked. Surface models are never repaired:
+the repair flags are validated with the record and not applied, as the Rust importer
+ignores `ImportOptions::repair` for them.
 
 **Import sessions (22.8).** `ImportSession<'a>` borrows its document and is `Send` but
 not `Sync`. `ts_import_session_create` therefore returns a uniquely owned handle that
@@ -569,24 +563,58 @@ behind a mutex, created with the options' import settings and session budgets; t
 `'static` borrow it needs is private to the handle, which drops the session before the
 document. Calls on one handle are serialized, so concurrent calls are safe but not
 parallel; a contained panic poisons the handle, and every later call except release
-returns `TS_INTERNAL_ERROR`. `ts_import_session_discover` (cached passes, plus
-surface models when flagged), `ts_import_session_prepare` (groups the given roots by
-the profile their import uses and decodes each group together),
-`ts_import_session_import_solid`, `ts_import_session_import_tessellated` (mesh limits
-from `max_vertices` / `max_triangles`), `ts_import_session_import_assembly` and
-`ts_import_session_get_statistics` (the Rust `SessionStatistics`) return only owned,
-independent results; no Rust session, decode or borrowed record crosses the boundary.
-C++ `ImportSession` (from `Document::import_session`) is move-only RAII over it.
+returns `TS_INTERNAL_ERROR`. The session covers every session-capable import:
+`ts_import_session_discover` (cached passes, plus surface models when flagged),
+`ts_import_session_prepare` (groups the given roots by the profile their import uses
+and decodes each group together), `ts_import_session_import_solid`,
+`ts_import_session_import_tessellated` (mesh limits from `max_vertices` /
+`max_triangles`), `ts_import_session_import_presentation` (with `max_polyline_points`
+and `max_presentation_depth`) and `ts_import_session_import_assembly`.
+`ts_import_session_import_surface_model` runs the free import on the session's document
+and options for a uniform API and its failure text; the Rust session has no surface
+models, so it shares no decode and is not counted in the session budgets.
+`ts_import_session_get_statistics` returns the Rust `SessionStatistics`. Results are
+owned and independent; no Rust session, decode or borrowed record crosses the
+boundary. C++ `ImportSession` (from `Document::import_session`) is move-only RAII over
+it.
 
 **Assembly import with the extensible options.**
 `ts_document_import_assembly_with_options` / C++ `Document::import_assembly(Preference,
 const ImportOptions*)` runs the assembly import through a one-shot session with
 explicit session budgets, strictness, repair and the deviation policy for every root,
 the record's tolerances (`model_distance_m` is the floor under each root's context
-uncertainty) and budgets, and the representation preference.
+uncertainty), budgets and expansion limits, and the representation preference.
 `ts_assembly_get_adaptations` (any assembly, also from the frozen-options entry point)
 reports the 22.7 mapped-item placements and the tolerated exporter encodings of the
-product closure.
+product closure; `ts_assembly_root_report_at` adds each root's tolerated context
+encodings and failure text.
+
+### Diagnostic text
+
+The Rust importers word every failure: the budget and its configured value (22.1,
+22.2), a measured distance and its bound (22.3), the entity outside a profile, a unit
+problem. `ts_import_error` locates a failure (stage, entity, byte offsets) but is a
+frozen 32-byte record without text. The contract has no global error state ("No
+callbacks, global error state" in the header), so the suggested per-thread "last
+import diagnostic" was not added: hidden thread-local state would break that promise,
+tie results to the calling thread, and race for callers that hand work between
+threads. Text is instead state of an explicit handle, with the handle's lifetime:
+
+- **Sessions.** `ts_import_session_last_message` copies the failure text of the
+  session's most recent discover, prepare or import call into a caller buffer (UTF-8,
+  NUL-terminated, truncated to the capacity) and reports the full length; it is empty
+  after a success or an argument error. Calls are serialized per session, so "most
+  recent" is well defined. C++ `ImportSession` fills `Error::message` on every failed
+  call and exposes `last_message()`.
+- **Per-root reports.** `ts_assembly_root_report_at` and `ts_discovery_root_report_at`
+  return a `ts_root_report`: the encodings tolerated in the root's context units and
+  the root's failure text (import failure in an assembly, unit failure in a
+  discovery), borrowed from the handle. C++ `AssemblyRoot` and `DiscoveredRoot` carry
+  `tolerated`, and their failures carry the text (`AssemblyRoot::message`, the units'
+  `Error::message`).
+
+Document-level calls keep no text. A caller that needs it imports through a session,
+which gives the same result as the document-level call with the same options.
 
 ```cpp
 auto parsed = tessstep::Document::parse(bytes);
@@ -600,42 +628,72 @@ if (!found) return 1;
 for (size_t i = 0; i < found.value().info().value().root_count; ++i) {
     auto root = found.value().root_at(i).value();
     if (root.kind == tessstep::RootKind::shell_based_surface_model) {
-        auto model = parsed.value().import_surface_model(root, &options); // shells
+        auto model = session.value().import_surface_model(root.root_id,
+            root.units.value().metres_per_unit, root.units.value().radians_per_unit);
     } else if (root.kind == tessstep::RootKind::manifold_solid_brep) {
-        auto solid = session.value().import_solid(root); // info.merged_edges etc.
+        auto solid = session.value().import_solid(root);
+        if (!solid) { /* solid.error().message: for example the budget and its value */ }
     }
 }
 ```
 
-Sixteen new functions bring the library to 90 C exports. New layouts on supported
-64-bit targets: revision 2 of the options (152 bytes) and solid info (216 bytes),
-136-byte surface-model info revision 1 (extensible), and the frozen 48-byte surface
-shell, 40-byte tolerated encodings, 48-byte assembly adaptations and 72-byte session
-statistics. Existing records, revisions, symbols and statuses keep their contract.
+Milestone 22.10 adds 31 functions to the 64 of Milestone 21, for 95 C exports, and
+these layouts on supported 64-bit targets: the extensible 168-byte import options,
+216-byte solid info and 136-byte surface-model info (revision 1 each), and the fixed
+48-byte discovery info, 40-byte context units, 112-byte discovered root, 120-byte
+discovered presentation, 32-byte choice, 48-byte surface shell, 40-byte tolerated
+encodings, 48-byte assembly adaptations, 56-byte root report and 72-byte session
+statistics.
 
-## Remaining for the ABI freeze
+## ABI 1 freeze
 
-Every Milestone 22 Rust item now has a C/C++ surface. The export set is still not
-frozen; before the freeze:
+The ABI 1.0 export set was frozen on 2026-10-10. The record is
+[abi/exports.txt](../abi/exports.txt): every exported C function, each with the ABI
+version that added it (all 95 are `1.0`). Three checks hold it:
 
-- **Presentation import through a session.** `ImportSession::import_presentation`
-  exists in Rust; C imports annotation graphics with `ts_document_import_presentation`
-  only. A session entry point would need presentation limits beside `ts_import_options`.
-- **Per-root tolerated encodings.** `ContextUnits::tolerated` and `RootImport::tolerated`
-  (22.7) stay Rust-only: `ts_context_units` and `ts_assembly_root` are frozen records
-  without room. A per-root query (or a discovery record revision) would expose them.
-- **Error messages.** `ts_import_error` locates a failure (stage, entity, offsets) but
-  carries no text, so C cannot see the budget a `TS_RESOURCE_LIMIT` names (22.1, 22.2)
-  or the distance a deviation rejection reports (22.3).
+- `cargo test -p tessstep-capi --test abi` requires the bridge's `#[unsafe(no_mangle)]`
+  functions, the declarations in `tessstep.h` and the record to agree exactly, and
+  pins the size and an FNV-1a digest of the `1.0` entries, so changing the 1.0 set
+  needs a deliberate edit of both the record and the test;
+- `scripts/check_capi.py` (and release packaging) requires the installed shared
+  library to export exactly the recorded symbols and nothing else, and the static
+  archive to define exactly those `ts_` symbols;
+- the installed C consumer asserts the record layouts with `_Static_assert`, and the
+  Rust contract tests assert them with `size_of` / `offset_of`.
+
+Policy within ABI 1:
+
+- **Frozen:** every recorded symbol and its signature and contract; every record
+  layout and published revision size; the status, stage, kind, flag, pairing,
+  preference, protocol and style values; the extensible-record rule; the shared and
+  static CMake targets and their package layout.
+- **1.x may only add:** new functions (appended to the record with their version),
+  new records, new flag bits in flags words that reject unknown bits, new revisions
+  of the three extensible records that only append fields, and new status, kind or
+  stage values that only new functions or new opt-in flags produce, so an ABI 1.0
+  caller never receives one unasked (as `TS_ROOT_SHELL_BASED_SURFACE_MODEL` appears
+  only with `TS_DISCOVER_SURFACE_MODELS`).
+- **Anything else needs ABI 2:** removing or renaming a symbol, changing a signature,
+  a record layout or a published revision, changing the meaning of a status, value
+  or default in a way an ABI 1 consumer can observe, or growing a fixed record.
+
+The C++ wrapper is header-only over the frozen C ABI; its source compatibility follows
+the same policy (members and overloads may be added).
+
+## Post-1.0
+
+Left for after the freeze, each additive under the policy above:
+
+- **Document-level failure text.** Only sessions and per-root reports carry text; a
+  document-level call reports the located `ts_import_error` only.
+- **Annotation units text.** `ts_discovered_presentation` unit failures carry a located
+  error but no text (only shape roots have `ts_discovery_root_report_at`).
 - **Surface models in sessions and assemblies.** The Rust session and assembly import
-  do not handle surface models, so neither does C.
-- **Revisions before the freeze.** No release has shipped revision 1 of the extensible
-  records; the freeze may keep the revisions as they are or fold them into one
-  revision per record (a decision for the release, not an implementation gap).
-
-The freeze then covers the final export set (checked by `scripts/check_capi.py`), every
-published record layout and revision size, the status, stage, kind, flag and pairing
-values, the extensible-record rule above, and the shared and static CMake targets.
+  do not handle surface models; the C session imports them without sharing.
+- **Assembly and scene limits.** The frozen `ts_assembly_options` copies its instance
+  and depth budgets into the scene limits; the extensible entry point keeps the Rust
+  scene limits. Neither exposes the scene limits themselves.
+- **Debug static consumers.** The static target is tested in Release only.
 
 ## Errors and panic containment
 
@@ -690,7 +748,8 @@ Exercise relocation and `find_package` through `TessSTEP::TessSTEP` on all suppo
 platforms, with sanitizer and ABI/layout checks where applicable.
 
 The document, mesh, scene, appearance, solid-import, tessellation, presentation,
-assembly, import-option and discovery subsets are exercised by `cargo test -p tessstep-capi` and
+assembly, import-option, discovery, surface-model, session and diagnostic-text subsets,
+and the export record ([ABI 1 freeze](#abi-1-freeze)), are exercised by `cargo test -p tessstep-capi` and
 `python3 scripts/check_capi.py`. The latter installs and relocates the package,
 compiles/runs independent C11 and C++17 consumers in Debug/Release (plus a C-only
 CMake project, and a Release build linked with `TessSTEP::TessSTEP_static`) with Rust tool

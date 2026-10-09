@@ -15,7 +15,7 @@ Callers pass the root, a length unit, a plane-angle unit and a model tolerance
 explicitly; [`discover_solids`](#root-and-unit-discovery) reads them from the file.
 C and C++ expose single-root import as `ts_document_import_solid` /
 `Document::import_solid` and discovery as `ts_document_discover` /
-`Document::discover` ([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210-first-pass)).
+`Document::discover` ([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210)).
 
 ## Supported input
 
@@ -263,9 +263,9 @@ the angle, which a chord close to the deviation may not allow.
 
 Options (Rust `ImportOptions`, used only by `import_brep_solid` and the curved roots
 of `import_assembly`; the planar and faceted profiles ignore them). In C and C++ they
-are `ts_import_options.deviation_factor` (revision 2) and `TS_IMPORT_STRICT`, and the
-counters, largest deviation and working tolerance are revision 2 of `ts_solid_info`
-([C API](C_API.md#repair-tolerance-policy-surface-models-and-sessions-milestone-2210-second-pass));
+are `ts_import_options.deviation_factor` and `TS_IMPORT_STRICT`, and the counters,
+largest deviation and working tolerance are fields of `ts_solid_info`
+([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210));
 the frozen-options C assembly import uses the default factor and `TS_IMPORT_STRICT`:
 
 | Field | Type | Meaning |

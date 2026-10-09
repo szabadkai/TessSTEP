@@ -34,7 +34,7 @@ claimed; successful parsing does not establish schema or CAD validity.
 | Curved STEP import | Elementary, B-spline and swept B-rep solids with cavities, poles, verified supplied or computed pcurves, inferred outer bounds and inserted seams; shell-based surface models as open or closed shell meshes, never solids; root and context-unit discovery | No healing beyond opt-in sewing and orientation repair; rare geometry is a named rejection ([CURVED_IMPORT.md](docs/CURVED_IMPORT.md)) |
 | Existing STEP tessellations | Tessellated solids, shells and triangulated surface sets imported as owned meshes without retessellation; tessellated annotations as placed polylines, points and fills; root discovery and B-rep/tessellation representation selection | Triangulated faces, strips, fans, edges and connecting edges; coordinate-index identity; annotation graphics are not meshes and styles are not interpreted |
 | Mesh scenes and appearance | Shared assets, nested affine instances, explicit baking, linear RGBA palettes, inherited style overrides, and STEP surface colours and transparency on solids and faces | No curve, point or occurrence-specific STEP styles, world-space tolerance guarantee, textures, or rendering |
-| C and C++ | Document inspection, schema selection, root and unit discovery with representation selection, single-root planar, faceted and curved solid import with the tolerance policy and opt-in repair, surface models as shell meshes, import sessions, existing-tessellation and annotation import, assembly import with imported colours, extensible import options, triangle-buffer import, retained mesh and annotation views, scenes, and appearance | Shared and static ABI 1 library and C++17 RAII; general schema decoding remains a Rust API; the export set is not yet frozen ([C_API.md](docs/C_API.md)) |
+| C and C++ | Document inspection, schema selection, root and unit discovery with representation selection, single-root planar, faceted and curved solid import with the tolerance policy and opt-in repair, surface models as shell meshes, import sessions with failure text, existing-tessellation and annotation import, assembly import with imported colours and per-root reports, extensible import options, triangle-buffer import, retained mesh and annotation views, scenes, and appearance | Shared and static ABI 1 library and C++17 RAII; the ABI 1.0 export set (95 functions) is frozen in [abi/exports.txt](abi/exports.txt); general schema decoding remains a Rust API ([C_API.md](docs/C_API.md)) |
 
 The [STEP import guide](docs/STEP_IMPORT.md) documents the first end-to-end slice;
 [existing tessellations](docs/EXISTING_TESSELLATIONS.md) documents direct mesh and annotation import.
@@ -165,8 +165,11 @@ context units, then `ts_document_import_solid` / `Document::import_solid` with t
 root and units (or `ts_document_tessellate_faceted` for the faceted profile alone).
 `ts_import_options` adds strictness, budgets, the deviation policy and opt-in sewing
 and orientation repair; `ts_import_session` / `ImportSession` shares discovery and
-decoding across many imports from one document, and
-`ts_document_import_surface_model` imports surface models as shell meshes.
+decoding across many imports from one document and keeps the text of its last failure
+(the budget and its value, a measured deviation), and
+`ts_document_import_surface_model` imports surface models as shell meshes. The ABI 1.0
+export set is frozen in [abi/exports.txt](abi/exports.txt); 1.x releases may only add
+to it.
 The result owns its mesh independently of the source document. General schema
 decoding and product adaptation are not exposed through the native interfaces.
 `TessSTEP::TessSTEP` links the shared library and `TessSTEP::TessSTEP_static` the

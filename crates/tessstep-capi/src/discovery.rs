@@ -3,7 +3,9 @@ use crate::{
     TS_INVALID_ARGUMENT, TS_NOT_FOUND, TS_OK, TS_ROOT_BREP_WITH_VOIDS, TS_ROOT_FACETED_BREP,
     TS_ROOT_MANIFOLD_SOLID_BREP, TS_ROOT_SHELL_BASED_SURFACE_MODEL, TS_ROOT_TESSELLATED_SHELL,
     TS_ROOT_TESSELLATED_SOLID, TS_ROOT_TESSELLATED_SURFACE_SET, TsDocument, TsImportError,
-    TsImportOptions, boundary, clear,
+    TsImportOptions, TsRootReport, TsToleratedEncodings,
+    assembly::encodings,
+    boundary, clear,
     import::{error_record, report},
     initialize,
     options::{Options, read_options},
@@ -126,6 +128,9 @@ struct Units {
     status: u32,
     units: TsContextUnits,
     error: TsImportError,
+    /// The context's tolerated encodings, or the unit failure's text.
+    tolerated: TsToleratedEncodings,
+    message: String,
 }
 impl Units {
     fn new(
@@ -144,6 +149,8 @@ impl Units {
                     reserved: 0,
                 },
                 error: TsImportError::default(),
+                tolerated: encodings(u.tolerated),
+                message: String::new(),
             },
             Err(e) => {
                 let (status, error) = error_record(document, e);
@@ -151,6 +158,8 @@ impl Units {
                     status,
                     units: TsContextUnits::default(),
                     error,
+                    tolerated: TsToleratedEncodings::default(),
+                    message: e.message.clone(),
                 }
             }
         }
@@ -538,6 +547,24 @@ pub unsafe extern "C" fn ts_discovery_choice_at(
                 alternatives: array(&c.alternatives),
                 alternative_count: c.alternatives.len(),
             })
+        })
+    })
+}
+/// # Safety
+/// Follow tessstep.h live handle and disjoint writable output contracts; the
+/// message is borrowed from the discovery.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_discovery_root_report_at(
+    discovery: *const TsDiscovery,
+    index: usize,
+    out: *mut TsRootReport,
+) -> u32 {
+    boundary(|| unsafe {
+        // SAFETY: forwarded caller contract; the view borrows the live discovery.
+        query(discovery, out, |d| {
+            d.roots
+                .get(index)
+                .map(|r| TsRootReport::new(r.units.tolerated, &r.units.message))
         })
     })
 }

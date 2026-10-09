@@ -164,7 +164,7 @@ one per entity, with the default floors and the topology ceiling of one million
 records unchanged. The returned values are explicit and are what the corpus runner
 uses. In C, `ts_import_options_for_document` applies it to the extensible
 `ts_import_options` of discovery and `ts_document_import_solid`
-([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210-first-pass));
+([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210));
 for the per-profile records callers apply it from `ts_document_info.entity_count`.
 `ts_parse_options_init` and the per-profile initializers are unchanged. Every
 budget failure is a `ResourceLimit` whose message names the budget and its configured
@@ -238,7 +238,7 @@ session type crosses the C ABI: a C or C++ binding creates a session inside one 
 or keeps it in a handle that also retains its document, and returns only owned
 results. `ts_import_session` (C) and `ImportSession` (C++) are such a handle, with
 calls serialized by a mutex
-([C API](C_API.md#repair-tolerance-policy-surface-models-and-sessions-milestone-2210-second-pass)).
+([C API](C_API.md#surface-models-sessions-assembly-options-and-failure-text-milestone-2210)).
 
 ## Evidence and limits
 

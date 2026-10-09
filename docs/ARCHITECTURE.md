@@ -614,13 +614,19 @@ borrowed by callers, and shared decodes are released when their last root is imp
 The session is `Send` and not `Sync`; borrowed decoded records never leave it, and every
 import result is owned. Session budgets bound cumulative decoded and adapted records and
 triangles; each is a named `ResourceLimit`, separate from the unchanged per-root budgets.
-No session type is part of the C ABI.
+No Rust session type is part of the C ABI (the C handle below wraps one privately).
 
-The second pass (2026-10-09) adds two modules, `surface` and `session`, and grows the
-extensible records by one revision each; the importer API is unchanged. The import
+The second pass (2026-10-09) adds two modules, `surface` and `session`, and extends the
+extensible records (folded into one published revision each at the freeze); the importer API is unchanged. The import
 session is the one place where the bridge holds a borrowing Rust type: the handle
 owns an acquisition of its document and a `Mutex<ImportSession<'static>>`, whose
 `'static` borrow points into that acquisition and is dropped first (field order), so
 the borrow never outlives its document and never leaves the handle. The mutex makes
 the `Send`-but-not-`Sync` session safe to share across C threads (calls serialize)
 and turns a contained panic into a poisoned handle rather than reused state.
+
+The final pass (2026-10-10) freezes the ABI 1.0 export set in `abi/exports.txt`. The
+record is data, not code: the bridge's `#[unsafe(no_mangle)]` functions, the header's
+declarations and the installed libraries are each checked against it. Failure text
+stays handle state (a session's last message, per-root reports borrowed from their
+handle), so the bridge keeps no global or thread-local state.

@@ -2,11 +2,11 @@
 //! acquisition and the Rust session that borrows it; only owned results leave it.
 use crate::{
     TS_INTERNAL_ERROR, TS_INVALID_ARGUMENT, TS_OK, TS_ROOT_FACETED_BREP, TsAssembly, TsDiscovery,
-    TsDocument, TsImportError, TsImportOptions, TsMesh, TsSolidInfo, TsTessellatedInfo, boundary,
-    clear, discovery, initialize,
+    TsDocument, TsImportError, TsImportOptions, TsMesh, TsPresentation, TsSolidInfo,
+    TsSurfaceModel, TsTessellatedInfo, boundary, clear, discovery, initialize,
     options::{Options, read_options},
     solid::{self, has, units},
-    tessellated,
+    surface, tessellated,
 };
 use std::{
     ptr,
@@ -31,6 +31,24 @@ pub struct TsSessionStatistics {
     pub triangles: u64,
 }
 
+/// What the mutex guards: the Rust session and the message of the last call.
+#[derive(Debug)]
+struct State {
+    session: ImportSession<'static>,
+    /// The located import failure's text of the most recent call; empty after a
+    /// successful call or an argument error.
+    message: String,
+}
+impl State {
+    /// Record the outcome of a call that reached the importer.
+    fn record<T>(&mut self, result: &Result<T, tessstep_import::Error>) {
+        self.message = match result {
+            Ok(_) => String::new(),
+            Err(e) => e.message.clone(),
+        };
+    }
+}
+
 /// A session and the document it borrows. The session caches through interior
 /// mutability (`Send`, not `Sync`), so calls are serialized by the mutex: concurrent
 /// C calls on one handle are safe and run one at a time. A panic poisons the mutex,
@@ -40,7 +58,7 @@ pub struct TsImportSession {
     // Declared before `document`, so it is dropped first. Its `'static` borrow of
     // the document is created in `ts_import_session_create` and never leaves this
     // handle: the field is private and every result returned to C is owned.
-    session: Mutex<ImportSession<'static>>,
+    state: Mutex<State>,
     options: Options,
     document: Arc<TsDocument>,
 }
@@ -48,9 +66,31 @@ impl TsImportSession {
     fn document(&self) -> &Document {
         &self.document.document
     }
-    fn lock(&self) -> Option<MutexGuard<'_, ImportSession<'static>>> {
-        self.session.lock().ok()
+    fn lock(&self) -> Option<MutexGuard<'_, State>> {
+        self.state.lock().ok()
     }
+}
+
+/// Run `call` on a live session with its lock held; a poisoned session is
+/// `TS_INTERNAL_ERROR`.
+///
+/// # Safety
+/// Non-NULL `session` is a live handle for the call.
+unsafe fn with(
+    session: *const TsImportSession,
+    call: impl FnOnce(&TsImportSession, &mut State) -> u32 + std::panic::UnwindSafe,
+) -> u32 {
+    if session.is_null() {
+        return TS_INVALID_ARGUMENT;
+    }
+    boundary(|| {
+        // SAFETY: the caller keeps the session live for the call.
+        let handle = unsafe { &*session };
+        let Some(mut state) = handle.lock() else {
+            return TS_INTERNAL_ERROR;
+        };
+        call(handle, &mut state)
+    })
 }
 
 /// # Safety
@@ -79,11 +119,14 @@ pub unsafe extern "C" fn ts_import_session_create(
             Arc::from_raw(document)
         };
         // SAFETY: the Arc keeps the document alive at a fixed heap address until the
-        // handle's `document` field drops, after `session`; see TsImportSession.
+        // handle's `document` field drops, after `state`; see TsImportSession.
         let borrowed: &'static Document = unsafe { &*ptr::addr_of!(document.document) };
         let session = ImportSession::with_budgets(borrowed, o.import, o.session);
         let handle = Box::new(TsImportSession {
-            session: Mutex::new(session),
+            state: Mutex::new(State {
+                session,
+                message: String::new(),
+            }),
             options: o,
             document,
         });
@@ -119,23 +162,23 @@ pub unsafe extern "C" fn ts_import_session_discover(
     // SAFETY: non-NULL output slots are disjoint writable storage supplied by caller.
     let output_ok = unsafe { initialize(out, ptr::null()) };
     unsafe { clear(error) };
-    if !output_ok || session.is_null() {
+    if !output_ok {
         return TS_INVALID_ARGUMENT;
     }
-    boundary(|| {
-        // SAFETY: the caller keeps the session live for the call.
-        let handle = unsafe { &*session };
+    let call = |handle: &TsImportSession, state: &mut State| {
+        state.message.clear();
         let Some(preference) = discovery::preference(preference) else {
             return TS_INVALID_ARGUMENT;
         };
-        let Some(s) = handle.lock() else {
-            return TS_INTERNAL_ERROR;
-        };
         let document = handle.document();
-        let result = discovery::discover(document, Some(&*s), preference, &handle.options);
+        let result =
+            discovery::discover(document, Some(&state.session), preference, &handle.options);
+        state.record(&result);
         // SAFETY: the outputs cleared above.
         unsafe { discovery::publish(document, result, out, error) }
-    })
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
 }
 
 /// The profile a root's import decodes with, from its physical record.
@@ -172,10 +215,11 @@ pub unsafe extern "C" fn ts_import_session_prepare(
     shared: *mut usize,
 ) -> u32 {
     // SAFETY: non-NULL out is valid writable storage.
-    if !unsafe { clear(shared) } || session.is_null() {
+    if !unsafe { clear(shared) } {
         return TS_INVALID_ARGUMENT;
     }
-    boundary(|| {
+    let call = |handle: &TsImportSession, state: &mut State| {
+        state.message.clear();
         if (roots.is_null() && root_count != 0)
             || root_count > isize::MAX as usize / size_of::<u64>()
         {
@@ -194,11 +238,6 @@ pub unsafe extern "C" fn ts_import_session_prepare(
         else {
             return TS_INVALID_ARGUMENT;
         };
-        // SAFETY: the caller keeps the session live for the call.
-        let handle = unsafe { &*session };
-        let Some(s) = handle.lock() else {
-            return TS_INTERNAL_ERROR;
-        };
         let mut groups: std::collections::BTreeMap<ImportProfile, Vec<EntityId>> =
             std::collections::BTreeMap::new();
         for id in ids {
@@ -208,12 +247,14 @@ pub unsafe extern "C" fn ts_import_session_prepare(
         }
         let count: usize = groups
             .iter()
-            .map(|(&profile, ids)| s.prepare(profile, ids))
+            .map(|(&profile, ids)| state.session.prepare(profile, ids))
             .sum();
         // SAFETY: valid writable output, cleared above.
         unsafe { shared.write(count) };
         TS_OK
-    })
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
 }
 
 /// # Safety
@@ -235,23 +276,60 @@ pub unsafe extern "C" fn ts_import_session_import_solid(
         Ok(size) => size,
         Err(status) => return status,
     };
-    if session.is_null() {
-        return TS_INVALID_ARGUMENT;
-    }
-    boundary(|| {
-        // SAFETY: the caller keeps the session live for the call.
-        let handle = unsafe { &*session };
+    let call = |handle: &TsImportSession, state: &mut State| {
+        state.message.clear();
         let Some((id, length, angle)) = units(entity_id, metres_per_unit, radians_per_unit) else {
             return TS_INVALID_ARGUMENT;
         };
-        let Some(s) = handle.lock() else {
-            return TS_INTERNAL_ERROR;
-        };
         let document = handle.document();
-        let result = solid::import(document, Some(&*s), id, length, angle, &handle.options);
+        let result = solid::import(
+            document,
+            Some(&state.session),
+            id,
+            length,
+            angle,
+            &handle.options,
+        );
+        state.record(&result);
         // SAFETY: the outputs begin accepted.
         unsafe { solid::finish(document, id, result, out, info, size, error) }
-    })
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
+}
+
+/// # Safety
+/// Follow tessstep.h live session and disjoint output-slot contracts.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_import_session_import_surface_model(
+    session: *mut TsImportSession,
+    entity_id: u64,
+    metres_per_unit: f64,
+    radians_per_unit: f64,
+    out: *mut *const TsSurfaceModel,
+    error: *mut TsImportError,
+) -> u32 {
+    // SAFETY: non-NULL output slots are disjoint writable storage supplied by caller.
+    let output_ok = unsafe { initialize(out, ptr::null()) };
+    unsafe { clear(error) };
+    if !output_ok {
+        return TS_INVALID_ARGUMENT;
+    }
+    let call = |handle: &TsImportSession, state: &mut State| {
+        state.message.clear();
+        let Some((id, length, angle)) = units(entity_id, metres_per_unit, radians_per_unit) else {
+            return TS_INVALID_ARGUMENT;
+        };
+        // The Rust session does not import surface models: the free function runs
+        // on the session's document and options, sharing no decode.
+        let document = handle.document();
+        let result = surface::import(document, id, length, angle, &handle.options);
+        state.record(&result);
+        // SAFETY: the outputs cleared above.
+        unsafe { surface::publish(document, result, out, error) }
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
 }
 
 /// # Safety
@@ -271,25 +349,61 @@ pub unsafe extern "C" fn ts_import_session_import_tessellated(
         clear(info);
         clear(error);
     }
-    if !output_ok || session.is_null() {
+    if !output_ok {
         return TS_INVALID_ARGUMENT;
     }
-    boundary(|| {
-        // SAFETY: the caller keeps the session live for the call.
-        let handle = unsafe { &*session };
+    let call = |handle: &TsImportSession, state: &mut State| {
+        state.message.clear();
         let (Some(id), Ok(unit)) = (
             EntityId::new(entity_id),
             LengthUnit::metres_per_unit(metres_per_unit),
         ) else {
             return TS_INVALID_ARGUMENT;
         };
-        let Some(s) = handle.lock() else {
-            return TS_INTERNAL_ERROR;
-        };
-        let result = s.import_tessellated(id, unit, handle.options.tessellation.mesh);
+        let result = state
+            .session
+            .import_tessellated(id, unit, handle.options.tessellation.mesh);
+        state.record(&result);
         // SAFETY: the outputs cleared above.
         unsafe { tessellated::publish(handle.document(), result, out, info, error) }
-    })
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
+}
+
+/// # Safety
+/// Follow tessstep.h live session and disjoint output-slot contracts.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_import_session_import_presentation(
+    session: *mut TsImportSession,
+    entity_id: u64,
+    metres_per_unit: f64,
+    out: *mut *const TsPresentation,
+    error: *mut TsImportError,
+) -> u32 {
+    // SAFETY: non-NULL output slots are disjoint writable storage supplied by caller.
+    let output_ok = unsafe { initialize(out, ptr::null()) };
+    unsafe { clear(error) };
+    if !output_ok {
+        return TS_INVALID_ARGUMENT;
+    }
+    let call = |handle: &TsImportSession, state: &mut State| {
+        state.message.clear();
+        let (Some(id), Ok(unit)) = (
+            EntityId::new(entity_id),
+            LengthUnit::metres_per_unit(metres_per_unit),
+        ) else {
+            return TS_INVALID_ARGUMENT;
+        };
+        let result = state
+            .session
+            .import_presentation(id, unit, handle.options.presentation);
+        state.record(&result);
+        // SAFETY: the outputs cleared above.
+        unsafe { tessellated::publish_presentation(handle.document(), result, out, error) }
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
 }
 
 /// # Safety
@@ -304,23 +418,26 @@ pub unsafe extern "C" fn ts_import_session_import_assembly(
     // SAFETY: non-NULL output slots are disjoint writable storage supplied by caller.
     let output_ok = unsafe { initialize(out, ptr::null()) };
     unsafe { clear(error) };
-    if !output_ok || session.is_null() {
+    if !output_ok {
         return TS_INVALID_ARGUMENT;
     }
-    boundary(|| {
-        // SAFETY: the caller keeps the session live for the call.
-        let handle = unsafe { &*session };
+    let call = |handle: &TsImportSession, state: &mut State| {
+        state.message.clear();
         let Some(preference) = discovery::preference(preference) else {
             return TS_INVALID_ARGUMENT;
         };
-        let Some(s) = handle.lock() else {
-            return TS_INTERNAL_ERROR;
-        };
         let document = handle.document();
-        let result = crate::assembly::import(document, &s, handle.options.assembly(preference));
+        let result = crate::assembly::import(
+            document,
+            &state.session,
+            handle.options.assembly(preference),
+        );
+        state.record(&result);
         // SAFETY: the outputs cleared above.
         unsafe { crate::assembly::publish(document, result, out, error) }
-    })
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
 }
 
 /// # Safety
@@ -331,15 +448,11 @@ pub unsafe extern "C" fn ts_import_session_get_statistics(
     out: *mut TsSessionStatistics,
 ) -> u32 {
     // SAFETY: non-NULL out is a valid writable C record.
-    if !unsafe { clear(out) } || session.is_null() {
+    if !unsafe { clear(out) } {
         return TS_INVALID_ARGUMENT;
     }
-    boundary(|| {
-        // SAFETY: the caller keeps the session live for the call.
-        let Some(s) = (unsafe { &*session }).lock() else {
-            return TS_INTERNAL_ERROR;
-        };
-        let t = s.statistics();
+    let call = |_: &TsImportSession, state: &mut State| {
+        let t = state.session.statistics();
         let record = TsSessionStatistics {
             discoveries: t.discoveries as u64,
             shared_decodes: t.shared_decodes as u64,
@@ -354,5 +467,40 @@ pub unsafe extern "C" fn ts_import_session_get_statistics(
         // SAFETY: initialized writable output.
         unsafe { out.write(record) };
         TS_OK
-    })
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
+}
+
+/// # Safety
+/// Follow tessstep.h live session contract; non-NULL buffer spans capacity
+/// writable bytes and length is writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_import_session_last_message(
+    session: *const TsImportSession,
+    buffer: *mut std::ffi::c_char,
+    capacity: usize,
+    length: *mut usize,
+) -> u32 {
+    // SAFETY: non-NULL length is valid writable storage.
+    if !unsafe { clear(length) } || (buffer.is_null() && capacity != 0) {
+        return TS_INVALID_ARGUMENT;
+    }
+    let call = |_: &TsImportSession, state: &mut State| {
+        let text = state.message.as_bytes();
+        if capacity > 0 {
+            let n = text.len().min(capacity - 1);
+            // SAFETY: the caller's buffer spans capacity bytes, disjoint from the
+            // session's message; n + 1 <= capacity.
+            unsafe {
+                ptr::copy_nonoverlapping(text.as_ptr(), buffer.cast::<u8>(), n);
+                buffer.add(n).write(0);
+            }
+        }
+        // SAFETY: valid writable output, cleared above.
+        unsafe { length.write(text.len()) };
+        TS_OK
+    };
+    // SAFETY: forwarded live session.
+    unsafe { with(session, call) }
 }

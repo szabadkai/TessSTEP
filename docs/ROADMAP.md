@@ -840,50 +840,48 @@ baseline movements, never a refreshed baseline.
   `every_fuzz_target_has_a_stable_replay`, `committed_fuzz_findings_replay_without_failure`,
   `regression_replay_names_every_failing_finding_and_unknown_target`, and
   [VALIDATION.md](VALIDATION.md). Not yet observed: an instrumented nightly run.
-- **22.10 Public interfaces — first pass delivered 2026-10-02, second pass
-  2026-10-09; the export-set freeze remains.** Single-root curved
-  import, root and unit discovery, representation selection and import options
-  (strictness, budgets, tolerance policy, repair opt-in) in C and C++, under
-  installed-consumer tests; static linkage in the CMake package. After this item the
-  C ABI export set is frozen for v1.0. Delivered: the extensible `ts_import_options`
-  (strict flag, budgets, model and tessellation tolerances; published revision sizes
-  so later fields append without breaking callers) with `ts_import_options_init` and
-  `ts_import_options_for_document` (the `ImportOptions::for_document` rule);
-  `ts_document_import_solid` (curved or faceted profile by the root's record, explicit
-  length and plane-angle units, owned mesh and an extensible `ts_solid_info` with the
-  adaptation counts); `ts_document_discover` with a retained `ts_discovery` (solid,
-  tessellation and annotation roots, containing representations as zero-copy arrays,
-  context units and uncertainty or located per-root unit errors, and representation
-  choices for the exact or tessellated preference); C++ `ImportOptions`,
-  `Document::import_options`, `import_solid`, `discover` and `Discovery`; and the
-  `TessSTEP::TessSTEP_static` target with the system libraries rustc reports, linked
-  and run by the installed consumers in Release. 74 exports ([C API](C_API.md)).
-  Evidence: `c_abi_solid_import_reports_curved_adaptations_units_and_cavities`,
-  `c_abi_discovery_selects_representations_and_reports_units`,
-  `c_abi_import_options_revisions_defaults_and_document_sizing`, the installed
-  C/C++ consumers. Second pass, on the Rust items that landed meanwhile: revision 2 of
-  `ts_import_options` (152 bytes: sewing factor and `TS_IMPORT_REPAIR_SEW` /
-  `_ORIENT` flags for 22.5, `deviation_factor` for 22.3, assembly instance and depth
-  budgets, session budgets sized by `ts_import_options_for_document`) and of
-  `ts_solid_info` (216 bytes: the 22.3 counters, largest deviation and working
-  tolerance, and the 22.5 `RepairReport`); surface models (22.6) as
-  `ts_document_import_surface_model` with a retained `ts_surface_model` (extensible
-  info, per-shell records with zero-copy face arrays, independent shell meshes) and,
-  behind `TS_DISCOVER_SURFACE_MODELS`, surface-model roots after every other root in
-  discovery, so revision-1 callers see unchanged results; the import session (22.8) as
-  a uniquely owned `ts_import_session` that retains its document and serializes calls
-  (discover, prepare, solid, tessellation and assembly import, statistics);
-  `ts_document_import_assembly_with_options` and `ts_assembly_get_adaptations` (22.7
-  mapped-item placements and tolerated encodings); and the C++ `SurfaceModel`,
-  `ImportSession` and overloads. 90 exports. The default options still map to exactly
-  the Rust defaults after 22.2 (`default_options_are_the_rust_defaults`). Evidence:
-  `tessstep-capi/tests/session.rs`, the installed C/C++ consumers. Remaining before the
-  freeze ([C API](C_API.md#remaining-for-the-abi-freeze)): presentation import through
-  a session, per-root tolerated encodings in C, and the freeze review itself (whether
-  to fold the unreleased revisions into one). Debug static consumers are not tested.
+- **22.10 Public interfaces — delivered 2026-10-10; ABI 1.0 export set frozen.**
+  Single-root curved import, root and unit discovery, representation selection and
+  import options (strictness, budgets, tolerance policy, repair opt-in) in C and C++,
+  under installed-consumer tests; static linkage in the CMake package. After this item
+  the C ABI export set is frozen for v1.0. Delivered in three passes (2026-10-02,
+  10-09, 10-10), on main as each Rust item landed:
+  - the extensible `ts_import_options` (168 bytes: strict, repair and surface-model
+    flags; decode, tessellation, assembly, session and presentation budgets; model and
+    tessellation tolerances; sewing and deviation factors), `ts_import_options_init`
+    and `ts_import_options_for_document`; `ts_solid_info` and `ts_surface_model_info`
+    are the other extensible records. The development drafts were folded, so ABI 1.0
+    publishes exactly one revision of each; later 1.x revisions may only append;
+  - `ts_document_import_solid` (curved or faceted profile, explicit length and
+    plane-angle units, adaptation counters, 22.3 deviations and working tolerance,
+    22.5 repair report) and `ts_document_import_surface_model` (22.6, a retained
+    `ts_surface_model` of shell meshes, never solids);
+  - `ts_document_discover` with a retained `ts_discovery` (solid, tessellation,
+    annotation and, on request, surface-model roots; zero-copy representation arrays;
+    context units or located unit errors; representation choices);
+  - the `ts_import_session` handle (22.8): uniquely owned, retains its document,
+    serializes calls; discovery, prepare, solid, surface-model, tessellation,
+    presentation and assembly import, statistics;
+  - `ts_document_import_assembly_with_options`, `ts_assembly_get_adaptations` (22.7)
+    and per-root reports (`ts_assembly_root_report_at`, `ts_discovery_root_report_at`:
+    tolerated context encodings and failure text);
+  - failure text as handle state, not per-thread state (the header promises no global
+    error state): `ts_import_session_last_message` and the per-root reports; the C++
+    `Error::message`;
+  - `TessSTEP::TessSTEP_static` with the system libraries rustc reports;
+  - the freeze: the record [abi/exports.txt](../abi/exports.txt) (95 functions, all
+    `1.0`), checked against the sources and header by `tessstep-capi/tests/abi.rs`
+    (which pins the 1.0 set) and against the installed shared library and static
+    archive by `check_capi.py`; the policy (frozen symbols, layouts and values; 1.x
+    adds only) is in [C API](C_API.md#abi-1-freeze).
+  Evidence: `tessstep-capi/tests/{discovery,session,abi}.rs`,
+  `default_options_are_the_rust_defaults`, the installed C/C++ consumers (shared,
+  C-only and static). Post-1.0 ([C API](C_API.md#post-10)): document-level failure
+  text, annotation unit text, surface models in sessions and assemblies, scene limits
+  in the assembly options, Debug static consumers.
 - **22.11 Release engineering.** Cut a tagged pre-release from green CI to exercise
   the release workflow, the four packaging targets and the installed-package gate;
-  then set the v1.0 version, changelog and ABI freeze. The corpus baseline at the
+  then set the v1.0 version and changelog (the ABI export set was frozen by 22.10). The corpus baseline at the
   tag is the compatibility record for that release.
 
 Decision to record here before v1.0: EXPRESS rules, functions and WHERE clauses stay
@@ -922,5 +920,7 @@ package targets; mesh import and retained read-only views, selected faceted/plan
 solid import, existing-tessellation and presentation import, assembly import, root
 and unit discovery with representation selection, single-root curved solid import,
 surface-model import, import sessions, and extensible import options with the
-tolerance policy and opt-in repair are now implemented. Public schema decoding and
-B-rep construction remain Rust-only; the export set is not yet frozen.
+tolerance policy and opt-in repair, failure text and per-root reports are now
+implemented. Public schema decoding and B-rep construction remain Rust-only. The ABI
+1.0 export set is frozen in [abi/exports.txt](../abi/exports.txt); ABI 1.x may only
+add to it ([C API](C_API.md#abi-1-freeze)).

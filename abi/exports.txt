@@ -1,0 +1,105 @@
+# TessSTEP C ABI 1: the exported C symbol set (the ABI record).
+#
+# ABI 1.0 was frozen on 2026-10-10 with the 95 symbols marked 1.0. A 1.x release may
+# only add symbols, each marked with the release that adds it; within ABI 1 no symbol
+# is removed or changed (docs/C_API.md, "ABI 1 freeze"). The library's exports, the
+# declarations in include/tessstep/tessstep.h and this list must agree exactly:
+# crates/tessstep-capi/tests/abi.rs checks the sources and pins the 1.0 set, and
+# scripts/check_capi.py checks the installed shared library and static archive.
+#
+# Format: <ABI version that added the symbol> <symbol>, sorted by symbol.
+1.0 ts_api_version
+1.0 ts_appearance_binding_at
+1.0 ts_appearance_create
+1.0 ts_appearance_get_info
+1.0 ts_appearance_get_scene
+1.0 ts_appearance_material_at
+1.0 ts_appearance_options_init
+1.0 ts_appearance_release
+1.0 ts_appearance_resolve_triangle
+1.0 ts_appearance_retain
+1.0 ts_assembly_excluded_at
+1.0 ts_assembly_get_adaptations
+1.0 ts_assembly_get_appearance
+1.0 ts_assembly_get_info
+1.0 ts_assembly_get_scene
+1.0 ts_assembly_get_style_info
+1.0 ts_assembly_node_at
+1.0 ts_assembly_options_init
+1.0 ts_assembly_product_at
+1.0 ts_assembly_release
+1.0 ts_assembly_retain
+1.0 ts_assembly_root_at
+1.0 ts_assembly_root_report_at
+1.0 ts_assembly_unplaced_at
+1.0 ts_diagnostics_count
+1.0 ts_diagnostics_get
+1.0 ts_diagnostics_release
+1.0 ts_discovery_choice_at
+1.0 ts_discovery_get_info
+1.0 ts_discovery_presentation_at
+1.0 ts_discovery_release
+1.0 ts_discovery_retain
+1.0 ts_discovery_root_at
+1.0 ts_discovery_root_report_at
+1.0 ts_document_diagnostics
+1.0 ts_document_discover
+1.0 ts_document_entity_at
+1.0 ts_document_get_info
+1.0 ts_document_get_schema
+1.0 ts_document_import_assembly
+1.0 ts_document_import_assembly_with_options
+1.0 ts_document_import_presentation
+1.0 ts_document_import_solid
+1.0 ts_document_import_surface_model
+1.0 ts_document_import_tessellated
+1.0 ts_document_parse
+1.0 ts_document_record_name
+1.0 ts_document_release
+1.0 ts_document_retain
+1.0 ts_document_tessellate_faceted
+1.0 ts_document_tessellate_planar
+1.0 ts_document_tessellate_planar_with_policy
+1.0 ts_faceted_options_init
+1.0 ts_import_options_for_document
+1.0 ts_import_options_init
+1.0 ts_import_policy_init
+1.0 ts_import_session_create
+1.0 ts_import_session_discover
+1.0 ts_import_session_get_statistics
+1.0 ts_import_session_import_assembly
+1.0 ts_import_session_import_presentation
+1.0 ts_import_session_import_solid
+1.0 ts_import_session_import_surface_model
+1.0 ts_import_session_import_tessellated
+1.0 ts_import_session_last_message
+1.0 ts_import_session_prepare
+1.0 ts_import_session_release
+1.0 ts_mesh_create
+1.0 ts_mesh_get_view
+1.0 ts_mesh_options_init
+1.0 ts_mesh_release
+1.0 ts_mesh_retain
+1.0 ts_parse_options_init
+1.0 ts_planar_options_init
+1.0 ts_presentation_get_info
+1.0 ts_presentation_get_view
+1.0 ts_presentation_item_at
+1.0 ts_presentation_options_init
+1.0 ts_presentation_release
+1.0 ts_presentation_retain
+1.0 ts_presentation_style_at
+1.0 ts_scene_asset_mesh
+1.0 ts_scene_bake_instance
+1.0 ts_scene_create
+1.0 ts_scene_get_info
+1.0 ts_scene_instance_at
+1.0 ts_scene_options_init
+1.0 ts_scene_release
+1.0 ts_scene_retain
+1.0 ts_surface_model_get_info
+1.0 ts_surface_model_release
+1.0 ts_surface_model_retain
+1.0 ts_surface_model_shell_at
+1.0 ts_surface_model_shell_mesh
+1.0 ts_tessellated_options_init

@@ -54,6 +54,8 @@ def main():
         for filename in ("README.md", "LICENSE-MIT"):
             shutil.copy2(ROOT / filename, package / filename)
         shutil.copytree(ROOT / "docs", package / "docs")
+        # The frozen ABI record, so consumers can check a library against it.
+        shutil.copytree(ROOT / "abi", package / "abi")
         # Authored fixtures only; external CAD inputs are never shipped.
         shutil.copytree(ROOT / "corpus/part21", package / "examples/part21")
         shutil.copytree(ROOT / "corpus/express", package / "examples/express")
@@ -73,7 +75,7 @@ def main():
         verify_installed(package)
         (package / "PACKAGE.json").write_text(json.dumps({"version": version, "target": args.target,
             "commit": os.environ.get("GITHUB_SHA", "local"), "tools": ["stepdump", "expressc"],
-            "c_abi": {"version": 1, "exports": len(SYMBOLS), "linkage": ["shared", "static"],
+            "c_abi": {"version": 1, "frozen": "1.0", "exports": len(SYMBOLS), "record": "abi/exports.txt", "linkage": ["shared", "static"],
                       "scope": "documents_meshes_scenes_appearance_solid_surface_tessellated_presentation_assembly_import_discovery_sessions"},
             "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP", "static_target": "TessSTEP::TessSTEP_static"},
             "tessellation": "planar_faceted_and_curved_brep_explicit_root_and_units"}, indent=2) + "\n", encoding="utf-8")

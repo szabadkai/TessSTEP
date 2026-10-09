@@ -222,6 +222,9 @@ pub struct TsAssembly {
     unplaced: Vec<u64>,
     style: TsStyleInfo,
     adaptations: TsAssemblyAdaptations,
+    /// Per root, in `roots` order: its context's tolerated encodings and its failure
+    /// message (empty when imported).
+    reports: Vec<(TsToleratedEncodings, String)>,
 }
 
 #[repr(C)]
@@ -239,7 +242,27 @@ pub struct TsAssemblyAdaptations {
     pub mapped_placements: u64,
     pub tolerated: TsToleratedEncodings,
 }
-fn encodings(e: ToleratedEncodings) -> TsToleratedEncodings {
+/// A root's tolerated unit encodings and failure text, borrowed from its handle.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TsRootReport {
+    pub tolerated: TsToleratedEncodings,
+    pub message: TsStringView,
+}
+impl TsRootReport {
+    /// The C record of a stored report; an empty message is `{NULL, 0}`.
+    pub(crate) fn new(tolerated: TsToleratedEncodings, message: &str) -> Self {
+        Self {
+            tolerated,
+            message: if message.is_empty() {
+                TsStringView::default()
+            } else {
+                TsStringView::new(message)
+            },
+        }
+    }
+}
+pub(crate) fn encodings(e: ToleratedEncodings) -> TsToleratedEncodings {
     TsToleratedEncodings {
         explicit_si_dimensions: e.explicit_si_dimensions as u64,
         unset_si_dimensions: e.unset_si_dimensions as u64,
@@ -457,6 +480,14 @@ pub(crate) fn import(
             mapped_placements: assembly.mapped_placements() as u64,
             tolerated: encodings(assembly.tolerated()),
         },
+        reports: imported
+            .roots
+            .iter()
+            .map(|r| {
+                let message = r.result.as_ref().err().map(|e| e.message.clone());
+                (encodings(r.tolerated), message.unwrap_or_default())
+            })
+            .collect(),
         scene,
         appearance,
     };
@@ -627,6 +658,24 @@ pub unsafe extern "C" fn ts_assembly_get_adaptations(
 ) -> u32 {
     // SAFETY: forwarded caller contract.
     boundary(|| unsafe { query(assembly, out, |a| Some(a.adaptations)) })
+}
+/// # Safety
+/// Follow tessstep.h live handle and disjoint writable output contracts; the message
+/// is borrowed from the assembly.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_assembly_root_report_at(
+    assembly: *const TsAssembly,
+    index: usize,
+    out: *mut TsRootReport,
+) -> u32 {
+    // SAFETY: forwarded caller contract; the view borrows the live assembly.
+    boundary(|| unsafe {
+        query(assembly, out, |a| {
+            a.reports
+                .get(index)
+                .map(|(tolerated, message)| TsRootReport::new(*tolerated, message))
+        })
+    })
 }
 /// # Safety
 /// Follow tessstep.h live handle and disjoint writable pointer slot contract.

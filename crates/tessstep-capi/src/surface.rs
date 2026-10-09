@@ -4,12 +4,15 @@ use crate::{
     boundary, clear,
     import::report,
     initialize,
-    options::{Extensible, finish_output, read_options, reset_output},
+    options::{Extensible, Options, finish_output, read_options, reset_output},
     solid::units,
     tessellated::array,
 };
 use std::{ptr, sync::Arc};
 use tessstep_import::{ImportOptions, RepairOptions};
+use tessstep_math::{AngleUnit, LengthUnit};
+use tessstep_model::Document;
+use tessstep_part21::EntityId;
 
 pub const TS_ROOT_SHELL_BASED_SURFACE_MODEL: u32 = 7;
 
@@ -116,62 +119,85 @@ pub unsafe extern "C" fn ts_document_import_surface_model(
         let Some((id, length, angle)) = units(entity_id, metres_per_unit, radians_per_unit) else {
             return TS_INVALID_ARGUMENT;
         };
-        // Surface models are never sewn or reoriented: the repair flags are validated
-        // with the record and do not apply here.
-        let import = ImportOptions {
-            repair: RepairOptions::default(),
-            ..o.import
-        };
-        let result =
-            tessstep_import::import_surface_model(document, id, length, angle, o.model, import)
-                .and_then(|model| {
-                    let meshes = model.tessellate(o.tolerance, o.tessellation)?;
-                    Ok((model, meshes))
-                });
-        let (model, meshes) = match result {
-            Ok(imported) => imported,
-            // SAFETY: the optional error record follows the header contract.
-            Err(e) => return unsafe { report(document, &e, error) },
-        };
-        let a = model.adaptations();
-        let shells: Vec<Shell> = model
-            .shells()
-            .iter()
-            .zip(meshes)
-            .map(|(shell, mesh)| Shell {
-                entity: shell.entity().get(),
-                closed: shell.closed(),
-                faces: shell.face_entities().iter().map(|f| f.get()).collect(),
-                boundary_edges: shell.boundary_edges() as u64,
-                working_tolerance: shell.brep().model_tolerance(),
-                mesh: Arc::new(TsMesh::from(mesh)),
-            })
-            .collect();
-        let info = TsSurfaceModelInfo {
-            struct_size: 0,
-            abi_version: 1,
-            root_id: model.root().get(),
-            shell_count: shells.len() as u64,
-            closed_shell_count: shells.iter().filter(|s| s.closed).count() as u64,
-            face_count: shells.iter().map(|s| s.faces.len() as u64).sum(),
-            boundary_edges: shells.iter().map(|s| s.boundary_edges).sum(),
-            inferred_outer_bounds: a.inferred_outer_bounds as u64,
-            inserted_seams: a.inserted_seams as u64,
-            split_edges: a.split_edges as u64,
-            recharted_spheres: a.recharted_spheres as u64,
-            collapsed_edges: a.collapsed_edges as u64,
-            collapsed_faces: a.collapsed_faces as u64,
-            supplied_pcurves: a.supplied_pcurves as u64,
-            rejected_pcurves: a.rejected_pcurves as u64,
-            off_surface_edges: a.off_surface_edges as u64,
-            off_curve_vertices: a.off_curve_vertices as u64,
-            uncollapsed_sides: a.uncollapsed_sides as u64,
-        };
-        let handle = Arc::into_raw(Arc::new(TsSurfaceModel { info, shells }));
-        // SAFETY: cleared output slot; ownership transfers once after all work.
-        unsafe { out.write(handle) };
-        TS_OK
+        let result = import(document, id, length, angle, &o);
+        // SAFETY: the outputs cleared above.
+        unsafe { publish(document, result, out, error) }
     })
+}
+
+/// Import a surface model and mesh every shell into private C records.
+pub(crate) fn import(
+    document: &Document,
+    id: EntityId,
+    length: LengthUnit,
+    angle: AngleUnit,
+    o: &Options,
+) -> Result<TsSurfaceModel, tessstep_import::Error> {
+    // Surface models are never sewn or reoriented (the importer ignores repair too):
+    // the repair flags are validated with the record and do not apply here.
+    let import = ImportOptions {
+        repair: RepairOptions::default(),
+        ..o.import
+    };
+    let model =
+        tessstep_import::import_surface_model(document, id, length, angle, o.model, import)?;
+    let meshes = model.tessellate(o.tolerance, o.tessellation)?;
+    let a = model.adaptations();
+    let shells: Vec<Shell> = model
+        .shells()
+        .iter()
+        .zip(meshes)
+        .map(|(shell, mesh)| Shell {
+            entity: shell.entity().get(),
+            closed: shell.closed(),
+            faces: shell.face_entities().iter().map(|f| f.get()).collect(),
+            boundary_edges: shell.boundary_edges() as u64,
+            working_tolerance: shell.brep().model_tolerance(),
+            mesh: Arc::new(TsMesh::from(mesh)),
+        })
+        .collect();
+    let info = TsSurfaceModelInfo {
+        struct_size: 0,
+        abi_version: 1,
+        root_id: model.root().get(),
+        shell_count: shells.len() as u64,
+        closed_shell_count: shells.iter().filter(|s| s.closed).count() as u64,
+        face_count: shells.iter().map(|s| s.faces.len() as u64).sum(),
+        boundary_edges: shells.iter().map(|s| s.boundary_edges).sum(),
+        inferred_outer_bounds: a.inferred_outer_bounds as u64,
+        inserted_seams: a.inserted_seams as u64,
+        split_edges: a.split_edges as u64,
+        recharted_spheres: a.recharted_spheres as u64,
+        collapsed_edges: a.collapsed_edges as u64,
+        collapsed_faces: a.collapsed_faces as u64,
+        supplied_pcurves: a.supplied_pcurves as u64,
+        rejected_pcurves: a.rejected_pcurves as u64,
+        off_surface_edges: a.off_surface_edges as u64,
+        off_curve_vertices: a.off_curve_vertices as u64,
+        uncollapsed_sides: a.uncollapsed_sides as u64,
+    };
+    Ok(TsSurfaceModel { info, shells })
+}
+
+/// Publish a surface model or its located error.
+///
+/// # Safety
+/// Cleared, writable output slots of the header contract.
+pub(crate) unsafe fn publish(
+    document: &Document,
+    result: Result<TsSurfaceModel, tessstep_import::Error>,
+    out: *mut *const TsSurfaceModel,
+    error: *mut TsImportError,
+) -> u32 {
+    match result {
+        Ok(model) => {
+            // SAFETY: cleared output slot; ownership transfers once after all work.
+            unsafe { out.write(Arc::into_raw(Arc::new(model))) };
+            TS_OK
+        }
+        // SAFETY: the optional error record follows the header contract.
+        Err(e) => unsafe { report(document, &e, error) },
+    }
 }
 
 /// # Safety
