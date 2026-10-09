@@ -9,7 +9,9 @@ existing-tessellation and presentation-graphics import from STEP documents (Mile
 schema selection, assembly import and imported appearance (Milestone 21), and
 extensible import options, root and unit discovery, representation selection,
 single-root curved solid import and a static library target (Milestone 22.10, first
-pass). General schema decoding is not exposed.
+pass), and the tolerance policy, opt-in repair, surface models, import sessions and
+assembly import with the extensible options (second pass). General schema decoding is
+not exposed.
 The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
 The planar profile's conformance policy is a separate 16-byte `ts_import_policy`
 record with a flags word (`TS_IMPORT_STRICT`), passed to
@@ -410,7 +412,8 @@ assuming the library's, so it never writes past an older caller's record; any ot
 size returns `TS_INVALID_ARGUMENT` and writes nothing. A newer consumer on an older
 library is rejected the same way, never silently ignored. `ts_solid_info` follows the
 same rule for output: the caller sets `struct_size` (revision 1 is 104 bytes,
-`TS_SOLID_INFO_SIZE_1`) and the library writes only that revision.
+`TS_SOLID_INFO_SIZE_1`) and the library writes only that revision. Both records gained
+a revision 2 in the second pass (below).
 
 **Single-root solid import.** `ts_document_import_solid` / C++
 `Document::import_solid` imports a selected `MANIFOLD_SOLID_BREP` or `BREP_WITH_VOIDS`
@@ -505,36 +508,134 @@ targets: 96-byte import options and 104-byte solid info (revision 1, extensible)
 discovered presentation and 32-byte choice (frozen). Existing ABI-1 records, symbols
 and statuses keep their contract.
 
-### Remaining for the ABI freeze
+## Repair, tolerance policy, surface models and sessions (Milestone 22.10, second pass)
 
-The export set is not frozen yet. These items land in Rust first (Milestone 22, in
-parallel); each then needs its C/C++ surface, under installed-consumer tests, before
-the freeze:
+**Revision 2 of the import options** (152 bytes, `TS_IMPORT_OPTIONS_SIZE_2`) appends
+the fields of the Rust items that landed after the first pass; revision-1 callers
+(96 bytes) are read and written as before, with defaults for the rest:
 
-- **Tolerance policy for edges off their surfaces (22.3):** its multiple of the model
-  tolerance becomes a field of a `ts_import_options` revision; its counted adaptations
-  and measured distances become fields of a `ts_solid_info` revision.
-- **Opt-in sewing and orientation repair (22.5):** an opt-in flag bit and a repair
-  tolerance in an options revision; repair counts (and the separate disconnected-shell
-  classification) in a solid-info revision.
-- **Surface models as shell meshes (22.6):** a shell import entry point (open or closed
-  shells, never solids) with its own info record, and surface-model roots in discovery
-  (a new `TS_ROOT_*` kind, reported apart so existing root indices keep their meaning).
-- **Document import session (22.8):** a retained session handle created from a document
-  and options, with discovery, solid, tessellation and assembly import entry points
-  that share its parse and decode.
-- Assembly import taking `ts_import_options` (strictness, budgets and tolerances shared
-  with solid import, and the representation preference), next to the frozen
-  `ts_assembly_options` entry point.
+- **Opt-in repair (22.5).** `flags` bits `TS_IMPORT_REPAIR_SEW` (merge coincident
+  boundary vertices and free edges within `sewing_factor` times the model distance,
+  default 10) and `TS_IMPORT_REPAIR_ORIENT` (flip faces into a consistent orientation,
+  reverse loops that run against their surface, reverse inside-out closed shells) map
+  to `RepairOptions`. Both are off by default, so topology defects are still rejected;
+  strict and repair combine. Only `ts_import_options` accepts these bits.
+- **Tolerance policy (22.3).** `deviation_factor` (default 16, finite and at least 1)
+  is `ImportOptions::deviation_factor`: an edge farther than the model distance from
+  its face surface, or a vertex from its edge curve, is accepted and counted up to that
+  multiple and rejected beyond it with `TS_INVALID_GEOMETRY` at the geometry stage;
+  `TS_IMPORT_STRICT` forces 1, as in Rust ([curved import](CURVED_IMPORT.md#tolerance-policy)).
+- **Assembly expansion and session budgets.** `max_instances` and `max_depth` bound the
+  product-structure expansion of the assembly import below; `max_session_decoded_entities`,
+  `max_session_adapted_entities` and `max_session_triangles` are a session's
+  `SessionBudgets`. `ts_import_options_init` writes the Rust defaults;
+  `ts_import_options_for_document` also sizes the session budgets as
+  `SessionBudgets::for_document` does.
+
+The initialized record maps to exactly the Rust defaults, including every
+tessellation budget after Milestone 22.2 (`default_options_are_the_rust_defaults`).
+
+**Revision 2 of the solid info** (216 bytes, `TS_SOLID_INFO_SIZE_2`) appends the
+tolerance-policy counters (`off_surface_edges`, `off_curve_vertices`,
+`uncollapsed_sides`), the largest accepted deviation and the working tolerance every
+later stage used (`ImportedSolid::largest_deviation`, `brep().model_tolerance()`), and
+the `RepairReport` (merged vertices and edges and their largest distance, disconnected
+shells, flipped faces, reversed loops, reoriented and undecided shells, sewing
+tolerance). A revision-1 info record receives revision 1 only.
+
+**Surface models (22.6).** `TS_DISCOVER_SURFACE_MODELS` makes discovery report every
+`SHELL_BASED_SURFACE_MODEL` with its units, as roots of the new kind
+`TS_ROOT_SHELL_BASED_SURFACE_MODEL` after every solid and tessellation. Without the flag
+results are unchanged; with it, solid and tessellation indices, counts and choices are
+unchanged too, and surface models (count `root_count - solid_count -
+tessellation_count`) take no part in selection. `ts_document_import_surface_model` /
+C++ `Document::import_surface_model` imports one with the units, tolerances, strictness
+and deviation policy of solid import, meshes every shell, and transfers a retained,
+read-only `ts_surface_model`: `ts_surface_model_get_info` fills the extensible
+`ts_surface_model_info` (136-byte revision 1: shell, closed-shell, face and boundary-edge
+counts and the eleven adaptation counters), `ts_surface_model_shell_at` returns each
+shell's entity, declared closure, zero-copy face IDs, open boundary edges and working
+tolerance, and `ts_surface_model_shell_mesh` an independent mesh acquisition. Shells
+are meshes, never solids: closed shells are watertight, open shells keep their
+boundary, and no volume or orientation is checked. Repair flags are validated and not
+applied: the Rust profile documents that surface models are never sewn, while its
+importer would sew if `repair.sew` were passed, so the bridge clears the repair
+options for this call.
+
+**Import sessions (22.8).** `ImportSession<'a>` borrows its document and is `Send` but
+not `Sync`. `ts_import_session_create` therefore returns a uniquely owned handle that
+retains the document (the caller may release it at once) and holds the Rust session
+behind a mutex, created with the options' import settings and session budgets; the
+`'static` borrow it needs is private to the handle, which drops the session before the
+document. Calls on one handle are serialized, so concurrent calls are safe but not
+parallel; a contained panic poisons the handle, and every later call except release
+returns `TS_INTERNAL_ERROR`. `ts_import_session_discover` (cached passes, plus
+surface models when flagged), `ts_import_session_prepare` (groups the given roots by
+the profile their import uses and decodes each group together),
+`ts_import_session_import_solid`, `ts_import_session_import_tessellated` (mesh limits
+from `max_vertices` / `max_triangles`), `ts_import_session_import_assembly` and
+`ts_import_session_get_statistics` (the Rust `SessionStatistics`) return only owned,
+independent results; no Rust session, decode or borrowed record crosses the boundary.
+C++ `ImportSession` (from `Document::import_session`) is move-only RAII over it.
+
+**Assembly import with the extensible options.**
+`ts_document_import_assembly_with_options` / C++ `Document::import_assembly(Preference,
+const ImportOptions*)` runs the assembly import through a one-shot session with
+explicit session budgets, strictness, repair and the deviation policy for every root,
+the record's tolerances (`model_distance_m` is the floor under each root's context
+uncertainty) and budgets, and the representation preference.
+`ts_assembly_get_adaptations` (any assembly, also from the frozen-options entry point)
+reports the 22.7 mapped-item placements and the tolerated exporter encodings of the
+product closure.
+
+```cpp
+auto parsed = tessstep::Document::parse(bytes);
+if (!parsed) return 1;
+auto options = parsed.value().import_options().value();
+options.flags |= TS_IMPORT_REPAIR_SEW | TS_IMPORT_REPAIR_ORIENT | TS_DISCOVER_SURFACE_MODELS;
+auto session = parsed.value().import_session(&options);
+if (!session) return 1;
+auto found = session.value().discover();
+if (!found) return 1;
+for (size_t i = 0; i < found.value().info().value().root_count; ++i) {
+    auto root = found.value().root_at(i).value();
+    if (root.kind == tessstep::RootKind::shell_based_surface_model) {
+        auto model = parsed.value().import_surface_model(root, &options); // shells
+    } else if (root.kind == tessstep::RootKind::manifold_solid_brep) {
+        auto solid = session.value().import_solid(root); // info.merged_edges etc.
+    }
+}
+```
+
+Sixteen new functions bring the library to 90 C exports. New layouts on supported
+64-bit targets: revision 2 of the options (152 bytes) and solid info (216 bytes),
+136-byte surface-model info revision 1 (extensible), and the frozen 48-byte surface
+shell, 40-byte tolerated encodings, 48-byte assembly adaptations and 72-byte session
+statistics. Existing records, revisions, symbols and statuses keep their contract.
+
+## Remaining for the ABI freeze
+
+Every Milestone 22 Rust item now has a C/C++ surface. The export set is still not
+frozen; before the freeze:
+
+- **Presentation import through a session.** `ImportSession::import_presentation`
+  exists in Rust; C imports annotation graphics with `ts_document_import_presentation`
+  only. A session entry point would need presentation limits beside `ts_import_options`.
+- **Per-root tolerated encodings.** `ContextUnits::tolerated` and `RootImport::tolerated`
+  (22.7) stay Rust-only: `ts_context_units` and `ts_assembly_root` are frozen records
+  without room. A per-root query (or a discovery record revision) would expose them.
+- **Error messages.** `ts_import_error` locates a failure (stage, entity, offsets) but
+  carries no text, so C cannot see the budget a `TS_RESOURCE_LIMIT` names (22.1, 22.2)
+  or the distance a deviation rejection reports (22.3).
+- **Surface models in sessions and assemblies.** The Rust session and assembly import
+  do not handle surface models, so neither does C.
+- **Revisions before the freeze.** No release has shipped revision 1 of the extensible
+  records; the freeze may keep the revisions as they are or fold them into one
+  revision per record (a decision for the release, not an implementation gap).
 
 The freeze then covers the final export set (checked by `scripts/check_capi.py`), every
 published record layout and revision size, the status, stage, kind, flag and pairing
 values, the extensible-record rule above, and the shared and static CMake targets.
-
-Surface-model import (`discover_surface_models`, `import_surface_model`, Milestone 22.6)
-is Rust-only; exposing it in C/C++ is a follow-up to Milestone 22.10. The Rust result is
-a value per shell: the shell entity, its declared closure, its face entities, its open
-boundary edge count and one owned mesh ([curved import](CURVED_IMPORT.md#surface-models)).
 
 ## Errors and panic containment
 

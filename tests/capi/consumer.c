@@ -403,8 +403,8 @@ static void presentation_contract(void) {
     ts_presentation_release(NULL);
 }
 static void import_options_contract(void) {
-    _Static_assert(sizeof(ts_import_options) == TS_IMPORT_OPTIONS_SIZE_1, "import options revision 1");
-    _Static_assert(sizeof(ts_import_options) == 96, "import options layout");
+    _Static_assert(sizeof(ts_import_options) == TS_IMPORT_OPTIONS_SIZE_2, "import options revision 2");
+    _Static_assert(sizeof(ts_import_options) == 152 && TS_IMPORT_OPTIONS_SIZE_1 == 96, "import options layout");
     _Static_assert(offsetof(ts_import_options, max_work) == 16, "import budgets offset");
     _Static_assert(offsetof(ts_import_options, model_distance_m) == 32, "model tolerance offset");
     _Static_assert(offsetof(ts_import_options, max_tessellation_work) == 64, "tessellation budgets offset");
@@ -428,7 +428,7 @@ static void import_options_contract(void) {
     assert(options.struct_size == 0 && options.max_work == 0);
 }
 static void solid_contract(void) {
-    _Static_assert(sizeof(ts_solid_info) == TS_SOLID_INFO_SIZE_1, "solid info revision 1");
+    _Static_assert(sizeof(ts_solid_info) == TS_SOLID_INFO_SIZE_2 && TS_SOLID_INFO_SIZE_1 == 104, "solid info revision 2");
     _Static_assert(offsetof(ts_solid_info, root_id) == 16, "solid info root offset");
     _Static_assert(offsetof(ts_solid_info, inferred_outer_bounds) == 40, "solid adaptations offset");
     ts_document *doc = load("cylinder.step");
@@ -448,7 +448,7 @@ static void solid_contract(void) {
     assert(ts_document_import_solid(doc,1000,0.001,1.0,&options,&failed,&info,&error) == TS_RESOURCE_LIMIT);
     assert(!failed && info.struct_size == sizeof info && info.kind == 0 && error.stage == TS_IMPORT_STAGE_TESSELLATION);
     options.max_vertices = 1000000;
-    options.flags = 2u;
+    options.flags = 32u;
     assert(ts_document_import_solid(doc,1000,0.001,1.0,&options,&failed,&info,&error) == TS_INVALID_ARGUMENT);
     assert(!failed && error.stage == TS_IMPORT_STAGE_NONE);
     info.struct_size = 8;
@@ -571,7 +571,191 @@ static void discovery_contract(void) {
     assert(ts_discovery_retain(NULL) == TS_INVALID_ARGUMENT);
     ts_discovery_release(NULL);
 }
+static ts_status solid_with(const ts_document *doc, const ts_import_options *options,
+    ts_solid_info *info, ts_import_error *error, double *volume) {
+    ts_mesh *mesh = NULL;
+    info->struct_size = (uint32_t)sizeof *info;
+    ts_status status = ts_document_import_solid(doc,1000,0.001,1.0,options,&mesh,info,error);
+    if (status == TS_OK) {
+        ts_mesh_view view;
+        assert(ts_mesh_get_view(mesh,&view) == TS_OK);
+        *volume = view.signed_volume;
+    }
+    ts_mesh_release(mesh);
+    return status;
+}
+static void revision_two_contract(void) {
+    _Static_assert(offsetof(ts_import_options, sewing_factor) == 96, "revision 2 appends");
+    _Static_assert(offsetof(ts_import_options, max_session_triangles) == 144, "options tail");
+    _Static_assert(offsetof(ts_solid_info, off_surface_edges) == 104, "solid revision 2 appends");
+    _Static_assert(offsetof(ts_solid_info, sewing_tolerance_m) == 208, "solid info tail");
+    ts_import_options options, older;
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    assert(options.sewing_factor == 10 && options.deviation_factor == 16);
+    assert(options.max_instances == 100000 && options.max_session_triangles == 20000000);
+    /* A revision-1 record is written and read up to 96 bytes only. */
+    memset(&older, 0xff, sizeof older);
+    assert(ts_import_options_init(&older, TS_IMPORT_OPTIONS_SIZE_1) == TS_OK);
+    assert(older.struct_size == TS_IMPORT_OPTIONS_SIZE_1 && older.max_work == 5000000);
+    ts_solid_info info;
+    ts_import_error error;
+    double volume = 0;
+    ts_document *doc = load("duplicated.step");
+    /* Topology defects are rejected unless repair is asked for. */
+    assert(solid_with(doc,&options,&info,&error,&volume) == TS_INVALID_GEOMETRY);
+    assert(error.stage == TS_IMPORT_STAGE_TOPOLOGY && info.merged_vertices == 0);
+    assert(solid_with(doc,&older,&info,&error,&volume) == TS_INVALID_GEOMETRY);
+    options.flags = TS_IMPORT_REPAIR_SEW | TS_IMPORT_REPAIR_ORIENT;
+    assert(solid_with(doc,&options,&info,&error,&volume) == TS_OK);
+    assert(info.struct_size == TS_SOLID_INFO_SIZE_2 && info.merged_vertices == 1 && info.merged_edges == 3);
+    assert(info.sewing_tolerance_m > 0.99e-6 && info.sewing_tolerance_m < 1.01e-6);
+    assert(info.max_merge_distance_m > 4.9e-8 && info.max_merge_distance_m < 5.1e-8);
+    assert(info.working_tolerance_m > 1.4e-7 && info.working_tolerance_m < 1.6e-7);
+    assert(volume > 5.99e-6 && volume < 6.01e-6);
+    ts_document_release(doc);
+    /* The curved tolerance policy: 3 um off the surface within 16 x 1 um is counted;
+     * a factor of 1 or strict import rejects it at the geometry stage. */
+    doc = load("near.step");
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    options.model_distance_m = 1e-6;
+    assert(solid_with(doc,&options,&info,&error,&volume) == TS_OK);
+    assert(info.off_surface_edges == 1 && info.off_curve_vertices == 0 && info.inserted_seams == 1);
+    assert(info.largest_deviation_m > 2.99e-6 && info.largest_deviation_m < 3.01e-6);
+    assert(info.working_tolerance_m > 6.99e-6 && info.working_tolerance_m < 7.01e-6);
+    options.deviation_factor = 1;
+    assert(solid_with(doc,&options,&info,&error,&volume) == TS_INVALID_GEOMETRY);
+    assert(error.stage == TS_IMPORT_STAGE_GEOMETRY && error.entity_id != 0);
+    options.deviation_factor = 0.5;
+    assert(solid_with(doc,&options,&info,&error,&volume) == TS_INVALID_ARGUMENT);
+    options.deviation_factor = 16;
+    options.flags = TS_IMPORT_STRICT;
+    assert(solid_with(doc,&options,&info,&error,&volume) == TS_INVALID_GEOMETRY);
+    ts_document_release(doc);
+}
+static void surface_model_contract(void) {
+    _Static_assert(sizeof(ts_surface_model_info) == TS_SURFACE_MODEL_INFO_SIZE_1, "surface model info");
+    _Static_assert(TS_SURFACE_MODEL_INFO_SIZE_1 == 136, "surface model info revision 1");
+    _Static_assert(sizeof(ts_surface_shell) == 48, "surface shell layout");
+    _Static_assert(offsetof(ts_surface_shell, faces) == 16, "surface shell faces offset");
+    ts_document *doc = load("surface-open.step");
+    ts_surface_model *model = NULL, *failed = NULL;
+    ts_import_error error;
+    assert(ts_document_import_surface_model(doc,1000,0.001,1.0,NULL,&model,&error) == TS_OK);
+    failed = model;
+    assert(ts_document_import_surface_model(doc,9999,0.001,1.0,NULL,&failed,&error) == TS_NOT_FOUND);
+    assert(!failed && error.entity_id == 9999);
+    ts_import_options options;
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    options.flags = TS_DISCOVER_SURFACE_MODELS;
+    ts_discovery *discovery = NULL;
+    assert(ts_document_discover(doc,TS_PREFER_EXACT,&options,&discovery,NULL) == TS_OK);
+    ts_document_release(doc);
+    ts_discovery_info found;
+    assert(ts_discovery_get_info(discovery,&found) == TS_OK && found.root_count == 2 && found.choice_count == 0);
+    ts_discovered_root root;
+    assert(ts_discovery_root_at(discovery,1,&root) == TS_OK && root.root_id == 1001);
+    assert(root.kind == TS_ROOT_SHELL_BASED_SURFACE_MODEL && root.status == TS_OK && root.units.metres_per_unit == 0.001);
+    ts_discovery_release(discovery);
+    ts_surface_model_info info;
+    info.struct_size = (uint32_t)sizeof info;
+    assert(ts_surface_model_get_info(model,&info) == TS_OK);
+    assert(info.root_id == 1000 && info.shell_count == 1 && info.closed_shell_count == 0);
+    assert(info.face_count == 3 && info.boundary_edges == 8);
+    ts_surface_shell shell;
+    assert(ts_surface_model_shell_at(model,0,&shell) == TS_OK);
+    assert(shell.entity_id == 105 && shell.closed == 0 && shell.face_count == 3 && shell.faces[0] != 0);
+    assert(ts_surface_model_shell_at(model,1,&shell) == TS_NOT_FOUND && !shell.faces);
+    ts_mesh *mesh = NULL;
+    assert(ts_surface_model_shell_mesh(model,0,&mesh) == TS_OK);
+    assert(ts_surface_model_retain(model) == TS_OK);
+    ts_surface_model_release(model);
+    ts_surface_model_release(model);
+    /* The shell mesh outlives the model: one open component, never a solid. */
+    ts_mesh_view view;
+    assert(ts_mesh_get_view(mesh,&view) == TS_OK && view.components == 1 && view.boundary_edges > 0);
+    ts_mesh_release(mesh);
+    assert(ts_surface_model_get_info(NULL,&info) == TS_INVALID_ARGUMENT);
+    assert(ts_surface_model_retain(NULL) == TS_INVALID_ARGUMENT);
+    ts_surface_model_release(NULL);
+}
+static void session_contract(void) {
+    _Static_assert(sizeof(ts_session_statistics) == 72, "session statistics layout");
+    ts_document *doc = load("selection.step");
+    ts_import_options options;
+    assert(ts_import_options_for_document(doc, &options, sizeof options) == TS_OK);
+    ts_import_session *session = NULL;
+    assert(ts_import_session_create(doc,&options,&session) == TS_OK);
+    ts_document_release(doc); /* The session retains its document. */
+    ts_discovery *discovery = NULL;
+    assert(ts_import_session_discover(session,TS_PREFER_EXACT,&discovery,NULL) == TS_OK);
+    ts_discovery_info found;
+    assert(ts_discovery_get_info(discovery,&found) == TS_OK && found.root_count == 5);
+    ts_discovery_release(discovery);
+    const uint64_t roots[] = {1000, 11000, 21000, 31000, 40002};
+    size_t shared = 99;
+    assert(ts_import_session_prepare(session,roots,5,&shared) == TS_OK && shared == 3);
+    ts_mesh *mesh = NULL;
+    ts_solid_info info;
+    info.struct_size = (uint32_t)sizeof info;
+    assert(ts_import_session_import_solid(session,1000,0.001,1.0,&mesh,&info,NULL) == TS_OK);
+    assert(info.root_id == 1000 && info.face_count == 6);
+    ts_mesh_release(mesh);
+    ts_tessellated_info tessellated;
+    assert(ts_import_session_import_tessellated(session,21000,0.001,&mesh,&tessellated,NULL) == TS_OK);
+    assert(tessellated.kind == TS_TESSELLATED_SOLID && tessellated.link_id == 1000);
+    ts_mesh_release(mesh);
+    ts_session_statistics statistics;
+    assert(ts_import_session_get_statistics(session,&statistics) == TS_OK);
+    assert(statistics.discoveries == 4 && statistics.shared_decodes == 1 && statistics.imports == 2);
+    ts_import_error error;
+    assert(ts_import_session_import_solid(session,9999,0.001,1.0,&mesh,NULL,&error) == TS_NOT_FOUND && !mesh);
+    assert(ts_import_session_prepare(session,NULL,1,&shared) == TS_INVALID_ARGUMENT && shared == 0);
+    ts_import_session_release(session);
+
+    doc = load("assembly.step");
+    assert(ts_import_session_create(doc,NULL,&session) == TS_OK);
+    ts_document_release(doc);
+    ts_assembly *assembly = NULL;
+    assert(ts_import_session_import_assembly(session,TS_PREFER_EXACT,&assembly,NULL) == TS_OK);
+    ts_import_session_release(session);
+    ts_assembly_info assembly_info;
+    assert(ts_assembly_get_info(assembly,&assembly_info) == TS_OK && assembly_info.node_count == 11);
+    ts_assembly_release(assembly);
+    assert(ts_import_session_create(NULL,NULL,&session) == TS_INVALID_ARGUMENT && !session);
+    assert(ts_import_session_get_statistics(NULL,&statistics) == TS_INVALID_ARGUMENT && statistics.imports == 0);
+    ts_import_session_release(NULL);
+}
+static void assembly_options_contract(void) {
+    _Static_assert(sizeof(ts_tolerated_encodings) == 40, "tolerated encodings layout");
+    _Static_assert(sizeof(ts_assembly_adaptations) == 48, "assembly adaptations layout");
+    ts_document *doc = load("mapped.step");
+    ts_assembly *assembly = NULL, *failed = NULL;
+    assert(ts_document_import_assembly_with_options(doc,TS_PREFER_EXACT,NULL,&assembly,NULL) == TS_OK);
+    ts_document_release(doc);
+    ts_assembly_adaptations adaptations;
+    assert(ts_assembly_get_adaptations(assembly,&adaptations) == TS_OK && adaptations.mapped_placements == 6);
+    ts_assembly_release(assembly);
+    doc = load("inch.step");
+    assert(ts_document_import_assembly_with_options(doc,TS_PREFER_EXACT,NULL,&assembly,NULL) == TS_OK);
+    assert(ts_assembly_get_adaptations(assembly,&adaptations) == TS_OK);
+    assert(adaptations.tolerated.omitted_conversion_dimensions == 1 && adaptations.mapped_placements == 0);
+    ts_assembly_release(assembly);
+    ts_import_options options;
+    assert(ts_import_options_init(&options, sizeof options) == TS_OK);
+    options.flags = TS_IMPORT_STRICT;
+    assert(ts_document_import_assembly_with_options(doc,TS_PREFER_EXACT,&options,&assembly,NULL) == TS_OK);
+    ts_assembly_info info;
+    assert(ts_assembly_get_info(assembly,&info) == TS_OK && info.imported_root_count == 0 && info.complete == 0);
+    ts_assembly_release(assembly);
+    assert(ts_document_import_assembly_with_options(doc,0,NULL,&failed,NULL) == TS_INVALID_ARGUMENT && !failed);
+    ts_document_release(doc);
+    assert(ts_assembly_get_adaptations(NULL,&adaptations) == TS_INVALID_ARGUMENT && adaptations.mapped_placements == 0);
+}
 int main(void) {
+    revision_two_contract();
+    surface_model_contract();
+    session_contract();
+    assembly_options_contract();
     import_options_contract();
     solid_contract();
     discovery_contract();

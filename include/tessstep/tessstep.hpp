@@ -158,6 +158,8 @@ struct DiscoveredRoot;
 class Presentation;
 class Assembly;
 class Discovery;
+class SurfaceModel;
+class ImportSession;
 class Document {
     std::unique_ptr<ts_document, detail::DocumentDeleter> handle_;
     explicit Document(ts_document* handle) noexcept : handle_(handle) {}
@@ -210,6 +212,17 @@ public:
         double radians_per_unit, const ImportOptions* options = nullptr) const;
     Result<SolidImport> import_solid(const DiscoveredRoot& root,
         const ImportOptions* options = nullptr) const;
+    // A SHELL_BASED_SURFACE_MODEL as one mesh per shell, never a solid.
+    Result<SurfaceModel> import_surface_model(uint64_t entity_id, double metres_per_unit,
+        double radians_per_unit, const ImportOptions* options = nullptr) const;
+    Result<SurfaceModel> import_surface_model(const DiscoveredRoot& root,
+        const ImportOptions* options = nullptr) const;
+    // Assembly import with the extensible options and a representation preference.
+    Result<Assembly> import_assembly(Preference preference,
+        const ImportOptions* options = nullptr) const;
+    // A session sharing this document's discovery and decodes; it retains the
+    // document, so it may outlive this wrapper.
+    Result<ImportSession> import_session(const ImportOptions* options = nullptr) const;
     // Default options with max_work and max_records sized for this document.
     Result<ImportOptions> import_options() const {
         ImportOptions options{};
@@ -284,6 +297,8 @@ public:
 };
 class Mesh {
     friend class Scene;
+    friend class SurfaceModel;
+    friend class ImportSession;
     friend class Document;
     std::unique_ptr<ts_mesh, detail::MeshDeleter> handle_;
     explicit Mesh(ts_mesh* raw) noexcept : handle_(raw) {}
@@ -568,7 +583,8 @@ using StyleInfo = ts_style_info;
 enum class RootKind : uint32_t {
     manifold_solid_brep = TS_ROOT_MANIFOLD_SOLID_BREP, brep_with_voids = TS_ROOT_BREP_WITH_VOIDS,
     faceted_brep = TS_ROOT_FACETED_BREP, tessellated_solid = TS_ROOT_TESSELLATED_SOLID,
-    tessellated_shell = TS_ROOT_TESSELLATED_SHELL, tessellated_surface_set = TS_ROOT_TESSELLATED_SURFACE_SET
+    tessellated_shell = TS_ROOT_TESSELLATED_SHELL, tessellated_surface_set = TS_ROOT_TESSELLATED_SURFACE_SET,
+    shell_based_surface_model = TS_ROOT_SHELL_BASED_SURFACE_MODEL
 };
 struct AssemblyProduct {
     uint64_t definition_id = 0, product_id = 0;
@@ -597,6 +613,7 @@ inline ImportFailure failure(const ts_import_error& e) noexcept {
 // A linked product structure: its scene, imported appearance and typed outcomes.
 class Assembly {
     friend class Document;
+    friend class ImportSession;
     std::unique_ptr<ts_assembly, detail::AssemblyDeleter> handle_;
     explicit Assembly(ts_assembly* raw) noexcept : handle_(raw) {}
 public:
@@ -641,6 +658,12 @@ public:
         StyleInfo info{}; auto status = ts_assembly_get_style_info(handle_.get(), &info);
         if (status != TS_OK) return detail::error(status);
         return info;
+    }
+    // Mapped-item placements and tolerated exporter encodings in the product closure.
+    Result<ts_assembly_adaptations> adaptations() const {
+        ts_assembly_adaptations a{}; auto status = ts_assembly_get_adaptations(handle_.get(), &a);
+        if (status != TS_OK) return detail::error(status);
+        return a;
     }
     // Independent acquisitions that outlive this assembly.
     Result<Scene> scene() const {
@@ -716,6 +739,7 @@ template<class T> std::vector<T> copy(const T* data, size_t count) {
 // Discovered roots, units and representation choices; independent of the document.
 class Discovery {
     friend class Document;
+    friend class ImportSession;
     std::unique_ptr<ts_discovery, detail::DiscoveryDeleter> handle_;
     explicit Discovery(ts_discovery* raw) noexcept : handle_(raw) {}
 public:
@@ -780,6 +804,173 @@ inline Result<SolidImport> Document::import_solid(const DiscoveredRoot& root,
     if (!root.units) return root.units.error();
     const auto& units = root.units.value();
     return import_solid(root.root_id, units.metres_per_unit, units.radians_per_unit, options);
+}
+
+inline Result<Assembly> Document::import_assembly(Preference preference,
+    const ImportOptions* options) const {
+    ts_assembly* raw = nullptr;
+    ts_import_error failure{};
+    const auto status = ts_document_import_assembly_with_options(handle_.get(),
+        static_cast<uint32_t>(preference), options, &raw, &failure);
+    Assembly assembly(raw);
+    if (status != TS_OK) return detail::import_error(status, failure);
+    return assembly;
+}
+
+// info.struct_size names the revision this header was compiled with.
+using SurfaceModelInfo = ts_surface_model_info;
+// One shell: owned copies of its face IDs; meshes come from SurfaceModel::shell_mesh.
+struct SurfaceShell {
+    uint64_t entity_id = 0;
+    bool closed = false;
+    std::vector<uint64_t> faces;
+    uint64_t boundary_edges = 0;
+    double working_tolerance_m = 0;
+};
+namespace detail {
+struct SurfaceModelDeleter {
+    void operator()(ts_surface_model* p) const noexcept { ts_surface_model_release(p); }
+};
+}
+// The shells of an imported surface model and their meshes; never a solid.
+class SurfaceModel {
+    friend class Document;
+    std::unique_ptr<ts_surface_model, detail::SurfaceModelDeleter> handle_;
+    explicit SurfaceModel(ts_surface_model* raw) noexcept : handle_(raw) {}
+public:
+    SurfaceModel(const SurfaceModel&) = delete;
+    SurfaceModel& operator=(const SurfaceModel&) = delete;
+    SurfaceModel(SurfaceModel&&) noexcept = default;
+    SurfaceModel& operator=(SurfaceModel&&) noexcept = default;
+    ~SurfaceModel() noexcept = default;
+    Result<SurfaceModelInfo> info() const {
+        SurfaceModelInfo info{};
+        info.struct_size = static_cast<uint32_t>(sizeof info);
+        auto status = ts_surface_model_get_info(handle_.get(), &info);
+        if (status != TS_OK) return detail::error(status);
+        return info;
+    }
+    Result<SurfaceShell> shell_at(size_t index) const {
+        ts_surface_shell s{}; auto status = ts_surface_model_shell_at(handle_.get(), index, &s);
+        if (status != TS_OK) return detail::error(status);
+        return SurfaceShell{s.entity_id, s.closed != 0, detail::copy(s.faces, s.face_count),
+            s.boundary_edges, s.working_tolerance_m};
+    }
+    // An independent acquisition that outlives this model.
+    Result<Mesh> shell_mesh(size_t index) const {
+        ts_mesh* raw = nullptr; auto status = ts_surface_model_shell_mesh(handle_.get(), index, &raw);
+        Mesh mesh(raw);
+        if (status != TS_OK) return detail::error(status);
+        return mesh;
+    }
+};
+
+inline Result<SurfaceModel> Document::import_surface_model(uint64_t entity_id,
+    double metres_per_unit, double radians_per_unit, const ImportOptions* options) const {
+    ts_surface_model* raw = nullptr;
+    ts_import_error failure{};
+    const auto status = ts_document_import_surface_model(handle_.get(), entity_id,
+        metres_per_unit, radians_per_unit, options, &raw, &failure);
+    SurfaceModel model(raw);
+    if (status != TS_OK) return detail::import_error(status, failure);
+    return model;
+}
+
+inline Result<SurfaceModel> Document::import_surface_model(const DiscoveredRoot& root,
+    const ImportOptions* options) const {
+    if (!root.units) return root.units.error();
+    const auto& units = root.units.value();
+    return import_surface_model(root.root_id, units.metres_per_unit, units.radians_per_unit,
+        options);
+}
+
+using SessionStatistics = ts_session_statistics;
+namespace detail {
+struct SessionDeleter {
+    void operator()(ts_import_session* p) const noexcept { ts_import_session_release(p); }
+};
+}
+// A document import session: cached discovery and shared decodes for many imports.
+// Move-only and uniquely owned; it retains its document. Calls on one session are
+// serialized by the library; use one session per thread for parallel imports.
+// Every result is independent of the session.
+class ImportSession {
+    friend class Document;
+    std::unique_ptr<ts_import_session, detail::SessionDeleter> handle_;
+    explicit ImportSession(ts_import_session* raw) noexcept : handle_(raw) {}
+public:
+    ImportSession(const ImportSession&) = delete;
+    ImportSession& operator=(const ImportSession&) = delete;
+    ImportSession(ImportSession&&) noexcept = default;
+    ImportSession& operator=(ImportSession&&) noexcept = default;
+    ~ImportSession() noexcept = default;
+    Result<Discovery> discover(Preference preference = Preference::exact) {
+        ts_discovery* raw = nullptr;
+        ts_import_error failure{};
+        const auto status = ts_import_session_discover(handle_.get(),
+            static_cast<uint32_t>(preference), &raw, &failure);
+        Discovery discovery(raw);
+        if (status != TS_OK) return detail::import_error(status, failure);
+        return discovery;
+    }
+    // Decode these roots' closures together; returns how many roots a shared decode
+    // now serves.
+    Result<size_t> prepare(const std::vector<uint64_t>& roots) {
+        size_t shared = 0;
+        const auto status = ts_import_session_prepare(handle_.get(), roots.data(), roots.size(),
+            &shared);
+        if (status != TS_OK) return detail::error(status);
+        return shared;
+    }
+    Result<SolidImport> import_solid(uint64_t entity_id, double metres_per_unit,
+        double radians_per_unit) {
+        ts_mesh* raw = nullptr;
+        SolidInfo info{};
+        info.struct_size = static_cast<uint32_t>(sizeof info);
+        ts_import_error failure{};
+        const auto status = ts_import_session_import_solid(handle_.get(), entity_id,
+            metres_per_unit, radians_per_unit, &raw, &info, &failure);
+        Mesh mesh(raw);
+        if (status != TS_OK) return detail::import_error(status, failure);
+        return SolidImport{std::move(mesh), info};
+    }
+    Result<SolidImport> import_solid(const DiscoveredRoot& root) {
+        if (!root.units) return root.units.error();
+        const auto& units = root.units.value();
+        return import_solid(root.root_id, units.metres_per_unit, units.radians_per_unit);
+    }
+    Result<TessellatedImport> import_tessellated(uint64_t entity_id, double metres_per_unit) {
+        ts_mesh* raw = nullptr;
+        TessellatedInfo info{};
+        ts_import_error failure{};
+        const auto status = ts_import_session_import_tessellated(handle_.get(), entity_id,
+            metres_per_unit, &raw, &info, &failure);
+        Mesh mesh(raw);
+        if (status != TS_OK) return detail::import_error(status, failure);
+        return TessellatedImport{std::move(mesh), info};
+    }
+    Result<Assembly> import_assembly(Preference preference = Preference::exact) {
+        ts_assembly* raw = nullptr;
+        ts_import_error failure{};
+        const auto status = ts_import_session_import_assembly(handle_.get(),
+            static_cast<uint32_t>(preference), &raw, &failure);
+        Assembly assembly(raw);
+        if (status != TS_OK) return detail::import_error(status, failure);
+        return assembly;
+    }
+    Result<SessionStatistics> statistics() const {
+        SessionStatistics s{}; auto status = ts_import_session_get_statistics(handle_.get(), &s);
+        if (status != TS_OK) return detail::error(status);
+        return s;
+    }
+};
+
+inline Result<ImportSession> Document::import_session(const ImportOptions* options) const {
+    ts_import_session* raw = nullptr;
+    const auto status = ts_import_session_create(handle_.get(), options, &raw);
+    ImportSession session(raw);
+    if (status != TS_OK) return detail::error(status);
+    return session;
 }
 
 }

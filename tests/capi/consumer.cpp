@@ -331,10 +331,10 @@ static void discovery_contract() {
     }
     auto parsed = Document::parse(read_file("cylinder.step")); assert(parsed);
     auto options = default_import_options();
-    assert(options.struct_size == TS_IMPORT_OPTIONS_SIZE_1 && options.chord_m == 1e-4);
+    assert(options.struct_size == TS_IMPORT_OPTIONS_SIZE_2 && options.chord_m == 1e-4);
     auto cylinder = parsed.value().import_solid(1000, 0.001, 1.0, &options); assert(cylinder);
     assert(cylinder.value().info.inserted_seams == 1 && cylinder.value().info.face_count == 3);
-    options.flags = 2u;
+    options.flags = 32u;
     assert(parsed.value().import_solid(1000, 0.001, 1.0, &options).error().code == ErrorCode::invalid_argument);
     options = default_import_options();
     options.max_vertices = 0;
@@ -343,7 +343,87 @@ static void discovery_contract() {
     assert(limited.error().import_failure.stage == ImportStage::tessellation);
     assert(parsed.value().import_solid(1000, 0., 1.0).error().code == ErrorCode::invalid_argument);
 }
+static void second_pass_contract() {
+    static_assert(!std::is_copy_constructible_v<SurfaceModel>);
+    static_assert(std::is_nothrow_move_constructible_v<SurfaceModel>);
+    static_assert(!std::is_copy_constructible_v<ImportSession>);
+    static_assert(std::is_nothrow_move_constructible_v<ImportSession>);
+    static_assert(std::is_nothrow_destructible_v<ImportSession>);
+    {
+        // Opt-in repair, reported in the second solid-info revision.
+        auto parsed = Document::parse(read_file("duplicated.step")); assert(parsed);
+        auto strict = parsed.value().import_solid(1000, 0.001, 1.0);
+        assert(!strict && strict.error().import_failure.stage == ImportStage::topology);
+        auto options = default_import_options();
+        options.flags |= TS_IMPORT_REPAIR_SEW | TS_IMPORT_REPAIR_ORIENT;
+        auto repaired = parsed.value().import_solid(1000, 0.001, 1.0, &options); assert(repaired);
+        assert(repaired.value().info.struct_size == TS_SOLID_INFO_SIZE_2);
+        assert(repaired.value().info.merged_vertices == 1 && repaired.value().info.merged_edges == 3);
+    }
+    {
+        // The tolerance policy: a counted deviation, rejected with a factor of 1.
+        auto parsed = Document::parse(read_file("near.step")); assert(parsed);
+        auto options = default_import_options();
+        options.model_distance_m = 1e-6;
+        auto near = parsed.value().import_solid(1000, 0.001, 1.0, &options); assert(near);
+        assert(near.value().info.off_surface_edges == 1);
+        assert(std::abs(near.value().info.largest_deviation_m - 3e-6) < 1e-12);
+        options.deviation_factor = 1;
+        auto far = parsed.value().import_solid(1000, 0.001, 1.0, &options);
+        assert(!far && far.error().code == ErrorCode::invalid_geometry);
+        assert(far.error().import_failure.stage == ImportStage::geometry);
+    }
+    auto [model, shell_mesh] = [] {
+        auto parsed = Document::parse(read_file("surface-open.step")); assert(parsed);
+        auto options = default_import_options();
+        options.flags |= TS_DISCOVER_SURFACE_MODELS;
+        auto found = parsed.value().discover(Preference::exact, &options); assert(found);
+        auto root = found.value().root_at(0).value();
+        assert(root.kind == RootKind::shell_based_surface_model && root.units);
+        auto imported = parsed.value().import_surface_model(root); assert(imported);
+        auto mesh = imported.value().shell_mesh(0); assert(mesh);
+        return std::pair{std::move(imported).value(), std::move(mesh).value()};
+    }(); // The document is gone; the model and its shell mesh are independent.
+    auto info = model.info().value();
+    assert(info.shell_count == 1 && info.closed_shell_count == 0 && info.boundary_edges == 8);
+    auto shell = model.shell_at(0).value();
+    assert(shell.entity_id == 105 && !shell.closed && shell.faces.size() == 3);
+    assert(model.shell_at(1).error().code == ErrorCode::not_found);
+    auto view = shell_mesh.view(); assert(view);
+    assert(view.value().data().components == 1 && view.value().data().boundary_edges > 0);
+    {
+        auto parsed = Document::parse(read_file("selection.step")); assert(parsed);
+        auto options = parsed.value().import_options(); assert(options);
+        auto created = parsed.value().import_session(&options.value()); assert(created);
+        ImportSession session = std::move(created).value();
+        parsed = Document::parse(read_file("assembly.step")); // The session keeps its document.
+        auto found = session.discover(); assert(found);
+        assert(found.value().info().value().root_count == 5);
+        auto shared = session.prepare({1000, 11000, 21000, 31000, 40002});
+        assert(shared && shared.value() == 3);
+        auto solid = session.import_solid(found.value().root_at(1).value()); assert(solid);
+        assert(solid.value().kind() == RootKind::faceted_brep);
+        auto tessellated = session.import_tessellated(21000, 0.001); assert(tessellated);
+        assert(tessellated.value().kind() == TessellatedKind::solid);
+        auto statistics = session.statistics().value();
+        assert(statistics.shared_decodes == 1 && statistics.imports == 2);
+        auto missing = session.import_solid(9999, 0.001, 1.0);
+        assert(!missing && missing.error().code == ErrorCode::not_found);
+        ImportSession moved = std::move(session);
+        assert(!session.statistics() && session.statistics().error().code == ErrorCode::invalid_argument);
+        assert(moved.statistics().value().imports == 3);
+    }
+    {
+        auto parsed = Document::parse(read_file("mapped.step")); assert(parsed);
+        auto assembly = parsed.value().import_assembly(Preference::exact); assert(assembly);
+        assert(assembly.value().adaptations().value().mapped_placements == 6);
+        auto session = parsed.value().import_session(); assert(session);
+        auto again = session.value().import_assembly(); assert(again);
+        assert(again.value().info().value().occurrence_count == 4);
+    }
+}
 int main(int argc, char** argv) {
+    second_pass_contract();
     discovery_contract();
     assembly_contract();
     tessellated_contract();

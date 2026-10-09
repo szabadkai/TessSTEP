@@ -1,3 +1,34 @@
+# Milestone 22.10 second pass: repair, tolerance policy, surface models, sessions — 2026-10-09
+
+Delivered on top of 22.2–22.8 (main at 5a9879a): revision 2 of `ts_import_options`
+(152 bytes: sewing and deviation factors, assembly expansion and session budgets;
+`TS_IMPORT_REPAIR_SEW`, `TS_IMPORT_REPAIR_ORIENT` and `TS_DISCOVER_SURFACE_MODELS`
+flags) and of `ts_solid_info` (216 bytes: the 22.3 counters, largest deviation, working
+tolerance and the 22.5 repair report); surface-model import with a retained
+`ts_surface_model` and surface-model roots in discovery on request; the
+`ts_import_session` handle; `ts_document_import_assembly_with_options` and
+`ts_assembly_get_adaptations`; the matching C++ API. Sixteen new functions: 90 C
+exports. No `tessstep-import` code changed, so the external corpus was not rerun.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), `cargo doc -D warnings` | passed (339 tests), including six new `tessstep-capi --test session` contract tests and `default_options_are_the_rust_defaults` |
+| `check_capi.py --library-dir target/release` (no sanitizers; local ASan hang) | passed: Debug, Release and C-only shared consumers, exactly 90 exports; Release C and C++ consumers linked statically against a package copy without the shared library; the archive defines exactly the 90 C symbols |
+| `package_release.py --target aarch64-apple-darwin` | passed (9.6 MB archive) |
+| `check_architecture.py`, `conformance.py --check`, script unit tests (74) | passed |
+
+Defaults after 22.2: the initialized options still map to exactly
+`TessellationOptions::default()` (planar work 10M, trim samples raised to 1M by 22.4,
+sampling 1M samples and 10M evaluations), `ImportOptions::default()` (deviation factor
+16, repair off) and `AssemblyImportOptions::default()`; the unit test compares them
+field by field. Writing it found one difference, now fixed: the frozen
+`ts_assembly_options` copies its instance budget into the scene limit (100,000), while
+Rust keeps 1,000,000 there; the new assembly entry point leaves the scene limits at
+the Rust defaults. Apple `nm` cannot parse the newer-LLVM bitcode embedded in the Rust
+standard library's archive members; the static symbol check ignores those members'
+errors and still requires exactly the 90 `ts_` symbols. Linux and Windows results are
+CI-only.
+
 # Milestone 22.10 first pass: discovery, solid import, import options, static linkage — 2026-10-02
 
 Delivered: the extensible `ts_import_options` (revision 1, 96 bytes) with

@@ -615,3 +615,12 @@ The session is `Send` and not `Sync`; borrowed decoded records never leave it, a
 import result is owned. Session budgets bound cumulative decoded and adapted records and
 triangles; each is a named `ResourceLimit`, separate from the unchanged per-root budgets.
 No session type is part of the C ABI.
+
+The second pass (2026-10-09) adds two modules, `surface` and `session`, and grows the
+extensible records by one revision each; the importer API is unchanged. The import
+session is the one place where the bridge holds a borrowing Rust type: the handle
+owns an acquisition of its document and a `Mutex<ImportSession<'static>>`, whose
+`'static` borrow points into that acquisition and is dropped first (field order), so
+the borrow never outlives its document and never leaves the handle. The mutex makes
+the `Send`-but-not-`Sync` session safe to share across C threads (calls serialize)
+and turns a contained panic into a poisoned handle rather than reused state.

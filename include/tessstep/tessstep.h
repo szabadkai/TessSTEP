@@ -600,40 +600,61 @@ TS_API ts_status TS_CALL ts_assembly_get_scene(const ts_assembly *assembly, ts_s
 TS_API ts_status TS_CALL ts_assembly_get_appearance(const ts_assembly *assembly,
     ts_appearance **out);
 
-/* Milestone 22: import options, root discovery, representation selection and
- * single-root solid import.
+/* Milestone 22: import options, root discovery, representation selection, solid and
+ * surface-model import, import sessions.
  *
- * Extensible records. ts_import_options and ts_solid_info are the only ABI 1 records
- * that grow. struct_size names the revision a caller was compiled with (its sizeof);
- * a later revision only appends fields. The library accepts every published revision
- * size (TS_*_SIZE_1, ...) and reads or writes exactly that many bytes: an input's
- * fields beyond its revision take their initializer defaults, an output's are not
- * written. Any other size is TS_INVALID_ARGUMENT; abi_version must be 1. Every
- * other record keeps the exact-size rule. */
+ * Extensible records. ts_import_options, ts_solid_info and ts_surface_model_info are
+ * the only ABI 1 records that grow. struct_size names the revision a caller was
+ * compiled with (its sizeof); a later revision only appends fields. The library
+ * accepts every published revision size (TS_*_SIZE_1, _2, ...) and reads or writes
+ * exactly that many bytes: an input's fields beyond its revision take their
+ * initializer defaults, an output's are not written. Any other size is
+ * TS_INVALID_ARGUMENT; abi_version must be 1. Every other record keeps the
+ * exact-size rule. */
 #define TS_IMPORT_OPTIONS_SIZE_1 96u
+#define TS_IMPORT_OPTIONS_SIZE_2 152u
+/* Opt-in policies in ts_import_options.flags beside TS_IMPORT_STRICT. Only
+ * ts_import_options accepts these bits; every other flags word rejects them. */
+#define TS_IMPORT_REPAIR_SEW 2u /* merge coincident boundary vertices and free edges */
+#define TS_IMPORT_REPAIR_ORIENT 4u /* flip faces, reverse loops and inside-out shells */
+#define TS_DISCOVER_SURFACE_MODELS 8u /* discovery also reports surface-model roots */
 typedef struct ts_import_options {
     uint32_t struct_size, abi_version;
-    uint32_t flags, reserved; /* TS_IMPORT_STRICT; other bits and nonzero reserved rejected */
+    uint32_t flags, reserved; /* bits above; other bits and nonzero reserved rejected */
     uint64_t max_work, max_records; /* profile decoding, adapter and discovery budgets */
     double model_distance_m, model_angle_rad; /* B-rep model tolerance */
     double chord_m, normal_angle_rad; /* tessellation tolerance */
     uint64_t max_tessellation_work, max_evaluations; /* shared by a solid's faces */
     uint64_t max_vertices, max_triangles; /* mesh output */
+    /* Revision 2. */
+    double sewing_factor; /* sewing tolerance / model distance; finite > 0 */
+    double deviation_factor; /* accepted edge/vertex deviation / model distance; >= 1 */
+    uint64_t max_instances, max_depth; /* assembly expansion */
+    uint64_t max_session_decoded_entities, max_session_adapted_entities, max_session_triangles;
 } ts_import_options;
 /* Write the defaults of the revision struct_size names (pass sizeof *out) into
  * exactly struct_size bytes: flags 0, max_work 5,000,000, max_records 100,000, model
  * tolerance 1e-7 m and 1e-8 rad, chord 1e-4 m, normal angle 0.1 rad, tessellation
- * work 50,000,000, evaluations 10,000,000, 1,000,000 vertices, 2,000,000 triangles.
- * Each discovery pass and import stage has its own max_work; per-face polygon,
- * trimming and sampling budgets keep library defaults capped by the tessellation
- * fields. Zero budgets mean zero. NULL or an unknown size writes nothing and
- * returns TS_INVALID_ARGUMENT. NULL options in the entry points below mean these
- * defaults. */
+ * work 50,000,000, evaluations 10,000,000, 1,000,000 vertices, 2,000,000 triangles;
+ * revision 2: sewing factor 10, deviation factor 16, 100,000 instances, depth 1,024,
+ * session budgets of 1,000,000 decoded and 1,000,000 adapted records and 20,000,000
+ * triangles. Each discovery pass and import stage has its own max_work; per-face
+ * polygon, trimming and sampling budgets keep library defaults capped by the
+ * tessellation fields. Zero budgets mean zero. NULL or an unknown size writes nothing
+ * and returns TS_INVALID_ARGUMENT. NULL options in the entry points below mean these
+ * defaults; every entry point validates every field of the record.
+ * Curved-profile tolerance policy: an edge farther than the model distance from its
+ * face surface, or a vertex from its edge curve, is accepted and counted up to
+ * deviation_factor times it and rejected beyond (TS_INVALID_GEOMETRY at the
+ * geometry stage); TS_IMPORT_STRICT forces a factor of 1. Repair runs only when its
+ * flags ask, on solids (never on surface models); strict and repair combine. */
 TS_API ts_status TS_CALL ts_import_options_init(ts_import_options *out, size_t struct_size);
 /* ts_import_options_init with max_work and max_records sized for this document as
- * Rust ImportOptions::for_document sizes them: at least 512 work units and one
- * record per entity (the one-million topology record ceiling still applies). A NULL
- * document zero-fills a valid record (struct_size 0) and returns TS_INVALID_ARGUMENT. */
+ * Rust ImportOptions::for_document sizes them (at least 512 work units and one record
+ * per entity; the one-million topology record ceiling still applies) and, in revision
+ * 2, the session budgets as SessionBudgets::for_document (at least 4 decoded and 16
+ * adapted records and 256 triangles per entity). A NULL document zero-fills a valid
+ * record (struct_size 0) and returns TS_INVALID_ARGUMENT. */
 TS_API ts_status TS_CALL ts_import_options_for_document(const ts_document *document,
     ts_import_options *out, size_t struct_size);
 
@@ -643,17 +664,35 @@ TS_API ts_status TS_CALL ts_import_options_for_document(const ts_document *docum
  * docs/CURVED_IMPORT.md), or a FACETED_BREP through the faceted profile, chosen by
  * the root's physical record. Units are explicit and finite > 0: metres_per_unit
  * scales lengths, radians_per_unit plane angles (cone semi-angles and supplied
- * pcurve parameters), for example from ts_discovery_root_at. No unit inference,
- * healing or welding. Representation adaptations (none changes geometry) are counted
- * in info; faceted roots report none. flags TS_IMPORT_STRICT rejects $ in derived
- * ORIENTED_EDGE endpoint slots. Additive ABI 1 record: 104-byte info revision 1. */
+ * pcurve parameters), for example from ts_discovery_root_at. No unit inference or
+ * welding; repair only when its flags ask. Representation adaptations and repairs
+ * (none moves a coordinate) are counted in info; faceted roots adapt nothing.
+ * TS_IMPORT_STRICT rejects $ in derived ORIENTED_EDGE endpoint slots and every edge
+ * or vertex deviation. Info revisions: 104 bytes (1) and 216 bytes (2). */
 #define TS_SOLID_INFO_SIZE_1 104u
+#define TS_SOLID_INFO_SIZE_2 216u
 typedef struct ts_solid_info {
     uint32_t struct_size, abi_version;
     uint32_t kind, reserved; /* TS_ROOT_MANIFOLD_SOLID_BREP, _BREP_WITH_VOIDS, _FACETED_BREP */
     uint64_t root_id, face_count, shell_count; /* shells: the outer one and each cavity */
     uint64_t inferred_outer_bounds, inserted_seams, split_edges, recharted_spheres;
     uint64_t collapsed_edges, collapsed_faces, supplied_pcurves, rejected_pcurves;
+    /* Revision 2, tolerance policy: edge uses accepted off their face surface, edge
+     * ends accepted off their curve, B-spline sides charted as regular sides; the
+     * largest accepted deviation and the working tolerance every later stage used
+     * (the model distance plus twice that deviation plus any sewing merge distance),
+     * in metres. */
+    uint64_t off_surface_edges, off_curve_vertices, uncollapsed_sides;
+    double largest_deviation_m, working_tolerance_m;
+    /* Revision 2, repairs (zero unless asked for): merged vertices and free edges and
+     * their largest distance; closed shells that shared no edge or vertex before
+     * sewing; flipped faces, reversed loops, reoriented and undecided closed shells;
+     * the sewing tolerance in force (zero when not sewing). */
+    uint64_t merged_vertices, merged_edges;
+    double max_merge_distance_m;
+    uint64_t disconnected_shells, flipped_faces, reversed_loops, reoriented_shells;
+    uint64_t undecided_shells;
+    double sewing_tolerance_m;
 } ts_solid_info;
 /* Document, ownership, output-clearing and error contract of
  * ts_document_import_tessellated; success transfers one mesh acquisition whose
@@ -679,9 +718,14 @@ TS_API ts_status TS_CALL ts_document_import_solid(const ts_document *document,
  * solid (TS_PREFER_EXACT) or the first tessellation (TS_PREFER_TESSELLATED). Every
  * shape root is the selection or an alternative of exactly one choice; alternatives
  * are for a failed selection. Physical records are read; nothing is imported.
+ * With TS_DISCOVER_SURFACE_MODELS, every SHELL_BASED_SURFACE_MODEL is reported too,
+ * as roots of kind TS_ROOT_SHELL_BASED_SURFACE_MODEL after the tessellations (their
+ * count is root_count - solid_count - tessellation_count); they take no part in
+ * selection, so solid and tessellation indices and choices are unchanged.
  * Options: flags and max_work (each pass has its own budget); the other fields are
  * validated. Additive ABI 1 records: 48-byte info, 40-byte units, 112-byte root,
  * 120-byte presentation and 32-byte choice. */
+#define TS_ROOT_SHELL_BASED_SURFACE_MODEL 7u
 typedef struct ts_discovery ts_discovery;
 #define TS_PREFER_EXACT 1u
 #define TS_PREFER_TESSELLATED 2u
@@ -700,7 +744,7 @@ typedef struct ts_context_units {
     uint32_t has_distance_uncertainty, reserved;
 } ts_context_units;
 /* Shape roots in order: solids (index below solid_count) in document order, then
- * tessellations. kind is a TS_ROOT_* value. link_id is a tessellation's
+ * tessellations, then any surface models. kind is a TS_ROOT_* value. link_id is a tessellation's
  * GEOMETRIC_LINK or TOPOLOGICAL_LINK (zero when absent and for solids). status is
  * TS_OK with units, or the unit failure with zero units and a located error.
  * representations is borrowed from the discovery until its last release, and NULL
@@ -752,6 +796,139 @@ TS_API ts_status TS_CALL ts_discovery_presentation_at(const ts_discovery *discov
     size_t index, ts_discovered_presentation *out);
 TS_API ts_status TS_CALL ts_discovery_choice_at(const ts_discovery *discovery, size_t index,
     ts_representation_choice *out);
+
+/* Surface models (Milestone 22.6): a selected SHELL_BASED_SURFACE_MODEL whose
+ * boundary holds OPEN_SHELLs and CLOSED_SHELLs (or ORIENTED_ forms) of curved-profile
+ * faces, imported as one mesh per shell, never as a solid: each shell is validated
+ * open or closed as declared (closed: every edge used twice), keeps its own copies of
+ * shared vertices and edges, and is meshed as one connected component, watertight
+ * when closed, with no volume or outward-orientation check. Units, tolerances,
+ * strictness and the deviation policy are those of ts_document_import_solid; repair
+ * flags are validated and not applied. The first failing shell fails the import.
+ * Additive ABI 1 records: 136-byte info revision 1 (extensible) and 48-byte shell. */
+typedef struct ts_surface_model ts_surface_model;
+#define TS_SURFACE_MODEL_INFO_SIZE_1 136u
+typedef struct ts_surface_model_info {
+    uint32_t struct_size, abi_version;
+    uint64_t root_id, shell_count, closed_shell_count, face_count, boundary_edges;
+    uint64_t inferred_outer_bounds, inserted_seams, split_edges, recharted_spheres;
+    uint64_t collapsed_edges, collapsed_faces, supplied_pcurves, rejected_pcurves;
+    uint64_t off_surface_edges, off_curve_vertices, uncollapsed_sides;
+} ts_surface_model_info;
+/* One shell in boundary order: the shell entity the model references, closed 1 for a
+ * declared CLOSED_SHELL, its STEP faces (borrowed from the model until its last
+ * release; NULL exactly when face_count is zero), open boundary edges (zero when
+ * closed) and the working tolerance its B-rep was validated with, in metres. */
+typedef struct ts_surface_shell {
+    uint64_t entity_id;
+    uint32_t closed, reserved;
+    const uint64_t *faces;
+    size_t face_count;
+    uint64_t boundary_edges;
+    double working_tolerance_m;
+} ts_surface_shell;
+/* Document, unit, options, output-clearing and error contract of
+ * ts_document_import_solid. Success transfers one surface-model acquisition,
+ * independent of the document, released with ts_surface_model_release. */
+TS_API ts_status TS_CALL ts_document_import_surface_model(const ts_document *document,
+    uint64_t entity_id, double metres_per_unit, double radians_per_unit,
+    const ts_import_options *options, ts_surface_model **out, ts_import_error *error);
+TS_API ts_status TS_CALL ts_surface_model_retain(const ts_surface_model *model);
+TS_API void TS_CALL ts_surface_model_release(const ts_surface_model *model);
+/* out is required and its caller sets struct_size to a published revision; the rule
+ * of ts_solid_info applies. Concurrent immutable queries are allowed. */
+TS_API ts_status TS_CALL ts_surface_model_get_info(const ts_surface_model *model,
+    ts_surface_model_info *out);
+/* Out-of-range indices are TS_NOT_FOUND; outputs are cleared on failure. */
+TS_API ts_status TS_CALL ts_surface_model_shell_at(const ts_surface_model *model,
+    size_t index, ts_surface_shell *out);
+/* An independent acquisition of the shell's mesh (face_ids are STEP face IDs),
+ * released with ts_mesh_release; it and its views may outlive the model. */
+TS_API ts_status TS_CALL ts_surface_model_shell_mesh(const ts_surface_model *model,
+    size_t index, ts_mesh **out);
+
+/* Assembly import with the extensible options (Milestone 22): ts_document_import_assembly
+ * with strictness, repair and the deviation policy for every root, the import and
+ * tessellation budgets and tolerances of ts_import_options (model_distance_m is the
+ * floor under each root's context uncertainty), max_instances and max_depth for the
+ * product-structure expansion, the representation preference (TS_PREFER_*), and a
+ * one-shot import session bounded by the record's session budgets. Output, error
+ * and ownership contract of ts_document_import_assembly. */
+TS_API ts_status TS_CALL ts_document_import_assembly_with_options(const ts_document *document,
+    uint32_t preference, const ts_import_options *options, ts_assembly **out,
+    ts_import_error *error);
+/* Exporter encodings tolerated (and counted) unless strict: SI units whose dimensions
+ * are explicit exponents or $, conversion-based units with * dimensions, bare
+ * numbers for typed measures, and complex instances out of canonical order. */
+typedef struct ts_tolerated_encodings {
+    uint64_t explicit_si_dimensions, unset_si_dimensions, omitted_conversion_dimensions;
+    uint64_t untyped_measures, unordered_complex;
+} ts_tolerated_encodings;
+/* Occurrences placed by a MAPPED_ITEM (or Cartesian transformation operator) of the
+ * occurrence's representation rather than a context dependent shape representation,
+ * and the encodings tolerated in the product closure. Additive ABI 1 records:
+ * 40-byte encodings, 48-byte adaptations. */
+typedef struct ts_assembly_adaptations {
+    uint64_t mapped_placements;
+    ts_tolerated_encodings tolerated;
+} ts_assembly_adaptations;
+/* Any assembly acquisition; output cleared on failure. */
+TS_API ts_status TS_CALL ts_assembly_get_adaptations(const ts_assembly *assembly,
+    ts_assembly_adaptations *out);
+
+/* Import sessions (Milestone 22.8). A session shares one document between imports:
+ * each discovery pass runs once per session, ts_import_session_prepare decodes the
+ * reference closures of several roots together once, and every import adapts its
+ * root from that shared decode. Every result equals the corresponding ts_document_*
+ * call's with the same options; a shared decode is kept only when it succeeds within
+ * one root's max_work, otherwise each root decodes alone. Beside every per-root
+ * budget, the session budgets of the options bound what the session accumulates:
+ * decoded records, records handed to adapters and triangles; an exhausted budget
+ * fails the root with TS_RESOURCE_LIMIT. Size them with
+ * ts_import_options_for_document.
+ * Ownership: creation retains the document (it may be released immediately) and
+ * fixes the options; the session is uniquely owned (no retain) and released once
+ * with ts_import_session_release, after every call on it has returned. Results
+ * (discoveries, meshes, assemblies) are independent acquisitions that outlive it. A
+ * session holds the shared decodes of prepared roots until each is imported.
+ * Threads: calls on one session are serialized by the library (safe, not parallel);
+ * use one session per thread for parallel imports. After TS_INTERNAL_ERROR (a
+ * contained panic) every further call except release fails the same way. Additive
+ * ABI 1 record: 72-byte statistics. */
+typedef struct ts_import_session ts_import_session;
+typedef struct ts_session_statistics {
+    uint64_t discoveries, shared_decodes, shared_fallbacks, shared_roots, root_decodes;
+    uint64_t decoded_entities, adapted_entities, imports, triangles;
+} ts_session_statistics;
+/* options is copied; NULL means the ts_import_options_init defaults. */
+TS_API ts_status TS_CALL ts_import_session_create(const ts_document *document,
+    const ts_import_options *options, ts_import_session **out);
+TS_API void TS_CALL ts_import_session_release(ts_import_session *session);
+/* ts_document_discover with the session's options and cached passes. */
+TS_API ts_status TS_CALL ts_import_session_discover(ts_import_session *session,
+    uint32_t preference, ts_discovery **out, ts_import_error *error);
+/* Decode the closures of these roots together, grouped by the profile their import
+ * uses (FACETED_BREP, other solids, tessellations and annotation occurrences); other
+ * entities are ignored. *shared is the number of roots a shared decode now serves
+ * (zero for groups of fewer than two new roots or a failed shared decode). roots may
+ * be NULL only when root_count is zero; zero IDs return TS_INVALID_ARGUMENT. */
+TS_API ts_status TS_CALL ts_import_session_prepare(ts_import_session *session,
+    const uint64_t *roots, size_t root_count, size_t *shared);
+/* ts_document_import_solid with the session's options. */
+TS_API ts_status TS_CALL ts_import_session_import_solid(ts_import_session *session,
+    uint64_t entity_id, double metres_per_unit, double radians_per_unit, ts_mesh **out,
+    ts_solid_info *info, ts_import_error *error);
+/* ts_document_import_tessellated with the session's options: max_work, max_records
+ * and the strict flag, and max_vertices / max_triangles as mesh limits (validation
+ * work bounded by the tessellation work). */
+TS_API ts_status TS_CALL ts_import_session_import_tessellated(ts_import_session *session,
+    uint64_t entity_id, double metres_per_unit, ts_mesh **out, ts_tessellated_info *info,
+    ts_import_error *error);
+/* ts_document_import_assembly_with_options with the session's options and passes. */
+TS_API ts_status TS_CALL ts_import_session_import_assembly(ts_import_session *session,
+    uint32_t preference, ts_assembly **out, ts_import_error *error);
+TS_API ts_status TS_CALL ts_import_session_get_statistics(const ts_import_session *session,
+    ts_session_statistics *out);
 
 #ifdef __cplusplus
 }

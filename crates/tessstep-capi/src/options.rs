@@ -4,9 +4,19 @@
 use crate::{TS_IMPORT_STRICT, TS_INVALID_ARGUMENT, TS_OK, TsDocument, boundary};
 use std::ptr;
 use tessstep_import::{
-    AssemblyImportOptions, ImportOptions, TessellationOptions, TessellationTolerance,
+    AssemblyImportOptions, ImportOptions, RepairOptions, RepresentationPreference, SessionBudgets,
+    TessellationOptions, TessellationTolerance,
 };
 use tessstep_math::{Angle, Length, ModelTolerance};
+
+/// Opt-in sewing of coincident boundary vertices and free edges (Milestone 22.5).
+pub const TS_IMPORT_REPAIR_SEW: u32 = 2;
+/// Opt-in face and shell orientation repair (Milestone 22.5).
+pub const TS_IMPORT_REPAIR_ORIENT: u32 = 4;
+/// Discovery also reports SHELL_BASED_SURFACE_MODEL roots (Milestone 22.6).
+pub const TS_DISCOVER_SURFACE_MODELS: u32 = 8;
+const IMPORT_FLAGS: u32 =
+    TS_IMPORT_STRICT | TS_IMPORT_REPAIR_SEW | TS_IMPORT_REPAIR_ORIENT | TS_DISCOVER_SURFACE_MODELS;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -25,18 +35,30 @@ pub struct TsImportOptions {
     pub max_evaluations: u64,
     pub max_vertices: u64,
     pub max_triangles: u64,
+    // Revision 2: repair and deviation tolerances, assembly and session budgets.
+    pub sewing_factor: f64,
+    pub deviation_factor: f64,
+    pub max_instances: u64,
+    pub max_depth: u64,
+    pub max_session_decoded_entities: u64,
+    pub max_session_adapted_entities: u64,
+    pub max_session_triangles: u64,
 }
-/// Published revision sizes, oldest first; revision 1 is the whole current record.
+/// Published revision sizes, oldest first; the newest is the whole current record.
 pub const TS_IMPORT_OPTIONS_SIZE_1: u32 = 96;
-const _: () = assert!(size_of::<TsImportOptions>() == TS_IMPORT_OPTIONS_SIZE_1 as usize);
-const IMPORT_OPTIONS_REVISIONS: [u32; 1] = [TS_IMPORT_OPTIONS_SIZE_1];
+pub const TS_IMPORT_OPTIONS_SIZE_2: u32 = 152;
+const _: () = assert!(std::mem::offset_of!(TsImportOptions, sewing_factor) == 96);
+const _: () = assert!(size_of::<TsImportOptions>() == TS_IMPORT_OPTIONS_SIZE_2 as usize);
+pub(crate) const IMPORT_OPTIONS_REVISIONS: [u32; 2] =
+    [TS_IMPORT_OPTIONS_SIZE_1, TS_IMPORT_OPTIONS_SIZE_2];
 
 impl Default for TsImportOptions {
     fn default() -> Self {
         let (import, solid) = (ImportOptions::default(), AssemblyImportOptions::default());
         let tessellation = TessellationOptions::default();
+        let session = SessionBudgets::default();
         Self {
-            struct_size: TS_IMPORT_OPTIONS_SIZE_1,
+            struct_size: TS_IMPORT_OPTIONS_SIZE_2,
             abi_version: 1,
             flags: 0,
             reserved: 0,
@@ -50,6 +72,13 @@ impl Default for TsImportOptions {
             max_evaluations: tessellation.max_evaluations as u64,
             max_vertices: tessellation.mesh.max_vertices as u64,
             max_triangles: tessellation.mesh.max_triangles as u64,
+            sewing_factor: import.repair.sewing_factor,
+            deviation_factor: import.deviation_factor,
+            max_instances: solid.assembly.expansion.max_instances as u64,
+            max_depth: solid.assembly.expansion.max_depth as u64,
+            max_session_decoded_entities: session.max_decoded_entities as u64,
+            max_session_adapted_entities: session.max_adapted_entities as u64,
+            max_session_triangles: session.max_triangles as u64,
         }
     }
 }
@@ -61,24 +90,37 @@ pub(crate) struct Options {
     pub model: ModelTolerance,
     pub tolerance: TessellationTolerance,
     pub tessellation: TessellationOptions,
+    pub session: SessionBudgets,
+    pub surface_models: bool,
+    minimum_model_tolerance: f64,
+    max_instances: usize,
+    max_depth: usize,
 }
 impl TsImportOptions {
     /// Every field is checked by every entry point, whether or not it uses it.
     pub(crate) fn options(self) -> Option<Options> {
         if !IMPORT_OPTIONS_REVISIONS.contains(&self.struct_size)
             || self.abi_version != 1
-            || self.flags & !TS_IMPORT_STRICT != 0
+            || self.flags & !IMPORT_FLAGS != 0
             || self.reserved != 0
+            || !(self.sewing_factor.is_finite() && self.sewing_factor > 0.)
+            || !(self.deviation_factor.is_finite() && self.deviation_factor >= 1.)
         {
             return None;
         }
         let count = |v: u64| usize::try_from(v).ok();
+        // Strict rejection of topology defects stays the default; each repair is a
+        // separate opt-in. Strict import also forces a deviation factor of 1.
         let import = ImportOptions {
             max_work: count(self.max_work)?,
             max_records: count(self.max_records)?,
             strict: self.flags & TS_IMPORT_STRICT != 0,
-            // The opt-in repair stage is not exposed in C yet: C imports stay strict.
-            ..ImportOptions::default()
+            repair: RepairOptions {
+                sew: self.flags & TS_IMPORT_REPAIR_SEW != 0,
+                orient: self.flags & TS_IMPORT_REPAIR_ORIENT != 0,
+                sewing_factor: self.sewing_factor,
+            },
+            deviation_factor: self.deviation_factor,
         };
         let model = ModelTolerance::new(
             Length::metres(self.model_distance_m).ok()?,
@@ -120,7 +162,36 @@ impl TsImportOptions {
             model,
             tolerance,
             tessellation: t,
+            session: SessionBudgets {
+                max_decoded_entities: count(self.max_session_decoded_entities)?,
+                max_adapted_entities: count(self.max_session_adapted_entities)?,
+                max_triangles: count(self.max_session_triangles)?,
+            },
+            surface_models: self.flags & TS_DISCOVER_SURFACE_MODELS != 0,
+            minimum_model_tolerance: self.model_distance_m,
+            max_instances: count(self.max_instances)?,
+            max_depth: count(self.max_depth)?,
         })
+    }
+}
+impl Options {
+    /// Assembly import: `model_distance_m` floors each root's context uncertainty,
+    /// and the instance and depth budgets bound the product-structure expansion; the
+    /// scene keeps its Rust limits, as `AssemblyImportOptions::default` does.
+    pub(crate) fn assembly(&self, preference: RepresentationPreference) -> AssemblyImportOptions {
+        let mut o = AssemblyImportOptions {
+            preference,
+            tolerance: self.tolerance,
+            tessellation: self.tessellation,
+            minimum_model_tolerance: self.minimum_model_tolerance,
+            mesh: self.tessellation.mesh,
+            ..AssemblyImportOptions::default()
+        };
+        o.assembly.import = self.import;
+        o.assembly.expansion.max_work = self.import.max_work;
+        o.assembly.expansion.max_instances = self.max_instances;
+        o.assembly.expansion.max_depth = self.max_depth;
+        o
     }
 }
 
@@ -158,6 +229,46 @@ pub(crate) unsafe fn write_prefix<T: Copy>(value: &T, size: usize, to: *mut T) {
     debug_assert!(size <= size_of::<T>());
     // SAFETY: both ranges span size bytes; the caller's storage is disjoint.
     unsafe { ptr::copy_nonoverlapping(ptr::from_ref(value).cast::<u8>(), to.cast(), size) };
+}
+
+/// An extensible output record: its caller sets `struct_size` to a published
+/// revision, and the bridge writes exactly that revision.
+pub(crate) trait Extensible: Copy + Default {
+    const REVISIONS: &'static [u32];
+    /// Set `struct_size` and `abi_version`.
+    fn header(&mut self, struct_size: u32);
+}
+/// Reset a caller's output record before validation: `struct_size` kept,
+/// `abi_version` 1, every other field of its revision zero. `Ok(None)` for NULL,
+/// `Err(())` for an unknown revision, which is not written.
+///
+/// # Safety
+/// Non-NULL `out` must address at least the revision its first field names.
+pub(crate) unsafe fn reset_output<T: Extensible>(out: *mut T) -> Result<Option<usize>, ()> {
+    if out.is_null() {
+        return Ok(None);
+    }
+    // SAFETY: struct_size is the first field of every revision.
+    let size = unsafe { out.cast::<u32>().read() };
+    if !T::REVISIONS.contains(&size) {
+        return Err(());
+    }
+    let mut cleared = T::default();
+    cleared.header(size);
+    // SAFETY: the caller's record spans the revision it names.
+    unsafe { write_prefix(&cleared, size as usize, out) };
+    Ok(Some(size as usize))
+}
+/// Publish `value` as the revision `reset_output` accepted.
+///
+/// # Safety
+/// As `reset_output`, for the same record.
+pub(crate) unsafe fn finish_output<T: Extensible>(out: *mut T, size: Option<usize>, mut value: T) {
+    if let Some(size) = size {
+        value.header(size as u32);
+        // SAFETY: the revision accepted by reset_output.
+        unsafe { write_prefix(&value, size, out) };
+    }
 }
 
 /// The published revision a caller's `sizeof` names.
@@ -221,13 +332,66 @@ pub unsafe extern "C" fn ts_import_options_for_document(
             return TS_INVALID_ARGUMENT;
         }
         // SAFETY: caller keeps the document live for the call.
-        let sized = ImportOptions::for_document(unsafe { &(*document).document });
+        let document = unsafe { &(*document).document };
+        let (sized, session) = (
+            ImportOptions::for_document(document),
+            SessionBudgets::for_document(document),
+        );
         let value = TsImportOptions {
             max_work: sized.max_work as u64,
             max_records: sized.max_records as u64,
+            max_session_decoded_entities: session.max_decoded_entities as u64,
+            max_session_adapted_entities: session.max_adapted_entities as u64,
+            max_session_triangles: session.max_triangles as u64,
             ..TsImportOptions::default()
         };
         // SAFETY: forwarded caller storage contract.
         unsafe { publish(out, struct_size, value) }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    /// The initialized record maps to exactly the Rust defaults, so a C import with
+    /// default options is the Rust default import (TessellationOptions has no
+    /// PartialEq, so their Debug forms are compared).
+    #[test]
+    fn default_options_are_the_rust_defaults() {
+        let o = TsImportOptions::default().options().unwrap();
+        assert_eq!(
+            format!("{:?}", o.tessellation),
+            format!("{:?}", TessellationOptions::default())
+        );
+        let (rust, c) = (ImportOptions::default(), o.import);
+        assert_eq!(
+            (rust.max_work, rust.max_records, rust.strict, rust.repair),
+            (c.max_work, c.max_records, c.strict, c.repair)
+        );
+        assert_eq!(rust.deviation_factor, c.deviation_factor);
+        assert_eq!(o.session, SessionBudgets::default());
+        let assembly = AssemblyImportOptions::default();
+        let mapped = o.assembly(RepresentationPreference::Exact);
+        assert_eq!(
+            format!("{:?}", mapped.tessellation),
+            format!("{:?}", assembly.tessellation)
+        );
+        assert_eq!(mapped.tolerance, assembly.tolerance);
+        assert_eq!(format!("{:?}", mapped.mesh), format!("{:?}", assembly.mesh));
+        assert_eq!(
+            mapped.minimum_model_tolerance,
+            assembly.minimum_model_tolerance
+        );
+        assert_eq!(
+            format!("{:?}", mapped.assembly),
+            format!("{:?}", assembly.assembly)
+        );
+        // Strict import is what the flag asks for, and repair is never implied.
+        let strict = TsImportOptions {
+            flags: TS_IMPORT_STRICT,
+            ..TsImportOptions::default()
+        };
+        let o = strict.options().unwrap();
+        assert!(o.import.strict && !o.import.repair.is_enabled());
+    }
 }

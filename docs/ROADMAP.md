@@ -685,8 +685,8 @@ baseline movements, never a refreshed baseline.
   bound. Remaining: 16 singular-crossing rejections (15 in one NX file whose edges
   pass within its 50.8 µm uncertainty of exact poles, one singular parameterization),
   deviations beyond 16 times, and newly geometry-accepted roots that fail tessellation
-  (Milestones 22.2 and 22.4); C/C++ exposure of the option and counters follows
-  22.10. Evidence: `tests/tolerance.rs`
+  (Milestones 22.2 and 22.4). The factor and counters are exposed in C/C++ by the
+  22.10 second pass. Evidence: `tests/tolerance.rs`
   (`deviations_within_the_policy_are_counted_and_widen_the_working_tolerance`,
   `deviations_beyond_the_policy_are_typed_rejections_naming_distance_and_bound`,
   `bspline_sides_collapsed_only_within_tolerance_are_regular_and_poles_are_rejected`),
@@ -734,7 +734,8 @@ baseline movements, never a refreshed baseline.
   exporter roots (four `BREP_WITH_VOIDS` whose cavity shells face out of their
   cavities, an inside-out shell and a face whose loop runs against its surface).
   T-junctions, partial overlaps, missing faces and single reversed edges in consistent
-  loops are not repaired; C/C++ exposure of the option is a follow-up of 22.10.
+  loops are not repaired. The option and report are exposed in C/C++ by the 22.10
+  second pass.
   Evidence: `tests/repair.rs` in `tessstep-topology` and `tessstep-import`, ten
   generated fixtures (`repair_fixtures.py`), [VALIDATION.md](VALIDATION.md).
 - **22.6 Surface models as shell meshes — delivered 2026-10-09.** `SHELL_BASED_SURFACE_MODEL` (4,127 roots,
@@ -753,8 +754,8 @@ baseline movements, never a refreshed baseline.
   (1,756 are in `bug26451_Test_STEP.stp`, which the parser rejects); 893 mesh: 519 of
   780 OpenCASCADE, 29 of 31 NIST and 345 of 1,431 `dodgy-step-files` roots. The
   remaining exporter failures belong to 22.2 (tessellation) and 22.3 (edges off their
-  surfaces); sewing and C/C++ exposure are not part of this item (22.5, 22.10
-  follow-up). Evidence: `tests/surface_model.rs`
+  surfaces); sewing is not part of this item (22.5), and C/C++ exposure came with
+  the 22.10 second pass. Evidence: `tests/surface_model.rs`
   (`surface_model_open_patches_mesh_as_one_open_shell`,
   `surface_model_closed_shells_are_watertight_shells_not_solids`,
   `surface_model_rejections_are_typed_and_located`,
@@ -814,7 +815,7 @@ baseline movements, never a refreshed baseline.
   and adapt of `bug32239.STEP`'s 15 roots 0.66 → 0.80 s, survey peak RSS 180 → 198
   MiB; corpus wall time unchanged within noise). It pays only where closures overlap;
   whether the survey and `import_assembly` should keep preparing by default is open for
-  review. Exposing the session in C and C++ follows 22.10.
+  review. The 22.10 second pass exposes the session in C and C++.
 - **22.9 Extended fuzzing — delivered 2026-10-02.** The nightly workflow builds the
   fifteen `fuzz/Cargo.toml` targets once with AddressSanitizer, coverage and debug
   assertions and fuzzes each in its own matrix job for a fixed budget (240 s;
@@ -839,7 +840,8 @@ baseline movements, never a refreshed baseline.
   `every_fuzz_target_has_a_stable_replay`, `committed_fuzz_findings_replay_without_failure`,
   `regression_replay_names_every_failing_finding_and_unknown_target`, and
   [VALIDATION.md](VALIDATION.md). Not yet observed: an instrumented nightly run.
-- **22.10 Public interfaces — first pass delivered 2026-10-02.** Single-root curved
+- **22.10 Public interfaces — first pass delivered 2026-10-02, second pass
+  2026-10-09; the export-set freeze remains.** Single-root curved
   import, root and unit discovery, representation selection and import options
   (strictness, budgets, tolerance policy, repair opt-in) in C and C++, under
   installed-consumer tests; static linkage in the CMake package. After this item the
@@ -859,12 +861,26 @@ baseline movements, never a refreshed baseline.
   Evidence: `c_abi_solid_import_reports_curved_adaptations_units_and_cavities`,
   `c_abi_discovery_selects_representations_and_reports_units`,
   `c_abi_import_options_revisions_defaults_and_document_sizing`, the installed
-  C/C++ consumers. Remaining before the freeze: C/C++ surfaces for the tolerance
-  policy (22.3) and the repair opt-in (22.5) as options and solid-info revisions, shell
-  import and surface-model roots in discovery (22.6), the document import session
-  (22.8), and an assembly import taking `ts_import_options`; then freeze the export set
-  ([C API](C_API.md#remaining-for-the-abi-freeze)). Debug static consumers are not
-  tested.
+  C/C++ consumers. Second pass, on the Rust items that landed meanwhile: revision 2 of
+  `ts_import_options` (152 bytes: sewing factor and `TS_IMPORT_REPAIR_SEW` /
+  `_ORIENT` flags for 22.5, `deviation_factor` for 22.3, assembly instance and depth
+  budgets, session budgets sized by `ts_import_options_for_document`) and of
+  `ts_solid_info` (216 bytes: the 22.3 counters, largest deviation and working
+  tolerance, and the 22.5 `RepairReport`); surface models (22.6) as
+  `ts_document_import_surface_model` with a retained `ts_surface_model` (extensible
+  info, per-shell records with zero-copy face arrays, independent shell meshes) and,
+  behind `TS_DISCOVER_SURFACE_MODELS`, surface-model roots after every other root in
+  discovery, so revision-1 callers see unchanged results; the import session (22.8) as
+  a uniquely owned `ts_import_session` that retains its document and serializes calls
+  (discover, prepare, solid, tessellation and assembly import, statistics);
+  `ts_document_import_assembly_with_options` and `ts_assembly_get_adaptations` (22.7
+  mapped-item placements and tolerated encodings); and the C++ `SurfaceModel`,
+  `ImportSession` and overloads. 90 exports. The default options still map to exactly
+  the Rust defaults after 22.2 (`default_options_are_the_rust_defaults`). Evidence:
+  `tessstep-capi/tests/session.rs`, the installed C/C++ consumers. Remaining before the
+  freeze ([C API](C_API.md#remaining-for-the-abi-freeze)): presentation import through
+  a session, per-root tolerated encodings in C, and the freeze review itself (whether
+  to fold the unreleased revisions into one). Debug static consumers are not tested.
 - **22.11 Release engineering.** Cut a tagged pre-release from green CI to exercise
   the release workflow, the four packaging targets and the installed-package gate;
   then set the v1.0 version, changelog and ABI freeze. The corpus baseline at the
@@ -904,7 +920,7 @@ also applies as product and geometry operations become public. The first physica
 slice now implements both interfaces, typed results and the shared and static CMake
 package targets; mesh import and retained read-only views, selected faceted/planar
 solid import, existing-tessellation and presentation import, assembly import, root
-and unit discovery with representation selection, single-root curved solid import and
-extensible import options are now implemented. Public schema decoding and B-rep
-construction remain Rust-only; the tolerance-policy, repair, surface-model and
-session entry points follow their Milestone 22 items, before the export set is frozen.
+and unit discovery with representation selection, single-root curved solid import,
+surface-model import, import sessions, and extensible import options with the
+tolerance policy and opt-in repair are now implemented. Public schema decoding and
+B-rep construction remain Rust-only; the export set is not yet frozen.

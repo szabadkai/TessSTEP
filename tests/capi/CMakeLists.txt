@@ -40,7 +40,9 @@ else()
 endif()
 foreach(pair "assembly.step;assembly-nested.step" "styled.step;assembly-styled.step" "missing-placement.step;assembly-missing-placement.step"
         "cylinder.step;brep-cylinder.step" "cone.step;brep-cone.step" "cavity.step;brep-sphere-cavity.step"
-        "selection.step;tessellated-selection.step")
+        "selection.step;tessellated-selection.step" "duplicated.step;brep-repair-duplicated.step"
+        "near.step;brep-near-surface.step" "surface-open.step;surface-open-patches.step"
+        "mapped.step;assembly-mapped.step" "inch.step;assembly-inch.step")
     list(GET pair 0 local)
     list(GET pair 1 authored)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${local}")

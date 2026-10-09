@@ -262,9 +262,11 @@ normal-angle criterion needs facets around it larger than about the deviation ov
 the angle, which a chord close to the deviation may not allow.
 
 Options (Rust `ImportOptions`, used only by `import_brep_solid` and the curved roots
-of `import_assembly`; the planar and faceted profiles ignore them). The C and C++
-import options do not expose them yet; the C assembly import uses the default and
-`TS_IMPORT_STRICT`:
+of `import_assembly`; the planar and faceted profiles ignore them). In C and C++ they
+are `ts_import_options.deviation_factor` (revision 2) and `TS_IMPORT_STRICT`, and the
+counters, largest deviation and working tolerance are revision 2 of `ts_solid_info`
+([C API](C_API.md#repair-tolerance-policy-surface-models-and-sessions-milestone-2210-second-pass));
+the frozen-options C assembly import uses the default factor and `TS_IMPORT_STRICT`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -432,7 +434,9 @@ selected `SHELL_BASED_SURFACE_MODEL` with this profile's face and edge adapters,
 faces, edges, units, supplied pcurves, charts and adaptations follow every rule above.
 `discover_surface_models` finds these roots and their context units by the
 `discover_solids` rules (typically a `MANIFOLD_SURFACE_SHAPE_REPRESENTATION`); they are
-a separate root class, never returned by `discover_solids`.
+a separate root class, never returned by `discover_solids`. C and C++ expose both
+(`TS_DISCOVER_SURFACE_MODELS` in discovery, `ts_document_import_surface_model` /
+`Document::import_surface_model`).
 
 | Contract | Supported |
 | --- | --- |

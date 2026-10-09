@@ -236,7 +236,9 @@ are borrowed from the session; every import result is owned and independent of b
 The session caches through interior mutability, so it is `Send` but not `Sync`. No
 session type crosses the C ABI: a C or C++ binding creates a session inside one call,
 or keeps it in a handle that also retains its document, and returns only owned
-results.
+results. `ts_import_session` (C) and `ImportSession` (C++) are such a handle, with
+calls serialized by a mutex
+([C API](C_API.md#repair-tolerance-policy-surface-models-and-sessions-milestone-2210-second-pass)).
 
 ## Evidence and limits
 

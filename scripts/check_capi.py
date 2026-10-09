@@ -37,6 +37,13 @@ SYMBOLS = {
     "ts_import_options_init", "ts_import_options_for_document", "ts_document_import_solid",
     "ts_document_discover", "ts_discovery_retain", "ts_discovery_release", "ts_discovery_get_info",
     "ts_discovery_root_at", "ts_discovery_presentation_at", "ts_discovery_choice_at",
+    "ts_document_import_surface_model", "ts_surface_model_retain", "ts_surface_model_release",
+    "ts_surface_model_get_info", "ts_surface_model_shell_at", "ts_surface_model_shell_mesh",
+    "ts_document_import_assembly_with_options", "ts_assembly_get_adaptations",
+    "ts_import_session_create", "ts_import_session_release", "ts_import_session_discover",
+    "ts_import_session_prepare", "ts_import_session_import_solid",
+    "ts_import_session_import_tessellated", "ts_import_session_import_assembly",
+    "ts_import_session_get_statistics",
 }
 # Authored fixtures copied beside the standalone consumers, by consumer file name.
 FIXTURES = {
@@ -46,6 +53,9 @@ FIXTURES = {
     "styled.step": "assembly-styled.step", "missing-placement.step": "assembly-missing-placement.step",
     "cylinder.step": "brep-cylinder.step", "cone.step": "brep-cone.step",
     "cavity.step": "brep-sphere-cavity.step", "selection.step": "tessellated-selection.step",
+    "duplicated.step": "brep-repair-duplicated.step", "near.step": "brep-near-surface.step",
+    "surface-open.step": "surface-open-patches.step", "mapped.step": "assembly-mapped.step",
+    "inch.step": "assembly-inch.step",
 }
 
 
@@ -163,8 +173,10 @@ def check_static_archive(package):
         print(f"Static ABI archive: {archives[0].name}", flush=True)
         return
     flags = ["-gUj"] if sys.platform == "darwin" else ["-g", "--defined-only", "--format=posix"]
-    # Members without symbols may be reported on stderr; the exact set decides.
-    output = subprocess.run(["nm", *flags, str(archives[0])], stdout=subprocess.PIPE, text=True).stdout
+    # nm may fail on members it cannot read (symbol-less objects, or embedded bitcode
+    # of a newer LLVM in the Rust standard library); the exact ts_ set decides.
+    output = subprocess.run(["nm", *flags, str(archives[0])], stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True).stdout
     names = {line.split()[0].removeprefix("_") if sys.platform == "darwin" else line.split()[0]
              for line in output.splitlines() if line.strip() and not line.endswith(":")}
     defined = {name for name in names if re.fullmatch(r"ts_[a-z0-9_]+", name)}

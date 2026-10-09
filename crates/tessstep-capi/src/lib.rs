@@ -14,8 +14,12 @@ mod mesh;
 mod options;
 pub use options::*;
 mod scene;
+mod session;
+pub use session::*;
 mod solid;
 pub use solid::*;
+mod surface;
+pub use surface::*;
 mod tessellated;
 pub use mesh::*;
 pub use scene::*;
@@ -480,5 +484,7 @@ mod tests {
         check::<TsScene>();
         check::<TsAppearance>();
         check::<TsDiscovery>();
+        check::<TsSurfaceModel>();
+        check::<TsImportSession>();
     }
 }

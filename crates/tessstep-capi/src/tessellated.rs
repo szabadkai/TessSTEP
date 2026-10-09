@@ -162,44 +162,59 @@ pub unsafe extern "C" fn ts_document_import_tessellated(
                 max_work: work,
             },
         );
-        match result {
-            Ok(imported) => {
-                let record = TsTessellatedInfo {
-                    kind: match imported.kind() {
-                        TessellatedKind::Solid => TS_TESSELLATED_SOLID,
-                        TessellatedKind::Shell => TS_TESSELLATED_SHELL,
-                        TessellatedKind::SurfaceSet => TS_TESSELLATED_SURFACE_SET,
-                    },
-                    reserved: 0,
-                    root_id: imported.root().get(),
-                    link_id: imported.link().map_or(0, EntityId::get),
-                    face_count: imported.faces().len() as u64,
-                    linked_face_count: imported
-                        .faces()
-                        .iter()
-                        .filter(|f| f.geometric_link.is_some())
-                        .count() as u64,
-                    edge_count: imported.edges().len() as u64,
-                    vertex_count: imported.vertices().len() as u64,
-                    skipped_degenerate: imported.skipped_degenerate() as u64,
-                    joined_points: imported.joined_points() as u64,
-                    pnmax_deviations: imported.pnmax_deviations() as u64,
-                };
-                let mesh = Arc::into_raw(Arc::new(TsMesh::from(imported.into_mesh())));
-                // SAFETY: cleared output slots; ownership transfers once, after all
-                // fallible work, and the optional info record is writable when non-NULL.
-                unsafe {
-                    out.write(mesh);
-                    if !info.is_null() {
-                        info.write(record);
-                    }
-                }
-                TS_OK
-            }
-            // SAFETY: the optional error record follows the header contract.
-            Err(e) => unsafe { report(document, &e, error) },
-        }
+        // SAFETY: the outputs cleared above.
+        unsafe { publish(document, result, out, info, error) }
     })
+}
+
+/// Publish an imported tessellation's mesh and optional info, or its located error.
+///
+/// # Safety
+/// Cleared, writable output slots of the header contract.
+pub(crate) unsafe fn publish(
+    document: &tessstep_model::Document,
+    result: Result<tessstep_import::ImportedTessellation, tessstep_import::Error>,
+    out: *mut *const TsMesh,
+    info: *mut TsTessellatedInfo,
+    error: *mut TsImportError,
+) -> u32 {
+    match result {
+        Ok(imported) => {
+            let record = TsTessellatedInfo {
+                kind: match imported.kind() {
+                    TessellatedKind::Solid => TS_TESSELLATED_SOLID,
+                    TessellatedKind::Shell => TS_TESSELLATED_SHELL,
+                    TessellatedKind::SurfaceSet => TS_TESSELLATED_SURFACE_SET,
+                },
+                reserved: 0,
+                root_id: imported.root().get(),
+                link_id: imported.link().map_or(0, EntityId::get),
+                face_count: imported.faces().len() as u64,
+                linked_face_count: imported
+                    .faces()
+                    .iter()
+                    .filter(|f| f.geometric_link.is_some())
+                    .count() as u64,
+                edge_count: imported.edges().len() as u64,
+                vertex_count: imported.vertices().len() as u64,
+                skipped_degenerate: imported.skipped_degenerate() as u64,
+                joined_points: imported.joined_points() as u64,
+                pnmax_deviations: imported.pnmax_deviations() as u64,
+            };
+            let mesh = Arc::into_raw(Arc::new(TsMesh::from(imported.into_mesh())));
+            // SAFETY: cleared output slots; ownership transfers once, after all
+            // fallible work, and the optional info record is writable when non-NULL.
+            unsafe {
+                out.write(mesh);
+                if !info.is_null() {
+                    info.write(record);
+                }
+            }
+            TS_OK
+        }
+        // SAFETY: the optional error record follows the header contract.
+        Err(e) => unsafe { report(document, &e, error) },
+    }
 }
 
 #[repr(C)]

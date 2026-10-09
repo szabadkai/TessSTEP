@@ -74,7 +74,7 @@ def main():
         (package / "PACKAGE.json").write_text(json.dumps({"version": version, "target": args.target,
             "commit": os.environ.get("GITHUB_SHA", "local"), "tools": ["stepdump", "expressc"],
             "c_abi": {"version": 1, "exports": len(SYMBOLS), "linkage": ["shared", "static"],
-                      "scope": "documents_meshes_scenes_appearance_solid_tessellated_presentation_assembly_import_discovery"},
+                      "scope": "documents_meshes_scenes_appearance_solid_surface_tessellated_presentation_assembly_import_discovery_sessions"},
             "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP", "static_target": "TessSTEP::TessSTEP_static"},
             "tessellation": "planar_faceted_and_curved_brep_explicit_root_and_units"}, indent=2) + "\n", encoding="utf-8")
         if suffix:

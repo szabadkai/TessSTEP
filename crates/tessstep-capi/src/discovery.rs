@@ -1,17 +1,21 @@
 //! Root and unit discovery with representation selection (Milestone 22).
 use crate::{
     TS_INVALID_ARGUMENT, TS_NOT_FOUND, TS_OK, TS_ROOT_BREP_WITH_VOIDS, TS_ROOT_FACETED_BREP,
-    TS_ROOT_MANIFOLD_SOLID_BREP, TS_ROOT_TESSELLATED_SHELL, TS_ROOT_TESSELLATED_SOLID,
-    TS_ROOT_TESSELLATED_SURFACE_SET, TsDocument, TsImportError, TsImportOptions, boundary, clear,
+    TS_ROOT_MANIFOLD_SOLID_BREP, TS_ROOT_SHELL_BASED_SURFACE_MODEL, TS_ROOT_TESSELLATED_SHELL,
+    TS_ROOT_TESSELLATED_SOLID, TS_ROOT_TESSELLATED_SURFACE_SET, TsDocument, TsImportError,
+    TsImportOptions, boundary, clear,
     import::{error_record, report},
     initialize,
-    options::read_options,
+    options::{Options, read_options},
     tessellated::array,
 };
 use std::{ptr, sync::Arc};
 use tessstep_import::{
-    ContextUnits, Pairing, RepresentationPreference, RootRef, SolidKind, TessellatedKind,
+    ContextUnits, ImportSession, Pairing, PresentationRoot, RepresentationChoice,
+    RepresentationPreference, RootRef, SolidKind, SolidRoot, SurfaceModelRoot, TessellatedKind,
+    TessellatedRoot,
 };
+use tessstep_model::Document;
 use tessstep_part21::EntityId;
 
 pub const TS_PREFER_EXACT: u32 = 1;
@@ -186,6 +190,164 @@ fn ids(ids: &[EntityId]) -> Vec<u64> {
     ids.iter().map(|id| id.get()).collect()
 }
 
+/// The Rust preference of a C value.
+pub(crate) fn preference(value: u32) -> Option<RepresentationPreference> {
+    match value {
+        TS_PREFER_EXACT => Some(RepresentationPreference::Exact),
+        TS_PREFER_TESSELLATED => Some(RepresentationPreference::Tessellated),
+        _ => None,
+    }
+}
+
+/// Every discovery result, borrowed from the free functions' owned results or from
+/// a session's cache.
+pub(crate) struct Found<'r> {
+    pub solids: &'r [SolidRoot],
+    pub tessellations: &'r [TessellatedRoot],
+    pub choices: &'r [RepresentationChoice],
+    pub presentations: &'r [PresentationRoot],
+    pub surface_models: &'r [SurfaceModelRoot],
+    pub preference: RepresentationPreference,
+}
+
+/// Discover through a session (whose options must be `options`), or through the free
+/// functions. Surface models, not cached by sessions, use the free function.
+pub(crate) fn discover(
+    document: &Document,
+    session: Option<&ImportSession<'_>>,
+    preference: RepresentationPreference,
+    options: &Options,
+) -> Result<TsDiscovery, tessstep_import::Error> {
+    let import = options.import;
+    let surface_models = if options.surface_models {
+        tessstep_import::discover_surface_models(document, import)?
+    } else {
+        Vec::new()
+    };
+    if let Some(s) = session {
+        return Ok(build(
+            document,
+            Found {
+                solids: s.solids()?,
+                tessellations: s.tessellations()?,
+                choices: s.representation_choices(preference)?,
+                presentations: s.presentations()?,
+                surface_models: &surface_models,
+                preference,
+            },
+        ));
+    }
+    let solids = tessstep_import::discover_solids(document, import)?;
+    let tessellations = tessstep_import::discover_tessellations(document, import)?;
+    let choices = tessstep_import::select_representations(
+        document,
+        &solids,
+        &tessellations,
+        preference,
+        import,
+    )?;
+    let presentations = tessstep_import::discover_presentations(document, import)?;
+    Ok(build(
+        document,
+        Found {
+            solids: &solids,
+            tessellations: &tessellations,
+            choices: &choices,
+            presentations: &presentations,
+            surface_models: &surface_models,
+            preference,
+        },
+    ))
+}
+
+/// Copy discovery results into private C records once.
+fn build(document: &Document, found: Found<'_>) -> TsDiscovery {
+    let Found {
+        solids,
+        tessellations,
+        choices,
+        presentations,
+        surface_models,
+        preference,
+    } = found;
+    let mut roots: Vec<Root> = solids
+        .iter()
+        .map(|s| Root {
+            id: s.entity.get(),
+            kind: match s.kind {
+                SolidKind::ManifoldSolidBrep => TS_ROOT_MANIFOLD_SOLID_BREP,
+                SolidKind::BrepWithVoids => TS_ROOT_BREP_WITH_VOIDS,
+                SolidKind::FacetedBrep => TS_ROOT_FACETED_BREP,
+            },
+            link: 0,
+            representations: ids(&s.representations),
+            units: Units::new(document, &s.units),
+        })
+        .collect();
+    roots.extend(tessellations.iter().map(|t| Root {
+        id: t.entity.get(),
+        kind: match t.kind {
+            TessellatedKind::Solid => TS_ROOT_TESSELLATED_SOLID,
+            TessellatedKind::Shell => TS_ROOT_TESSELLATED_SHELL,
+            TessellatedKind::SurfaceSet => TS_ROOT_TESSELLATED_SURFACE_SET,
+        },
+        link: t.link.map_or(0, EntityId::get),
+        representations: ids(&t.representations),
+        units: Units::new(document, &t.units),
+    }));
+    // Surface models follow every root that representation selection indexes.
+    roots.extend(surface_models.iter().map(|m| Root {
+        id: m.entity.get(),
+        kind: TS_ROOT_SHELL_BASED_SURFACE_MODEL,
+        link: 0,
+        representations: ids(&m.representations),
+        units: Units::new(document, &m.units),
+    }));
+    // Shape-root indices: solids first, then tessellations.
+    let index = |r: RootRef| match r {
+        RootRef::Solid(i) => i,
+        RootRef::Tessellation(i) => solids.len() + i,
+    };
+    let choices: Vec<Choice> = choices
+        .iter()
+        .map(|c| Choice {
+            selected: index(c.selected),
+            alternatives: c.alternatives.iter().map(|&a| index(a)).collect(),
+            pairing: match c.pairing {
+                None => TS_PAIRING_NONE,
+                Some(Pairing::Link) => TS_PAIRING_LINK,
+                Some(Pairing::Relationship) => TS_PAIRING_RELATIONSHIP,
+            },
+        })
+        .collect();
+    let presentations: Vec<Presentation> = presentations
+        .iter()
+        .map(|p| Presentation {
+            id: p.entity.get(),
+            containers: ids(&p.containers),
+            representations: ids(&p.representations),
+            units: Units::new(document, &p.units),
+        })
+        .collect();
+    TsDiscovery {
+        info: TsDiscoveryInfo {
+            root_count: roots.len() as u64,
+            solid_count: solids.len() as u64,
+            tessellation_count: tessellations.len() as u64,
+            presentation_count: presentations.len() as u64,
+            choice_count: choices.len() as u64,
+            preference: match preference {
+                RepresentationPreference::Exact => TS_PREFER_EXACT,
+                RepresentationPreference::Tessellated => TS_PREFER_TESSELLATED,
+            },
+            reserved: 0,
+        },
+        roots,
+        presentations,
+        choices,
+    }
+}
+
 /// # Safety
 /// Follow tessstep.h live-document, options and disjoint output-slot contracts.
 #[unsafe(no_mangle)]
@@ -211,102 +373,40 @@ pub unsafe extern "C" fn ts_document_discover(
         let Some(o) = (unsafe { read_options(options) }).and_then(TsImportOptions::options) else {
             return TS_INVALID_ARGUMENT;
         };
-        let preference = match preference {
-            TS_PREFER_EXACT => RepresentationPreference::Exact,
-            TS_PREFER_TESSELLATED => RepresentationPreference::Tessellated,
-            _ => return TS_INVALID_ARGUMENT,
+        let Some(preference) = self::preference(preference) else {
+            return TS_INVALID_ARGUMENT;
         };
-        let import = o.import;
-        let discovered = tessstep_import::discover_solids(document, import).and_then(|solids| {
-            let tessellations = tessstep_import::discover_tessellations(document, import)?;
-            let choices = tessstep_import::select_representations(
+        // SAFETY: the outputs cleared above.
+        unsafe {
+            publish(
                 document,
-                &solids,
-                &tessellations,
-                preference,
-                import,
-            )?;
-            let presentations = tessstep_import::discover_presentations(document, import)?;
-            Ok((solids, tessellations, choices, presentations))
-        });
-        let (solids, tessellations, choices, presentations) = match discovered {
-            Ok(found) => found,
-            // SAFETY: the optional error record follows the header contract.
-            Err(e) => return unsafe { report(document, &e, error) },
-        };
-        let mut roots: Vec<Root> = solids
-            .iter()
-            .map(|s| Root {
-                id: s.entity.get(),
-                kind: match s.kind {
-                    SolidKind::ManifoldSolidBrep => TS_ROOT_MANIFOLD_SOLID_BREP,
-                    SolidKind::BrepWithVoids => TS_ROOT_BREP_WITH_VOIDS,
-                    SolidKind::FacetedBrep => TS_ROOT_FACETED_BREP,
-                },
-                link: 0,
-                representations: ids(&s.representations),
-                units: Units::new(document, &s.units),
-            })
-            .collect();
-        roots.extend(tessellations.iter().map(|t| Root {
-            id: t.entity.get(),
-            kind: match t.kind {
-                TessellatedKind::Solid => TS_ROOT_TESSELLATED_SOLID,
-                TessellatedKind::Shell => TS_ROOT_TESSELLATED_SHELL,
-                TessellatedKind::SurfaceSet => TS_ROOT_TESSELLATED_SURFACE_SET,
-            },
-            link: t.link.map_or(0, EntityId::get),
-            representations: ids(&t.representations),
-            units: Units::new(document, &t.units),
-        }));
-        // Shape-root indices: solids first, then tessellations.
-        let index = |r: RootRef| match r {
-            RootRef::Solid(i) => i,
-            RootRef::Tessellation(i) => solids.len() + i,
-        };
-        let choices: Vec<Choice> = choices
-            .iter()
-            .map(|c| Choice {
-                selected: index(c.selected),
-                alternatives: c.alternatives.iter().map(|&a| index(a)).collect(),
-                pairing: match c.pairing {
-                    None => TS_PAIRING_NONE,
-                    Some(Pairing::Link) => TS_PAIRING_LINK,
-                    Some(Pairing::Relationship) => TS_PAIRING_RELATIONSHIP,
-                },
-            })
-            .collect();
-        let presentations: Vec<Presentation> = presentations
-            .iter()
-            .map(|p| Presentation {
-                id: p.entity.get(),
-                containers: ids(&p.containers),
-                representations: ids(&p.representations),
-                units: Units::new(document, &p.units),
-            })
-            .collect();
-        let handle = TsDiscovery {
-            info: TsDiscoveryInfo {
-                root_count: roots.len() as u64,
-                solid_count: solids.len() as u64,
-                tessellation_count: tessellations.len() as u64,
-                presentation_count: presentations.len() as u64,
-                choice_count: choices.len() as u64,
-                preference: match preference {
-                    RepresentationPreference::Exact => TS_PREFER_EXACT,
-                    RepresentationPreference::Tessellated => TS_PREFER_TESSELLATED,
-                },
-                reserved: 0,
-            },
-            roots,
-            presentations,
-            choices,
-        };
-        let handle = Arc::into_raw(Arc::new(handle));
-        // SAFETY: cleared output slot; ownership transfers once after all work.
-        unsafe { out.write(handle) };
-        TS_OK
+                discover(document, None, preference, &o),
+                out,
+                error,
+            )
+        }
     })
+}
+
+/// Publish a discovery or its located error.
+///
+/// # Safety
+/// Cleared, writable output slots of the header contract.
+pub(crate) unsafe fn publish(
+    document: &Document,
+    result: Result<TsDiscovery, tessstep_import::Error>,
+    out: *mut *const TsDiscovery,
+    error: *mut TsImportError,
+) -> u32 {
+    match result {
+        Ok(discovery) => {
+            // SAFETY: cleared output slot; ownership transfers once after all work.
+            unsafe { out.write(Arc::into_raw(Arc::new(discovery))) };
+            TS_OK
+        }
+        // SAFETY: the optional error record follows the header contract.
+        Err(e) => unsafe { report(document, &e, error) },
+    }
 }
 
 /// # Safety
