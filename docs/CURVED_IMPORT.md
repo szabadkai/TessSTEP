@@ -318,14 +318,15 @@ mesh boundary`), the entities involved and a cause class in parentheses:
 | Class | Located at | Meaning |
 | --- | --- | --- |
 | `self-touching loop` | the two edges and the vertex | the loop passes through that vertex twice and touches itself there |
-| `tangent edges at a vertex` | the two edges and their shared vertex | adjacent edges cross or touch again beyond the model tolerance (a cusp, or an edge running back over the previous one) |
+| `tangent edges at a vertex` | the two edges and their shared vertex | adjacent edges cross or touch again beyond the model tolerance in trimming, or at floating-point resolution at the mesh boundary (a cusp, or an edge running back over the previous one) |
 | `crossing trims` | the two edges | edges of one loop cross or touch in the chart |
 | `intersecting loops` | the two edges, or the hole | loops cross, touch or nest |
-| `self-intersecting edge` | the edge | one edge's image doubles back or crosses itself beyond the model tolerance |
+| `self-intersecting edge` | the edge | one edge's image doubles back or crosses itself (beyond the model tolerance in trimming, at floating-point resolution at the mesh boundary) |
 | `seam choice` | the edge and the inserted seam | an inserted seam meets a loop edge |
 | `collapsed edge` | the edges | a conflict at a pole or apex line |
 | `hole outside`, `wrong orientation`, `degenerate loop`, `non-contractible loop`, `open loop` | the loop (and edge) | loop-level failures |
 | `budget` | the face | a trim budget (`max_samples` or `max_work`) and its value |
+| `unresolved triangulation` | the face | the loops are simple at floating-point resolution, but no bridge to a hole or no ear of the bridged polygon resolves there ([tessellation](TESSELLATION.md)) |
 
 The class follows from topology alone (which coedges conflict, whether they meet,
 whether the importer inserted them); it does not decide whether the STEP input or

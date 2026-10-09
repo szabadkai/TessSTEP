@@ -29,24 +29,36 @@ pub(crate) fn describe(
     face: FaceId,
     kind: &TessellationErrorKind,
 ) -> Option<(ErrorKind, Option<EntityId>, String)> {
-    let (e, stage) = match kind {
+    let face_entity = solid.face_entities().get(face.0).copied();
+    let at = face_entity.map_or_else(String::new, |f| format!("face #{}: ", f.get()));
+    // Trimming decides validity at the model tolerance, the mesh boundary at the
+    // floating-point resolution its triangulation needs.
+    let (e, stage, beyond) = match kind {
         TessellationErrorKind::Boundary(BoundaryError::Trim(e))
         | TessellationErrorKind::Polygon(PlanarError::Boundary(BoundaryError::Trim(e))) => {
-            (e, "UV trimming")
+            (e, "UV trimming", "beyond the model tolerance")
         }
         TessellationErrorKind::Boundary(BoundaryError::Resolution(e))
         | TessellationErrorKind::Polygon(PlanarError::InvalidPolygon(e)) => {
-            (e, "the mesh boundary")
+            (e, "the mesh boundary", "at floating-point resolution")
+        }
+        // The loops passed that check, so the triangulator, not the boundary, gave up.
+        TessellationErrorKind::Polygon(PlanarError::UnresolvedGeometry) => {
+            return Some((
+                ErrorKind::InvalidGeometry,
+                face_entity,
+                format!(
+                    "tessellation of {at}the mesh boundary: its loops are simple at floating-point resolution, but no bridge to a hole or no ear of the bridged ring resolves there (unresolved triangulation)"
+                ),
+            ));
         }
         _ => return None,
     };
-    let face_entity = solid.face_entities().get(face.0).copied();
     let names = Names {
         brep: solid.brep(),
         topology: solid.topology(),
     };
-    let (class, entity) = classify(&names, face, e);
-    let at = face_entity.map_or_else(String::new, |f| format!("face #{}: ", f.get()));
+    let (class, entity) = classify(&names, face, e, beyond);
     let kind = if e.kind == Trim::Limit {
         ErrorKind::ResourceLimit
     } else {
@@ -101,8 +113,14 @@ impl Names<'_> {
     }
 }
 
-/// The cause class and located entity of one trimming or boundary failure.
-fn classify(n: &Names<'_>, face: FaceId, e: &TrimError) -> (String, Option<EntityId>) {
+/// The cause class and located entity of one trimming or boundary failure; `beyond`
+/// names the resolution at which a conflict counts.
+fn classify(
+    n: &Names<'_>,
+    face: FaceId,
+    e: &TrimError,
+    beyond: &str,
+) -> (String, Option<EntityId>) {
     let raw = n.brep.data();
     let entity = e.coedge.and_then(|c| n.edge_entity(c));
     let loop_name = n.wire(face, e.wire);
@@ -117,7 +135,7 @@ fn classify(n: &Names<'_>, face: FaceId, e: &TrimError) -> (String, Option<Entit
             None => "a trim budget is exhausted (budget)".into(),
         },
         (Trim::SelfIntersection, Some(a), Some(b)) if a == b => format!(
-            "the chart image of {} doubles back on itself or crosses itself beyond the model tolerance (self-intersecting edge)",
+            "the chart image of {} doubles back on itself or crosses itself {beyond} (self-intersecting edge)",
             n.edge(a)
         ),
         (Trim::SelfIntersection | Trim::IntersectingLoops, Some(a), Some(b)) => {
@@ -150,7 +168,7 @@ fn classify(n: &Names<'_>, face: FaceId, e: &TrimError) -> (String, Option<Entit
                     n.vertex(v)
                 ),
                 (None, Some(v)) => format!(
-                    "{pair}, which meet at {}, cross or touch again in the surface chart beyond the model tolerance (tangent edges at a vertex)",
+                    "{pair}, which meet at {}, cross or touch again in the surface chart {beyond} (tangent edges at a vertex)",
                     n.vertex(v)
                 ),
                 (None, None) if e.kind == Trim::IntersectingLoops => format!(
@@ -352,6 +370,42 @@ mod tests {
                 &TessellationErrorKind::UnresolvedTolerance
             )
             .is_none()
+        );
+    }
+
+    #[test]
+    fn mesh_boundary_and_triangulator_failures_name_their_resolution() {
+        // The same crossing at the mesh boundary counts at floating-point resolution.
+        let bow_tie = polygons(
+            &[[0., 0., 0.], [1., 1., 0.], [0., 1., 0.], [1., 0., 0.]],
+            &[vec![0, 1, 2, 3]],
+        );
+        let solid = solid(bow_tie, &[]);
+        let e =
+            tessstep_trim::reconstruct(solid.brep(), FaceId(0), Default::default()).unwrap_err();
+        let (_, _, message) = describe(
+            &solid,
+            FaceId(0),
+            &TessellationErrorKind::Boundary(BoundaryError::Resolution(e)),
+        )
+        .unwrap();
+        assert!(
+            message.starts_with("tessellation of face #1: the mesh boundary: ")
+                && message.ends_with("(crossing trims)"),
+            "{message}"
+        );
+        // A triangulator that gives up names the face and the class.
+        let (kind, entity, message) = describe(
+            &solid,
+            FaceId(0),
+            &TessellationErrorKind::Polygon(PlanarError::UnresolvedGeometry),
+        )
+        .unwrap();
+        assert_eq!((kind, entity), (ErrorKind::InvalidGeometry, Some(id(1))));
+        assert!(
+            message.starts_with("tessellation of face #1: the mesh boundary: ")
+                && message.ends_with("(unresolved triangulation)"),
+            "{message}"
         );
     }
 }

@@ -1,3 +1,49 @@
+# Milestone 22.4 follow-up: triangulator failures — 2026-10-10
+
+Delivered on 42366af: a hole's bridge leaves the copy of a repeated polygon vertex
+whose interior angle faces it; ear clipping that finds no ear is redone once with a
+blocking slack of 1e-9 of the boundary extent; and the importer names a triangulator
+failure as `unresolved triangulation` at its face, with the mesh-boundary classes
+stating that they count at floating-point resolution
+([tessellation](TESSELLATION.md), [curved import](CURVED_IMPORT.md#uv-loop-failures)).
+
+Measurement first. The 27 roots of the 1.0.0 baseline whose first failure was
+`Polygon(UnresolvedGeometry)` (25 files) were rerun with the triangulator's failure
+sites instrumented and every failing face's loops dumped, then replayed in isolation.
+Every one of the 56 failing triangulations in those runs had simple, correctly nested
+loops at floating-point resolution and ran out of ears in clipping; each face is
+classified by the fix that resolves it alone, and 14 dumped faces were replayed:
+
+| Cause | Ours | First failures | Surfaced | Representative faces |
+| --- | --- | ---: | ---: | --- |
+| A hole bridged to the first of two copies of a vertex that an earlier bridge repeated, although only the other copy's interior angle faces it: the bridged polygon folds there (two NIST slots side by side, both bridged at one corner) and clipping runs out of ears | yes | 23 | | `nist_ctc_04_asme1_rd` #10102 (two slots 2 mm apart, bridges at corner (0.408, 0.0075)), `bug23202_Leuchte` #20206, `sp7_04-do-242` #1345 |
+| Clipping across a boundary run straight only to its fitting noise (a fitted circle on a cylinder band, straight to about 1e-10 over 1.4 rad) leaves a remainder within that noise of one line, with no ear at the floating-point tolerance | yes | 4 | 3 | `trj4_pm2-ec-214` #11028 and #29404, `trj6_pm4-ec-203` (same faces), `nist_ctc_02_asme1_rc` #16187, `sp7_04-do-242` #11034, `trj12_b3-tu-203` #23248 |
+
+Both fixes act only where the old triangulator failed: the bridge test only skips a
+candidate at a repeated vertex that does not face it, and the slack retry only runs
+after a failed clipping. Both survey builds were run on the 704 files with a meshed
+shape or surface-model root. Every root that meshed before has the same vertex and
+triangle counts and volume. The only other difference is wording: a mesh-boundary
+failure in `bug32239.STEP` now says it counts at floating-point resolution.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), rustdoc | passed, including `planar::tests` (both fail without their fix) and `uv_loops::tests` |
+| `check_geometry.py` (124 outcomes), `check_metamorphic.py`, `check_architecture.py`, `conformance.py --check` | passed |
+| `corpus.py --check --repeat 2` with a rebuilt AP validator, against the 1.0.0 baseline | 3,227 compatible, 21 changed, no regressions |
+
+Reviewed movements, all from this change: 20 shape roots now mesh (742 → 762; 18 files
+from tessellation rejected to accepted, and one more root each in `trj4_pm2-ec-214` and
+`trj6_pm4-ec-203`); `bug33261.stp` meshes one more surface-model shell (1,127 →
+1,128). Volumes agree across the copies of each NIST model (CTC 02 0.0471 m³ in four
+files, CTC 04 0.01752 m³ in four, CTC 03 3.32e-4 m³ in two). The other 7 roots now
+fail later, all named: `bug24055_8MTF-75LS05` at face #82327 (wrong orientation),
+`bug33261` and `nist_ctc_04_asme1_ap242-e1` at the mesh boundary (tangent edges at a
+vertex), `trj4_pm2-ec-214` and `trj6_pm4-ec-203` at the mesh boundary (an edge whose
+samples double back), and `bug31685_2` and `nist_ftc_06_asme1_ap242-e2` on the
+`max_rounds` refinement budget. No shape root fails with `Polygon(UnresolvedGeometry)`
+any more. The baseline was not saved.
+
 # Milestone 22 integration and the 1.0.0 corpus baseline — 2026-10-10
 
 Every Milestone 22 item (22.2–22.10 and the 22.2 follow-up) was developed on its own
@@ -64,9 +110,9 @@ the root never meshed.
 Remaining named categories with the most roots: `OpenShell` (95), `BrokenWire` (39),
 `InconsistentOrientation` (35) and `UnsewnShell` (29), all strict topology rejections
 that the opt-in repair addresses; edges (41) and vertices (10) beyond the deviation
-policy; and 27 roots
-whose face triangulation ends in `Polygon(UnresolvedGeometry)`, which is being located
-and classified as a 22.4 follow-up.
+policy. The 27 roots whose face triangulation ended in `Polygon(UnresolvedGeometry)`
+in this baseline were resolved by the 22.4 follow-up above (20 mesh, 7 fail later
+with named errors); that change is reviewed against this baseline and not yet saved.
 
 # Milestone 22.10 final pass: folded revisions, failure text, ABI 1.0 freeze — 2026-10-10
 

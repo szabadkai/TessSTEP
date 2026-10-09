@@ -226,6 +226,42 @@ pub(crate) fn triangulate_uv(
     // fans. Ear status only changes at the clipped vertex's neighbours; a full rescan
     // runs if the queue empties early, so no valid ear is ever missed. Ear tests visit
     // only the ring positions a uniform grid places near the ear, not the whole ring.
+    // Fitted pcurves of straight or circular edges can be straight in the chart only
+    // to about 1e-10 of their length. Clipping across such a run leaves a remainder
+    // whose vertices all lie within that wobble of one line: an ear test resolving
+    // floating-point sign ambiguity finds no ear in it. Once, the clipping is redone
+    // with points within 1e-9 of the boundary extent of a diagonal blocking it, so no
+    // diagonal runs that close beside the boundary; no other triangulation changes.
+    match clip(&mut engine, &ring, metric, expected) {
+        Err(PlanarError::UnresolvedGeometry) => {
+            let slack = SLACK * extent(boundaries.iter().flatten().map(|&i| uv[i as usize]));
+            if slack.is_nan() || slack <= engine.eps {
+                return Err(PlanarError::UnresolvedGeometry);
+            }
+            engine.eps = slack;
+            clip(&mut engine, &ring, metric, expected)
+        }
+        result => result,
+    }
+}
+/// Retry tolerance of ear clipping, relative to the boundary extent.
+const SLACK: f64 = 1e-9;
+/// The larger side of the bounding box of `points`.
+fn extent(points: impl Iterator<Item = [f64; 2]>) -> f64 {
+    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+    for p in points {
+        lo = [lo[0].min(p[0]), lo[1].min(p[1])];
+        hi = [hi[0].max(p[0]), hi[1].max(p[1])];
+    }
+    (hi[0] - lo[0]).max(hi[1] - lo[1])
+}
+/// Best-first ear clipping of a bridged ring into `expected` triangles, verified.
+fn clip(
+    engine: &mut Engine<'_>,
+    ring: &[u32],
+    metric: [f64; 2],
+    expected: usize,
+) -> Result<Vec<[u32; 3]>, PlanarError> {
     let m = ring.len();
     let mut prev: Vec<usize> = (0..m).map(|i| (i + m - 1) % m).collect();
     let mut next: Vec<usize> = (0..m).map(|i| (i + 1) % m).collect();
@@ -233,7 +269,7 @@ pub(crate) fn triangulate_uv(
     engine.charge(m)?;
     let grid = Grid::new(&ring.iter().map(|&i| engine.p(i)).collect::<Vec<_>>());
     let ears = Ears {
-        ring: &ring,
+        ring,
         grid: &grid,
         metric,
     };
@@ -484,6 +520,16 @@ impl Engine<'_> {
     fn bridge(&mut self, hole: &[u32], ring: &[u32]) -> Result<(usize, usize), PlanarError> {
         const BATCH: usize = 32;
         let mut tested: Option<Bridge> = None;
+        // Vertices an earlier bridge put in the ring twice: their copies are the same
+        // point, so visibility cannot tell them apart.
+        self.charge(ring.len())?;
+        let mut repeated = BTreeMap::<u32, bool>::new();
+        for &r in ring {
+            repeated
+                .entry(r)
+                .and_modify(|twice| *twice = true)
+                .or_insert(false);
+        }
         loop {
             let mut batch = BinaryHeap::with_capacity(BATCH + 1);
             for (hi, &h) in hole.iter().enumerate() {
@@ -506,12 +552,35 @@ impl Engine<'_> {
                 return Err(PlanarError::UnresolvedGeometry);
             }
             for candidate in batch.into_sorted_vec() {
-                if self.visible(hole[candidate.1], ring[candidate.2], ring)? {
+                let (h, ri) = (hole[candidate.1], candidate.2);
+                // At a repeated vertex the bridge must leave the copy whose interior
+                // angle contains it; another copy would splice the hole into the ring
+                // across a neighbouring bridge or loop, and the ring would fold there.
+                let enters = !repeated[&ring[ri]] || self.enters(ring, ri, self.p(h))?;
+                if enters && self.visible(h, ring[ri], ring)? {
                     return Ok((candidate.1, candidate.2));
                 }
                 tested = Some(candidate);
             }
         }
+    }
+    /// Whether the direction from ring position `ri` towards `x` lies strictly inside
+    /// the ring's interior angle there: swept counterclockwise from the edge to the
+    /// next position to the edge to the previous one.
+    fn enters(&mut self, ring: &[u32], ri: usize, x: [f64; 2]) -> Result<bool, PlanarError> {
+        self.charge(1)?;
+        let n = ring.len();
+        let v = self.p(ring[ri]);
+        let next = self.p(ring[(ri + 1) % n]);
+        let prev = self.p(ring[(ri + n - 1) % n]);
+        let [to_next, to_prev] = [orient(v, next, x)?, orient(v, prev, x)?];
+        Ok(if orient(v, next, prev)? > 0. {
+            // A convex angle: left of the next edge and right of the previous one.
+            to_next > 0. && to_prev < 0.
+        } else {
+            // A reflex (or straight) angle: outside its convex complement.
+            to_next > 0. || to_prev < 0.
+        })
     }
     fn visible(&mut self, a: u32, b: u32, ring: &[u32]) -> Result<bool, PlanarError> {
         for poly in self.loops {
@@ -640,5 +709,70 @@ impl Engine<'_> {
             return Err(PlanarError::UnresolvedGeometry);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PlanarOptions, triangulate_uv};
+
+    /// Loops of points as one vertex array and index loops.
+    fn indexed(loops: &[Vec<[f64; 2]>]) -> (Vec<[f64; 2]>, Vec<Vec<u32>>) {
+        let mut uv = Vec::new();
+        let mut boundaries = Vec::new();
+        for l in loops {
+            let first = uv.len() as u32;
+            uv.extend_from_slice(l);
+            boundaries.push((first..uv.len() as u32).collect());
+        }
+        (uv, boundaries)
+    }
+    fn area(uv: &[[f64; 2]], triangles: &[[u32; 3]]) -> f64 {
+        triangles
+            .iter()
+            .map(|t| {
+                let [a, b, c] = t.map(|i| uv[i as usize]);
+                0.5 * ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+            })
+            .sum()
+    }
+
+    #[test]
+    fn a_hole_bridged_to_a_repeated_vertex_leaves_the_copy_that_faces_it() {
+        // Hole 1 is bridged from its corner V = (14, 1) to the outer corner (20, 0),
+        // so V is in the ring twice. Hole 2's nearest vertex is (14.5, 1), east of V:
+        // only the copy of V whose interior angle faces east can take its bridge.
+        let outer = vec![[0., 0.], [20., 0.], [20., 6.], [0., 6.]];
+        let first = vec![[12., 1.], [12., 4.5], [14., 4.5], [14., 1.]];
+        let second = vec![[14.5, 1.], [14.5, 4.5], [17., 4.5], [17., 1.]];
+        let (uv, boundaries) = indexed(&[outer, first, second]);
+        let triangles =
+            triangulate_uv(&uv, &boundaries, PlanarOptions::default(), [1.; 2]).unwrap();
+        // Twelve vertices and two holes: 12 + 2 * 2 - 2 triangles covering the area.
+        assert_eq!(triangles.len(), 14);
+        let expected = 120. - 7. - 8.75;
+        assert!((area(&uv, &triangles) - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_boundary_straight_to_its_fitting_noise_still_triangulates() {
+        // A strip 1.4 wide and 0.0026 high (a cylinder band in radians and metres):
+        // its bottom edge, a fitted pcurve of a circle, bends by 3e-11 over its
+        // length (9 samples); its top edge is exactly straight (7 samples). Clipping
+        // across the bottom leaves a remainder within that bend of one line, in which
+        // the first pass finds no ear.
+        let mut strip = Vec::new();
+        for i in 0..=8 {
+            let x = 1.4 * i as f64 / 8.;
+            strip.push([x, -2e-10 - 3e-11 * x * (2.8 - x) / 1.96]);
+        }
+        for i in (0..=6).rev() {
+            strip.push([1.4 * i as f64 / 6., 0.0026]);
+        }
+        let (uv, boundaries) = indexed(&[strip]);
+        let triangles =
+            triangulate_uv(&uv, &boundaries, PlanarOptions::default(), [1e-3, 1.]).unwrap();
+        assert_eq!(triangles.len(), 14);
+        assert!((area(&uv, &triangles) - 1.4 * 0.0026).abs() < 1e-9);
     }
 }

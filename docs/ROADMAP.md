@@ -737,7 +737,17 @@ baseline movements, never a refreshed baseline.
   `tessstep-trim/tests/loop_validity.rs`, `tests/boundary_resolution.rs`,
   `uv_loops::tests`, `brep::scan::tests` and `tests/uv_loops.rs` with
   `brep-unknown-closure-cylinder.step`, `brep-cut-sphere.step` and
-  `brep-pinched-pocket.step`.
+  `brep-pinched-pocket.step`. Follow-up 2026-10-10: the 27 roots of the 1.0.0
+  baseline whose triangulation ended in an unlocated `Polygon(UnresolvedGeometry)`
+  had two causes, both the triangulator's: a hole bridged to the wrong copy of a
+  vertex an earlier bridge had repeated (23 first failures; the polygon folds and has
+  no ear), and clipping across a run straight only to its fitting noise, leaving a
+  remainder with no ear at floating-point resolution (4, and 3 faces behind the first
+  cause). Bridges now leave the copy whose interior angle faces them, and clipping
+  that finds no ear is redone once with a 1e-9 blocking slack; no other triangulation
+  changes. 20 roots mesh (762) and 1 more surface-model shell; the other 7 fail later
+  with named errors, and a triangulator failure is named `unresolved triangulation`.
+  Evidence: `planar::tests`, `uv_loops::tests`.
 - **22.5 Opt-in sewing and orientation repair — delivered 2026-10-09.** 123 `OpenShell`,
   38 `BrokenWire` and 35 `InconsistentOrientation` roots. Strict rejection stays the
   default and its outcomes are unchanged; a disconnected `CLOSED_SHELL` (faces sharing
@@ -940,10 +950,11 @@ meshed root ([VALIDATION.md](VALIDATION.md)). Exit criteria met locally: the Ons
 export imports as a closed solid; every repair and tolerance adaptation is opt-in or
 counted and reported per root; surface models import as shells; every budget failure
 names its budget; the C ABI covers discovery, curved import and import options and its
-export set is frozen with the installed-package consumer tests passing. Open: 27 roots
-whose triangulation ends in an unlocated `Polygon(UnresolvedGeometry)` (a 22.4
-follow-up), CI on every target (requires pushing `main`), and the pinned Onshape
-exporter file (requires a cleared export).
+export set is frozen with the installed-package consumer tests passing. The 27 roots
+whose triangulation ended in an unlocated `Polygon(UnresolvedGeometry)` were resolved
+by the 22.4 follow-up: 20 mesh, 7 fail later with named errors, and no root fails on
+an unclassified polygon error. Open: CI on every target (requires pushing `main`), and
+the pinned Onshape exporter file (requires a cleared export).
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,

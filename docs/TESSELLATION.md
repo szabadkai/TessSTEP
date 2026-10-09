@@ -104,7 +104,20 @@ for corners sharper than about 2e-6 rad. Both searches return what the full scan
 returned, so triangulations are unchanged; on the Onshape export's cylinder with 36
 holes (1,802 boundary samples) bridging fell from 24.7M to 1.8M work units and ear
 clipping from 3.4M to 0.25M. Bridge copies use the same vertex
-indices, creating ordinary paired interior edges. Collinear vertices are never silently
+indices, creating ordinary paired interior edges. A vertex that an earlier bridge put
+in the polygon twice takes a later bridge only at the copy whose interior angle
+contains it: the copies are one point, so visibility cannot tell them apart, and the
+lowest position used to win, splicing a hole across a neighbouring bridge (two NIST
+slots side by side, both bridged at one corner) into a folded polygon that has no ear.
+Clipping across a boundary run straight in the chart only to its fitting noise (a
+fitted circle on a cylinder band bends by about 1e-10 of its length) can leave a
+remainder within that noise of one line, in which no ear resolves at the
+floating-point tolerance; when clipping finds no ear it is redone once with points
+within 1e-9 of the boundary extent of a diagonal blocking it, so no diagonal runs
+that close beside the boundary. A face either path fails on is
+`PlanarError::UnresolvedGeometry`, which the curved importer names as an
+[unresolved triangulation](CURVED_IMPORT.md#uv-loop-failures); every other
+triangulation is unchanged. Collinear vertices are never silently
 dropped. Postchecks require every directed boundary segment exactly once, every interior
 edge twice in opposing directions, the expected triangle count, matching UV area and
 positive 3D triangle orientation. Face reversal flips triangle winding and the unit normal.
