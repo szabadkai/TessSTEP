@@ -61,7 +61,8 @@ without an explicit outer, assembly placement, automatic units, STEP appearance 
 healing remain outside these profiles. Profile rejection is not an AP validity verdict.
 The [curved B-rep profile](CURVED_IMPORT.md) is a superset of the edge-based profile
 with elementary and B-spline geometry, implicit outer bounds and root/unit discovery;
-it is Rust-only so far.
+it also imports `SHELL_BASED_SURFACE_MODEL` roots as open or closed shell meshes, never
+as solids ([surface models](CURVED_IMPORT.md#surface-models)). It is Rust-only so far.
 
 ## Edge-based example
 

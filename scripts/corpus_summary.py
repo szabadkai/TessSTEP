@@ -11,6 +11,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from corpus_report import aggregate, stages_of, source_of, verdict, FAULTS, STAGES
+import corpus_surface
 
 
 def markdown(report):
@@ -79,6 +80,7 @@ def markdown(report):
         lines += [f"| {cell(k)} | {v:,} |" for k, v in g["outcomes"].items()]
         lines += ["", "| Top failure categories | Roots |", "| --- | ---: |"]
         lines += [f"| {cell(k)} | {v:,} |" for k, v in list(g["categories"].items())[:10]]
+    lines += corpus_surface.markdown(stats, cell)
     lines += ["", "| Source | Unique | Clean | Reference errors | Rejected | Failed checks |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
     lines += [f'| {html.escape(name).replace(chr(124), "&#124;").replace(chr(10), " ")} | {s["unique_inputs"]} | {s["statuses"].get("clean",0)} | {s["statuses"].get("reference_errors",0)} | {s["statuses"].get("rejected",0)} | {s["verdicts"].get("failed",0)} |' for name,s in stats['sources'].items()]
     lines += ["", f'Baseline changes: `{dict(Counter(c["kind"] for c in changes))}`.', "",

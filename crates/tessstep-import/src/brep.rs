@@ -1,5 +1,6 @@
 //! Edge-based B-rep solids with elementary, B-spline and swept geometry.
 mod supplied;
+mod surface_model;
 mod swept;
 use super::*;
 use crate::pcurve::{
@@ -7,6 +8,7 @@ use crate::pcurve::{
     sub,
 };
 use std::f64::consts::TAU;
+pub use surface_model::{ImportedSurfaceModel, SurfaceShell, import_surface_model};
 use tessstep_curves::spline::{NurbsCurve, SplineLimits};
 use tessstep_math::{Angle, AngleUnit, Length, ParameterSpace};
 use tessstep_surfaces::{NurbsSurface, Surface};
@@ -72,6 +74,22 @@ pub fn import_brep_solid(
     tolerance: ModelTolerance,
     options: ImportOptions,
 ) -> Result<ImportedSolid, Error> {
+    import_shells(document, root, length, angle, tolerance, options, None)
+}
+
+/// The curved import of a solid's shells or, when `surface` is given, of the shells of
+/// a SHELL_BASED_SURFACE_MODEL root, each recorded there with its declared closure
+/// (entity, closed).
+/// A surface model's result has one kernel shell per declared shell and no solid.
+fn import_shells(
+    document: &Document,
+    root: EntityId,
+    length: LengthUnit,
+    angle: AngleUnit,
+    tolerance: ModelTolerance,
+    options: ImportOptions,
+    mut surface: Option<&mut Vec<(EntityId, bool)>>,
+) -> Result<ImportedSolid, Error> {
     use brep_profile::schema_tessstep_brep as s;
     use tessstep_schema::EntityBinding;
     let schema = &brep_profile::SCHEMA_SET;
@@ -80,6 +98,7 @@ pub fn import_brep_solid(
         (s::Entity_ORIENTED_EDGE::DECLARATION, "EDGE_START"),
         (s::Entity_ORIENTED_EDGE::DECLARATION, "EDGE_END"),
         (s::Entity_ORIENTED_CLOSED_SHELL::DECLARATION, "CFS_FACES"),
+        (s::Entity_ORIENTED_OPEN_SHELL::DECLARATION, "CFS_FACES"),
     ]
     .map(|(entity, attribute)| decode::OmittedSlot {
         entity,
@@ -150,14 +169,17 @@ pub fn import_brep_solid(
     }
     (b.supplied, b.unreadable_pcurves) = supplied::decode(document, &candidates, options)?;
     let solid = c.view(root)?;
-    if !c.is(solid, "MANIFOLD_SOLID_BREP") {
-        return Err(c.error(
-            ErrorKind::Unsupported,
-            "selected root does not match the requested solid profile",
-        ));
-    }
+    let mut shells = match surface.as_deref_mut() {
+        Some(declared) => surface_model::shells(&mut c, solid, declared)?,
+        None if c.is(solid, "MANIFOLD_SOLID_BREP") => vec![c.reference(solid, "OUTER")?],
+        None => {
+            return Err(c.error(
+                ErrorKind::Unsupported,
+                "selected root does not match the requested solid profile",
+            ));
+        }
+    };
     // The outer shell, then each BREP_WITH_VOIDS cavity shell.
-    let mut shells = vec![c.reference(solid, "OUTER")?];
     if c.is(solid, "BREP_WITH_VOIDS") {
         for void in c.aggregate(solid, "VOIDS")? {
             c.charge(1)?;
@@ -165,13 +187,18 @@ pub fn import_brep_solid(
         }
     }
     for (index, mut shell) in shells.into_iter().enumerate() {
-        // An ORIENTED_CLOSED_SHELL uses its element's faces, reversed when .F..
+        // An ORIENTED_CLOSED_SHELL (or ORIENTED_OPEN_SHELL) uses its element's faces,
+        // reversed when .F..
         let mut forward = true;
-        while c.is(shell, "ORIENTED_CLOSED_SHELL") {
+        while c.is(shell, "ORIENTED_CLOSED_SHELL") || c.is(shell, "ORIENTED_OPEN_SHELL") {
             c.charge(1)?;
             c.current = shell.id;
             forward ^= !c.boolean(shell, "ORIENTATION")?;
-            shell = c.reference(shell, "CLOSED_SHELL_ELEMENT")?;
+            shell = if c.is(shell, "ORIENTED_OPEN_SHELL") {
+                c.reference(shell, "OPEN_SHELL_ELEMENT")?
+            } else {
+                c.reference(shell, "CLOSED_SHELL_ELEMENT")?
+            };
         }
         for face_ref in c.aggregate(shell, "CFS_FACES")? {
             c.charge(1)?;
@@ -184,7 +211,8 @@ pub fn import_brep_solid(
             record.same ^= !forward;
         }
     }
-    b.build(&mut c, root, options)
+    let closed = surface.map(|declared| declared.iter().map(|&(_, closed)| closed).collect());
+    b.build(&mut c, root, options, closed)
 }
 
 fn profile_error(
@@ -207,6 +235,11 @@ fn profile_error(
         source: e.source,
         message: if e.kind == decode::ErrorKind::UnknownEntity {
             outside_profile(document, schema, schema_name, e.entity)
+        } else if matches!(
+            e.kind,
+            decode::ErrorKind::ReferenceType | decode::ErrorKind::TypeMismatch
+        ) {
+            surface_model::reference_type(document, &e)
         } else {
             e.to_string()
         },
@@ -1199,11 +1232,14 @@ impl Builder {
         c.error(kind, message)
     }
 
+    /// `closed` holds the declared closure of each surface-model shell; a surface
+    /// model has no solid. `None` builds a solid of closed outer and cavity shells.
     fn build(
         mut self,
         c: &mut Context<'_, '_>,
         root: EntityId,
         options: ImportOptions,
+        closed: Option<Vec<bool>>,
     ) -> Result<ImportedSolid, Error> {
         let tolerance = c.tolerance.distance().as_metres();
         let mut faces = std::mem::take(&mut self.faces);
@@ -1290,7 +1326,10 @@ impl Builder {
             face_entities.push(face.entity);
         }
         c.current = root;
-        let count = faces.iter().map(|f| f.shell + 1).max().unwrap_or(1);
+        let count = closed.as_ref().map_or_else(
+            || faces.iter().map(|f| f.shell + 1).max().unwrap_or(1),
+            Vec::len,
+        );
         for shell in 0..count {
             c.record()?;
             c.raw.shells.push(Shell {
@@ -1298,14 +1337,16 @@ impl Builder {
                     .filter(|&i| faces[i].shell == shell)
                     .map(FaceId)
                     .collect(),
-                closed: true,
+                closed: closed.as_ref().is_none_or(|closed| closed[shell]),
             });
         }
-        c.record()?;
-        c.raw.solids.push(Solid {
-            shell: ShellId(0),
-            voids: (1..count).map(ShellId).collect(),
-        });
+        if closed.is_none() {
+            c.record()?;
+            c.raw.solids.push(Solid {
+                shell: ShellId(0),
+                voids: (1..count).map(ShellId).collect(),
+            });
+        }
         let raw = std::mem::take(&mut c.raw);
         let brep = raw
             .validate(

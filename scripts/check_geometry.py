@@ -12,6 +12,8 @@ import sys
 import tempfile
 import time
 
+import geometry_surface
+
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED = {
     "box.step": ("accepted", "accepted", "accepted"),
@@ -194,6 +196,7 @@ def main():
     with tempfile.TemporaryDirectory() as scratch:
         subprocess.run([sys.executable, str(ROOT / "corpus/geometry/brep_fixtures.py"), "--output", scratch], check=True)
         subprocess.run([sys.executable, str(ROOT / "corpus/geometry/assembly_fixtures.py"), "--output", scratch], check=True)
+        subprocess.run([sys.executable, str(ROOT / "corpus/geometry/surface_fixtures.py"), "--output", scratch], check=True)
         for fixture in sorted(Path(scratch).iterdir()):
             assert fixture.read_bytes() == (ROOT / "corpus/geometry" / fixture.name).read_bytes(), f"Regenerate {fixture.name}"
     binary = target / "examples" / ("faceted"+suffix)
@@ -203,6 +206,7 @@ def main():
     survey_binary = target / "examples" / ("survey"+suffix)
     brep_binary = target / "examples" / ("brep"+suffix)
     assembly_binary = target / "examples" / ("assembly"+suffix)
+    surface_binary = target / "examples" / ("surface_model"+suffix)
     cases = []
     for name, expected in ASSEMBLY_EXPECTED.items():
         case = assemble(assembly_binary, ROOT / "corpus/geometry" / name)
@@ -370,14 +374,17 @@ def main():
                           and case["result"]["products"] == specification["products"]
                           and all(case["result"]["styles"][k] == v for k, v in specification["styles"].items()))
         cases.append(case)
+    # Surface models as shells, never solids: fixtures, survey class and exporter files.
+    cases += geometry_surface.cases(inspect, surface_binary, survey_binary, external, args.require_external)
     output = ROOT / "reports/geometry"
     output.mkdir(parents=True,exist_ok=True)
-    report = {"scope":"selected-root faceted, edge-based planar, curved B-rep, existing-tessellation and presentation-tessellation import; no full-document/AP validation",
+    report = {"scope":"selected-root faceted, edge-based planar, curved B-rep, surface-model shell, existing-tessellation and presentation-tessellation import; no full-document/AP validation",
               "binary_sha256":hashlib.sha256(binary.read_bytes()).hexdigest(),
               "planar_binary_sha256":hashlib.sha256(planar_binary.read_bytes()).hexdigest(),
               "tessellated_binary_sha256":hashlib.sha256(tessellated_binary.read_bytes()).hexdigest(),
               "presentation_binary_sha256":hashlib.sha256(presentation_binary.read_bytes()).hexdigest(),
               "brep_binary_sha256":hashlib.sha256(brep_binary.read_bytes()).hexdigest(),
+              "surface_binary_sha256":hashlib.sha256(surface_binary.read_bytes()).hexdigest(),
               "external_available":external.is_dir(),"cases":cases}
     (output/"latest.json").write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
     rows=[]
@@ -391,7 +398,7 @@ def main():
         '<table><thead><tr><th>File</th><th>Expectation passed</th><th>Profile</th><th>Geometry/topology</th><th>Tessellation</th><th>Diagnostic</th></tr></thead><tbody>'
         +''.join(rows)+'</tbody></table></html>',encoding="utf-8")
     assert all(c["passed"] for c in cases), json.dumps(report,indent=2)
-    print(f"planar/faceted/curved/tessellated/presentation import and assembly linking: {len(cases)} reviewed outcomes passed; {output/'index.html'}")
+    print(f"planar/faceted/curved/surface-model/tessellated/presentation import and assembly linking: {len(cases)} reviewed outcomes passed; {output/'index.html'}")
 
 
 if __name__ == "__main__":

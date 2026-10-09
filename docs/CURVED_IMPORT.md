@@ -5,6 +5,8 @@ faces lie on elementary, B-spline or swept surfaces into a validated B-rep and o
 solid mesh. It is a superset of the edge-based [planar profile](STEP_IMPORT.md) and uses
 the same topology, UV trimming, shared-edge sampling, tessellation and mesh checks.
 Mesh positions are metres; triangle `face_ids` are the STEP face entity IDs.
+`import_surface_model` uses the same adapters for `SHELL_BASED_SURFACE_MODEL` roots,
+whose shells mesh as shells, never as solids ([surface models](#surface-models)).
 
 This is a bounded import profile, **not AP203/AP214/AP242 conformance**. The original
 reduced [B-rep profile](../corpus/geometry/brep.exp) supplies generated metadata for
@@ -226,10 +228,58 @@ plane-angle unit, or representations with different units produce a typed unit
 error for that root instead of a default. Discovery never selects a tolerance: using
 the uncertainty as the model tolerance is the caller's decision.
 
+## Surface models
+
+`import_surface_model(document, root, length, angle, tolerance, options)` imports a
+selected `SHELL_BASED_SURFACE_MODEL` with this profile's face and edge adapters, so
+faces, edges, units, supplied pcurves, charts and adaptations follow every rule above.
+`discover_surface_models` finds these roots and their context units by the
+`discover_solids` rules (typically a `MANIFOLD_SURFACE_SHAPE_REPRESENTATION`); they are
+a separate root class, never returned by `discover_solids`.
+
+| Contract | Supported |
+| --- | --- |
+| Root | `SHELL_BASED_SURFACE_MODEL`; `SBSM_BOUNDARY` of `OPEN_SHELL`, `CLOSED_SHELL`, `ORIENTED_OPEN_SHELL` or `ORIENTED_CLOSED_SHELL` (orientation applied to the element's faces) |
+| Shells | Each declared shell is one kernel shell, open or closed as declared; no solid is built |
+| Outside the profile | `VERTEX_SHELL`, `WIRE_SHELL` (named rejection), `FACE_BASED_SURFACE_MODEL` |
+
+The model is validated as one B-rep: each shell must be connected through its edges,
+with at most two uses per edge and opposed orientations of paired uses, and a closed
+shell needs two uses of every edge (collapsed pole and apex edges excepted). Shells
+keep their `EDGE_CURVE` and `VERTEX_POINT` identities; nothing is sewn or reoriented.
+Each shell is then kept as its own validated B-rep (`SurfaceShell::brep`, one shell,
+copies of any vertex or edge it shares with another shell of the model), so its
+sampling, refinement and failures depend on no other shell. `SurfaceShell` reports the
+shell entity, the declared closure, its face entities and its open boundary: B-rep
+edges with one use, excluding collapsed edges (always zero for a closed shell).
+
+`SurfaceShell::tessellate` meshes through `tessstep_tessellate::tessellate_shell`: one
+connected component, watertight when the shell is declared closed. A surface model is
+never a solid: neither closed nor open shells are checked for volume or outward
+orientation (an `ORIENTED_CLOSED_SHELL(.F.)` facing inward is accepted as a shell), and
+`require_solid` is never applied. `ImportedSurfaceModel::tessellate` returns one mesh
+per shell and fails with the first failing shell; each shell has the full tessellation
+budgets. Profile, geometry, topology and tessellation errors are typed as for solids,
+located at the failing entity, the model root (model topology) or the shell
+(per-shell topology and tessellation). Rust is the only interface so far; C/C++
+exposure of surface models is a follow-up to Milestone 22.10.
+
+Evidence: `tests/surface_model.rs` and
+[`surface_fixtures.py`](../corpus/geometry/surface_fixtures.py): an open shell of a
+half-cylinder trough between a planar and a bilinear B-spline flange (area
+`200π + 200` mm², eight boundary edges) and the same shell through
+`ORIENTED_OPEN_SHELL(.F.)` (every triangle and normal reversed); a model holding a
+closed cylinder shell (volume `2000π` mm³) and an inward box (signed volume
+`-1000` mm³); and rejections of a declared closed shell that is open (`OpenShell`), a
+`VERTEX_SHELL`, a disconnected open shell, strict `$` slots and zero budgets. Two
+unmodified exporter files are hash-pinned in
+[external-surface.json](../corpus/geometry/external-surface.json): a CATIA V5 surface
+export of 58 single-face open shells and a Pro/ENGINEER closed shell of 52 faces.
+
 ## Limits and evidence
 
-Open shells, offset curves and surfaces, reversed `TRIMMED_CURVE`s nested inside
-other curves, and healing are unsupported. `OFFSET_SURFACE`,
+Open shells in solids, offset curves and surfaces, reversed `TRIMMED_CURVE`s nested
+inside other curves, and healing are unsupported. `OFFSET_SURFACE`,
 `RECTANGULAR_TRIMMED_SURFACE`, `RECTANGULAR_COMPOSITE_SURFACE`, `COMPOSITE_CURVE`,
 `OFFSET_CURVE_3D` and `PCURVE` or `DEGENERATE_PCURVE` used directly as edge geometry
 are rejected by name at the profile stage (`brep_rare_geometry_is_a_named_rejection`). Profile rejection is not an AP

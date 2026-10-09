@@ -69,6 +69,80 @@ Not observed here: the instrumented nightly matrix (no nightly toolchain or carg
 locally), so no coverage, feature or execution figures are claimed yet. The MSRV 1.85
 compile of the bodies now in `fuzz/support/` was not run locally.
 
+# Milestone 22.6: surface models as shell meshes — 2026-10-09
+
+Delivered: `discover_surface_models` and `import_surface_model` import every
+`SHELL_BASED_SURFACE_MODEL` with the curved profile's face and edge adapters (the B-rep
+profile gains `OPEN_SHELL`, `ORIENTED_OPEN_SHELL`, the `shell` select and the root).
+Each declared shell is validated open or closed as declared, without a solid, kept as
+its own B-rep and meshed through `tessellate_shell`: one connected component, watertight
+when closed, never checked for volume or orientation. The survey reports surface models
+as a separate `surface_models` class; the runner adds `surface_model_result`, a
+`surface_model` stage and the `surface_model_accepted_roots` /
+`surface_model_closure_types` baseline fields. A reference or SELECT rejection now names
+the attribute and the referenced record (`OUTER references OPEN_SHELL #16`).
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` (274 tests), fmt, Clippy (`-D warnings`, all targets), `cargo doc` (`-D warnings`) | passed, including the seven `tests/surface_model.rs` tests |
+| `check_geometry.py --require-external` | 92 reviewed outcomes passed: five authored surface-model roots, the survey class over both fixtures, and two hash-pinned exporter files |
+| `check_coverage.py`, `conformance.py --check`, `check_architecture.py`, `check_corpus.py`, `check_metamorphic.py`, script unit tests (49) | passed; 501 AP242 entities classified (71 adapted: `SHELL_BASED_SURFACE_MODEL`, `OPEN_SHELL`, `ORIENTED_OPEN_SHELL` added) |
+| `corpus.py --check --repeat 2` with the AP validator | 3,227 compatible, 1,539 changed, no regressions; 508 s (8 min 31 s wall) on a shared machine, 702 s when rerun beside the workspace tests |
+
+Authored fixtures (`corpus/geometry/surface_fixtures.py`): a half-cylinder trough between
+a planar and a bilinear B-spline flange as one `OPEN_SHELL` (three faces, eight boundary
+edges, area `200π + 200` mm² within the chord bound) and through
+`ORIENTED_OPEN_SHELL(.F.)` (identical positions, every triangle and normal reversed); a
+model with a closed cylinder shell (`2000π` mm³) and an inward
+`ORIENTED_CLOSED_SHELL(.F.)` box (signed volume `-1000` mm³, accepted as a shell); a
+declared `CLOSED_SHELL` whose faces are open (`OpenShell`, topology) and a `VERTEX_SHELL`
+(named, profile).
+
+Exporter evidence, unmodified and hash-pinned in `corpus/geometry/external-surface.json`:
+`trj5_k1-ct-214.stp` (CATIA V5 R5 surface export) is one surface model of 58
+single-face open shells on planes, cylinders, tori, spheres, cones and extrusions, with
+294 open boundary edges; all 58 shells mesh as single open components.
+`trj7_k1-pe-214.stp` (Pro/ENGINEER 2001) is one surface model holding one
+`CLOSED_SHELL` of 52 faces in an inch and degree context; it meshes watertight with
+positive signed volume (8.54e-6 m³ at a 1 mm chord and 0.5 rad) and is reported as a
+shell.
+
+Corpus class (surveyed in context units with the shape-root tolerance and chord rules):
+2,242 roots in 1,531 physically accepted files; 1,092 pass geometry/topology and 893
+produce shell meshes. By source: OpenCASCADE 519 of 780 roots (106 files), NIST 29 of
+31 (11 files), `dodgy-step-files` 345 of 1,431 (1,414 files). Shells: 1,285 open
+(1,093 meshed) and 13 closed (5 meshed watertight), 2,507 faces, 5,962 open boundary
+edges. File stage: 400 accepted, 24 partial, 944 rejected, 154 unsupported, 9 resource
+limit. First failing stage and kind: 475 geometry, 323 topology, 180 profile invalid,
+168 tessellation, 111 profile unsupported, 58 geometry unsupported, 31 tessellation
+resource limit, 3 missing entities. The roadmap's 4,127 roots count paths, including
+duplicates and the 1,756 roots of `bug26451_Test_STEP.stp`, which the physical parser
+rejects (`entity zero is invalid`). The exporter failures are dominated by edges lying
+off their face surfaces beyond the model tolerance (148 OpenCASCADE roots; Milestone
+22.3) and tessellation refinement (`UnresolvedTolerance`, trim limits, self-intersecting
+UV polygons, resource limits; Milestones 22.2 and 22.4); the `dodgy-step-files` add
+broken wires, disconnected and open shells, and invalid references (22.5 and named
+rejections).
+
+Reviewed baseline movements: 1,530 files changed only by gaining the class
+(`surface_model` stage, accepted-root count and closure types). Nine files changed a
+solid stage, none a regression: eight `MANIFOLD_SOLID_BREP` roots whose `OUTER`
+references an `OPEN_SHELL` (`bug25169_box-openshell.stp` and seven
+`dodgy-step-files` inputs) move from `profile:unsupported` (`OPEN_SHELL` was outside the
+profile) to a typed `profile:invalid_geometry` rejection naming the open shell, because
+an open shell cannot bound a solid; `bug33665.step` moves from `profile:unsupported` to
+`profile:missing_entity`, its closure now decoding past the open shell to a missing
+face reference. The solid class is otherwise unchanged (1,197 roots, 745 passing
+geometry/topology, 577 meshed). The baseline was not saved.
+
+Runtime: surface models add about 116 s of survey time over the 1,675 files that hold
+them (their solid roots take 31 s), measured with the release survey. The slowest
+inputs of the first run were `bug33261.stp` (15.1 s), `trj6_k1-td-214.stp` (14.4 s),
+`bug31711.stp` (14.4 s) and `trj3_s1-id-203.stp` (13.7 s); `trj6_k1-td-214.stp` (59
+surface models, four ending in `UnresolvedTolerance`) and `trj5_k1-pe-203.stp` /
+`-214.stp` (a tessellation resource limit after about 9 s of refinement) are new among
+the slowest, all far below the 120 s per-input deadline.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

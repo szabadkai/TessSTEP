@@ -18,10 +18,11 @@ import tempfile
 import time
 
 from corpus_report import aggregate, render, FAULTS, stages_of
+import corpus_surface
 
 ROOT = Path(__file__).resolve().parents[1]
 EXTENSIONS = {".step", ".stp", ".p21"}
-STAGES = ("physical_parse", "references", "schema", "product", "geometry", "tessellation")
+STAGES = ("physical_parse", "references", "schema", "product", "geometry", "tessellation", "surface_model")
 
 
 def digest(path):
@@ -291,7 +292,7 @@ def inspect_geometry(binary, path, timeout, result, metres_per_unit, budgets=())
     """Import every solid and shape tessellation root and every tessellated annotation
     occurrence with the selected-root profiles after physical acceptance."""
     if result["stages"]["physical_parse"] != "accepted":
-        result["stages"]["geometry"] = result["stages"]["tessellation"] = "not_run"
+        result["stages"]["geometry"] = result["stages"]["tessellation"] = result["stages"]["surface_model"] = "not_run"
         return
     started = time.monotonic()
     with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
@@ -301,7 +302,7 @@ def inspect_geometry(binary, path, timeout, result, metres_per_unit, budgets=())
             result["geometry_stderr"] = stderr.read(4096).decode("utf-8", errors="replace")
             if process.returncode != 0:
                 result["status"] = "crash" if process.returncode < 0 or process.returncode == 101 else "runner_error"
-                result["stages"]["geometry"] = result["stages"]["tessellation"] = result["status"]
+                result["stages"]["geometry"] = result["stages"]["tessellation"] = result["stages"]["surface_model"] = result["status"]
             else:
                 if stdout.tell() > 16 * 1024 * 1024:
                     raise ValueError("shape survey JSON exceeds 16 MiB")
@@ -319,15 +320,23 @@ def inspect_geometry(binary, path, timeout, result, metres_per_unit, budgets=())
                         raise ValueError("invalid shape survey root outcome")
                 if not valid_presentation(payload.get("presentation")):
                     raise ValueError("invalid presentation survey summary")
+                # Surface models are a separate root class; surveys without the section predate it.
+                models = payload.get("surface_models")
+                if models is not None and not corpus_surface.valid(models):
+                    raise ValueError("invalid surface model survey section")
                 result["geometry_result"] = summarize_survey(payload)
+                if models is not None:
+                    result["surface_model_result"] = corpus_surface.summarize(models)
+                result["stages"]["surface_model"] = corpus_surface.stage(models["roots"]) if models is not None else "not_run"
                 result["stages"]["geometry"] = stage_outcome(roots, "geometry") if roots else "no_shape_roots"
                 result["stages"]["tessellation"] = stage_outcome(roots, "tessellation") if roots else "not_run"
         except subprocess.TimeoutExpired:
             result["status"] = "timeout"
-            result["stages"]["geometry"] = result["stages"]["tessellation"] = "timeout"
+            result["stages"]["geometry"] = result["stages"]["tessellation"] = result["stages"]["surface_model"] = "timeout"
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
             result["status"] = "runner_error"
-            result["stages"]["geometry"] = result["stages"]["tessellation"] = "runner_error"
+            result["stages"]["geometry"] = result["stages"]["tessellation"] = result["stages"]["surface_model"] = "runner_error"
+            result.pop("surface_model_result", None)
             result["geometry_stderr"] = str(error)
     result["seconds"] = round(result["seconds"] + time.monotonic() - started, 4)
 
@@ -354,6 +363,14 @@ def signature(case):
     presentation = (geometry or {}).get("presentation")
     result["presentation_accepted"] = (presentation["accepted"] if presentation and presentation["occurrence_count"]
                                        else None if geometry else case.get("presentation_accepted"))
+    # Surface models joined the survey in Milestone 22.6 as their own root class: a file
+    # without them keeps the signature older baselines saved, so only files that have
+    # them change, by gaining the class.
+    if result["stages"]["surface_model"] in ("not_run", "no_surface_models"):
+        result["stages"]["surface_model"] = "unmeasured"
+    models = case.get("surface_model_result")
+    for key, field in (("surface_model_accepted_roots", "accepted_roots"), ("surface_model_closure_types", "closure_types")):
+        result[key] = (models[field] if models and models["root_count"] else None) if models or geometry else case.get(key)
     return result
 
 
@@ -372,8 +389,8 @@ def compare(cases, previous):
             regression |= (case.get("missing_references") or 0) > (before.get("missing_references") or 0)
             regression |= before["stages"].get("schema") == "accepted" and case["stages"].get("schema") != "accepted"
             regression |= before["stages"].get("product") == "accepted" and case["stages"].get("product") != "accepted"
-            regression |= any(before["stages"].get(s) == "accepted" and case["stages"].get(s) != "accepted" for s in ("geometry", "tessellation"))
-            for count in ("geometry_accepted_roots", "presentation_accepted"):
+            regression |= any(before["stages"].get(s) == "accepted" and case["stages"].get(s) != "accepted" for s in ("geometry", "tessellation", "surface_model"))
+            for count in ("geometry_accepted_roots", "presentation_accepted", "surface_model_accepted_roots"):
                 accepted_before, accepted_after = signature(before)[count], signature(case)[count]
                 regression |= accepted_before is not None and (accepted_after or 0) < accepted_before
             regression |= case["status"] in FAULTS and before["status"] not in FAULTS
@@ -547,7 +564,8 @@ def main():
                                       "schemas": schema_map["schemas"], "arguments": schema_map.get("arguments", []), "policy": schema_map.get("policy")})
         survey_snapshot = Path(directory) / survey.name
         shutil.copy2(survey, survey_snapshot)
-        geometry_config = {"scope": "every solid and shape tessellation root and tessellated annotation occurrence; selected-root profiles; exact representations preferred", "policy": "tolerant default",
+        geometry_config = {"scope": "every solid and shape tessellation root and tessellated annotation occurrence; selected-root profiles; exact representations preferred; "
+                                    "every SHELL_BASED_SURFACE_MODEL as shells, never as solids", "policy": "tolerant default",
                            "metres_per_unit": args.geometry_metres_per_unit, "binary_sha256": digest(survey_snapshot)}
         product_snapshot = None
         product_config = None

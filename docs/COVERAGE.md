@@ -6,10 +6,10 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 
 | Status | Entities |
 | --- | ---: |
-| adapted | 68 |
+| adapted | 71 |
 | supertype | 14 |
 | product | 5 |
-| unsupported | 106 |
+| unsupported | 103 |
 | out_of_scope | 308 |
 
 | Entity | Status | Roots | Profiles | Note |
@@ -77,7 +77,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `CIRCULAR_AREA` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `CIRCULAR_INVOLUTE` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `CLGC_WITH_DIMENSION` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
-| `CLOSED_SHELL` | adapted | topological | brep, faceted, planar |  |
+| `CLOSED_SHELL` | adapted | topological | brep, faceted, planar | solid boundary, or a surface-model shell meshed watertight without volume checks |
 | `CLOTHOID` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `COAXIAL_ASSEMBLY_CONSTRAINT` | out_of_scope | geometric |  | explicit geometric and assembly constraints: design-intent data with no mesh |
 | `COAXIAL_GEOMETRIC_CONSTRAINT` | out_of_scope | geometric |  | explicit geometric and assembly constraints: design-intent data with no mesh |
@@ -172,7 +172,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `FACETED_BREP` | adapted | geometric | faceted |  |
 | `FACETED_BREP_SHAPE_REPRESENTATION` | adapted | shape | context, product | faceted B-rep root container |
 | `FACETED_PRIMITIVE` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
-| `FACE_BASED_SURFACE_MODEL` | unsupported | geometric |  | surface models: roadmap scope decision (proposed: import as shell meshes, never as solids) |
+| `FACE_BASED_SURFACE_MODEL` | unsupported | geometric |  | connected face sets are not adapted (8 records in 3 corpus files); shell-based surface models import as shells (Milestone 22.6) |
 | `FACE_BOUND` | adapted | topological | brep, faceted, planar |  |
 | `FACE_OUTER_BOUND` | adapted | topological | brep, faceted, planar |  |
 | `FACE_SHAPE_REPRESENTATION` | unsupported | shape |  | single-face representation; not searched for roots |
@@ -244,7 +244,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `LOW_ORDER_KINEMATIC_PAIR_WITH_RANGE` | out_of_scope | geometric |  | kinematics: no mechanism import is planned for v1.0 |
 | `MANIFOLD_SOLID_BREP` | adapted | geometric | brep, faceted, planar |  |
 | `MANIFOLD_SUBSURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | subface models are not imported |
-| `MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | adapted | shape | context, product | shell container; open shells import as shells, never as solids |
+| `MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | adapted | shape | context, product | surface-model container (context units); its shells import as shells, never as solids |
 | `MIN_AND_MAJOR_PLY_ORIENTATION_BASIS` | out_of_scope | geometric |  | composite-ply and presentation data |
 | `NEUTRAL_SKETCH_REPRESENTATION` | out_of_scope | shape |  | explicit geometric and assembly constraints: design-intent data with no mesh |
 | `NON_MANIFOLD_SURFACE_SHAPE_REPRESENTATION` | unsupported | shape |  | non-manifold shells are rejected by the manifold shell checks |
@@ -253,13 +253,13 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `OFFSET_SURFACE` | unsupported | geometric |  | rare; named rejection |
 | `ONE_DIRECTION_REPEAT_FACTOR` | out_of_scope | geometric |  | composite-ply and presentation data |
 | `OPEN_PATH` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
-| `OPEN_SHELL` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
+| `OPEN_SHELL` | adapted | topological | brep | surface-model shell; meshed open, boundary edges reported |
 | `ORDINATE_DIMENSION` | out_of_scope | geometric |  | presentation, drawing and PMI: out of scope for v1.0 (colour and transparency are adapted from styled items, not from these items) |
-| `ORIENTED_CLOSED_SHELL` | adapted | topological | brep | cavity shells |
+| `ORIENTED_CLOSED_SHELL` | adapted | topological | brep | cavity shells and surface-model shells |
 | `ORIENTED_EDGE` | adapted | topological | brep, planar | $ endpoints tolerated unless strict |
 | `ORIENTED_FACE` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `ORIENTED_JOINT` | out_of_scope | topological |  | kinematics: no mechanism import is planned for v1.0 |
-| `ORIENTED_OPEN_SHELL` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
+| `ORIENTED_OPEN_SHELL` | adapted | topological | brep | surface-model shell; orientation applied to its element's faces |
 | `ORIENTED_PATH` | unsupported | topological |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `ORIENTED_SURFACE` | unsupported | geometric |  | rare surface or curve kind without an adapter; named rejection |
 | `OUTER_BOUNDARY_CURVE` | unsupported | geometric |  | CURVE_BOUNDED_SURFACE boundary; scope decision |
@@ -381,7 +381,7 @@ Every instantiable subtype of `GEOMETRIC_REPRESENTATION_ITEM`, `TOPOLOGICAL_REPR
 | `SHAPE_REPRESENTATION` | adapted | shape | context, product | generic container searched for solid roots |
 | `SHAPE_REPRESENTATION_WITH_PARAMETERS` | unsupported | shape |  | outside every import profile; a root or item of this type is rejected naming the entity |
 | `SHELLED_SOLID` | out_of_scope | geometric |  | CSG primitives, solid volumes, swept solids and feature-based solids: only B-rep and tessellated solids are imported |
-| `SHELL_BASED_SURFACE_MODEL` | unsupported | geometric |  | surface models: named unsupported in Milestone 21; import as shell meshes, never as solids, is Milestone 22 (roadmap scope decision) |
+| `SHELL_BASED_SURFACE_MODEL` | adapted | geometric | brep | surface model root class: open and closed shells import as shell meshes, never as solids (Milestone 22.6) |
 | `SHELL_BASED_WIREFRAME_MODEL` | out_of_scope | geometric |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |
 | `SHELL_BASED_WIREFRAME_SHAPE_REPRESENTATION` | out_of_scope | shape |  | wireframe model |
 | `SINGLE_AREA_CSG_2D_SHAPE_REPRESENTATION` | out_of_scope | shape |  | 2D drafting geometry, wireframe models and plane curves without a surface use: not solid geometry |

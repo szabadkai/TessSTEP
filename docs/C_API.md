@@ -527,6 +527,11 @@ The freeze then covers the final export set (checked by `scripts/check_capi.py`)
 published record layout and revision size, the status, stage, kind, flag and pairing
 values, the extensible-record rule above, and the shared and static CMake targets.
 
+Surface-model import (`discover_surface_models`, `import_surface_model`, Milestone 22.6)
+is Rust-only; exposing it in C/C++ is a follow-up to Milestone 22.10. The Rust result is
+a value per shell: the shell entity, its declared closure, its face entities, its open
+boundary edge count and one owned mesh ([curved import](CURVED_IMPORT.md#surface-models)).
+
 ## Errors and panic containment
 
 C operations return stable typed status codes and explicit diagnostic access.

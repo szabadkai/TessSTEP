@@ -53,7 +53,8 @@ example on each unique input (protocol `format_version` 2, scope `shape-survey`)
 imports every `MANIFOLD_SOLID_BREP`, `BREP_WITH_VOIDS` and `FACETED_BREP` root found by
 `discover_solids`: faceted roots use the faceted profile, all others the curved B-rep
 profile. It also imports every shape tessellation root found by
-`discover_tessellations` with the existing-tessellation profile. All use the
+`discover_tessellations` with the existing-tessellation profile, and surveys surface
+models as a [separate root class](#surface-model-class-milestone-226). All use the
 tolerant default policy (see [STEP_IMPORT.md](STEP_IMPORT.md),
 [CURVED_IMPORT.md](CURVED_IMPORT.md) and
 [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md)). Each root reports profile,
@@ -107,6 +108,33 @@ Rejection of a deliberately malformed fixture may be correct. The external
 defect catalog includes schema, geometric and runtime expectations, so its
 entries are not automatically converted into parser pass/fail assertions.
 External references and cryptographic signatures are not verified.
+
+## Surface model class (Milestone 22.6)
+
+Surface models are surveyed as a root class of their own. The survey's
+`surface_models` section imports every `SHELL_BASED_SURFACE_MODEL` found by
+`discover_surface_models` with `import_surface_model`, in its context units and with
+the shape-root tolerance and chord rules above (the chord from the vertex bounding box
+of all its shells), and meshes each shell as a shell, never as a solid (see
+[surface models](CURVED_IMPORT.md#surface-models)). Each root reports profile,
+geometry/topology and tessellation outcomes and its failure like a solid root, and a
+`shells` list: entity and type, declared closure, faces, open boundary edges and, when
+meshed, vertex, triangle and mesh boundary-edge counts and watertightness. A root is
+accepted when every shell meshes; `MAX_ROOTS` bounds these roots separately.
+
+The runner keeps them out of the solid and tessellation outcomes: `geometry_result`,
+the `geometry` and `tessellation` stages and their baseline fields are unchanged. Each
+file instead gains a bounded `surface_model_result` (root, shell, face and boundary
+counts, outcomes by failing stage and kind, categories, unsupported entity types,
+closure types and the first 20 roots with their first 10 shells) and a
+`surface_model` stage: `accepted`, `partial`, the dominant failure, or
+`no_surface_models`. The baseline keeps `surface_model_accepted_roots` and
+`surface_model_closure_types` per file and the stage. A file without surface models
+compares as `unmeasured`, exactly like a baseline saved before the class existed, so
+only files with surface models change, by gaining the class. A decrease in a file's
+meshed surface model roots, or a `surface_model` stage that stops being `accepted`, is
+a regression. The summary and HTML report show the class with per-source totals; the
+helpers live in `scripts/corpus_surface.py`.
 
 ## Baselines and implementation work
 

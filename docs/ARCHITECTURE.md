@@ -565,3 +565,17 @@ The crate now also builds a `staticlib`; the CMake package probes rustc for the
 standard library's system dependencies of the target and declares them on
 `TessSTEP::TessSTEP_static`, so static consumers need no Rust knowledge either. No new
 crate edge or production dependency is introduced.
+
+## Surface model import architecture review (Milestone 22.6)
+
+Surface models reuse the curved composition rather than a parallel adapter. The B-rep
+profile gains `OPEN_SHELL`, `ORIENTED_OPEN_SHELL`, the `shell` select and
+`SHELL_BASED_SURFACE_MODEL`; the importer's shell loop takes a surface model's declared
+shells, and the B-rep builder records each shell's declared closure and builds no
+solid. A child module of the curved importer then copies each validated shell into
+its own validated B-rep, so a shell's sampling, refinement and failures depend on no
+other shell. No kernel crate changed: topology already validated open shells outside
+solids and `tessstep_tessellate::tessellate_shell` already enforced declared closure
+and connectedness. Discovery reuses the representation and unit resolver as a separate
+root class. No new crate edge, unsafe code or production dependency is introduced; C/C++
+exposure of surface models is a follow-up to Milestone 22.10.

@@ -12,6 +12,8 @@
 //! annotation occurrences. Import budgets default to `ImportOptions::for_document`
 //! (sized by the document's entity count); `--max-work` and `--max-records` set them
 //! explicitly, and the output records the budgets used.
+//! SHELL_BASED_SURFACE_MODEL roots are a separate `surface_models` class (bounded by
+//! MAX_ROOTS on their own), each shell meshed as a shell, never as a solid.
 #![forbid(unsafe_code)]
 use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
 use tessstep_import::*;
@@ -239,6 +241,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     out.push(']');
     presentations(&mut out, &doc, unit, max_roots, options)?;
+    surface_models(&mut out, &doc, unit, max_roots, options)?;
     out.push('}');
     println!("{out}");
     Ok(())
@@ -391,6 +394,136 @@ fn presentations(
     }
     write!(out, "}},\"failures\":[{failures}]}}")?;
     Ok(())
+}
+
+/// Surface models, a root class of their own: every SHELL_BASED_SURFACE_MODEL imported
+/// with the curved profile in its context units and tolerance (the shape-root rules)
+/// and each of its shells meshed as a shell, never as a solid. A root is accepted when
+/// every shell meshes; each shell reports its declared closure, faces and B-rep
+/// boundary edges, and, when meshed, its mesh counts and watertightness.
+fn surface_models(
+    out: &mut String,
+    doc: &Document,
+    unit: LengthUnit,
+    max_roots: usize,
+    options: ImportOptions,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let roots = discover_surface_models(doc, options)?;
+    write!(
+        out,
+        ",\"surface_models\":{{\"root_count\":{},\"truncated\":{},\"roots\":[",
+        roots.len(),
+        roots.len() > max_roots
+    )?;
+    for (index, root) in roots.iter().take(max_roots).enumerate() {
+        let started = Instant::now();
+        let (length, angle, declared, units) = match &root.units {
+            Ok(u) => (
+                u.length,
+                u.plane_angle,
+                u.distance_uncertainty,
+                if u.distance_uncertainty.is_some() {
+                    "context"
+                } else {
+                    "context_units"
+                },
+            ),
+            Err(_) => (unit, AngleUnit::RADIAN, None, "assumed"),
+        };
+        let distance = declared.unwrap_or(1e-7).max(1e-7);
+        let model = ModelTolerance::new(Length::metres(distance)?, Angle::radians(1e-8)?)?;
+        if index > 0 {
+            out.push(',');
+        }
+        write!(out, "{{\"id\":{},\"type\":", root.entity.get())?;
+        json_string(out, &record_name(doc, root.entity))?;
+        write!(
+            out,
+            ",\"profile\":\"surface_model\",\"units\":\"{units}\",\"metres_per_unit\":{},\"model_tolerance_m\":{distance:e},\"declared_uncertainty_m\":{},",
+            length.scale(),
+            declared.map_or("null".to_string(), |d| format!("{d:e}"))
+        )?;
+        let mut chord = 1e-6;
+        let mut shells = String::new();
+        let result = match import_surface_model(doc, root.entity, length, angle, model, options) {
+            Err(e) => Err(e),
+            Ok(model) => {
+                // Chord 1e-3 of the model's vertex bounding-box diagonal, within 1e-6..1e-3 m.
+                let mut lo = [f64::INFINITY; 3];
+                let mut hi = [f64::NEG_INFINITY; 3];
+                for shell in model.shells() {
+                    for v in &shell.brep().data().vertices {
+                        for (k, x) in v.position.coordinates().into_iter().enumerate() {
+                            lo[k] = lo[k].min(x);
+                            hi[k] = hi[k].max(x);
+                        }
+                    }
+                }
+                let diagonal = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+                if diagonal.is_finite() {
+                    chord = (diagonal * 1e-3).clamp(1e-6, 1e-3);
+                }
+                let tolerance =
+                    TessellationTolerance::new(Length::metres(chord)?, Angle::radians(0.1)?)?;
+                // Every shell is meshed and reported; the first failure is the root's.
+                let mut first = None;
+                let (mut vertices, mut triangles) = (0, 0);
+                for (k, shell) in model.shells().iter().enumerate() {
+                    if k > 0 {
+                        shells.push(',');
+                    }
+                    write!(shells, "{{\"id\":{},\"type\":", shell.entity().get())?;
+                    json_string(&mut shells, &record_name(doc, shell.entity()))?;
+                    write!(
+                        shells,
+                        ",\"closed\":{},\"faces\":{},\"boundary_edges\":{},",
+                        shell.closed(),
+                        shell.face_entities().len(),
+                        shell.boundary_edges()
+                    )?;
+                    match shell.tessellate(tolerance, TessellationOptions::default()) {
+                        Ok(mesh) => {
+                            vertices += mesh.data().positions.len();
+                            triangles += mesh.data().triangles.len();
+                            write!(
+                                shells,
+                                "\"status\":\"accepted\",\"vertices\":{},\"triangles\":{},\"mesh_boundary_edges\":{},\"watertight\":{}}}",
+                                mesh.data().positions.len(),
+                                mesh.data().triangles.len(),
+                                mesh.statistics().boundary_edges,
+                                mesh.is_watertight()
+                            )?;
+                        }
+                        Err(e) => {
+                            write!(shells, "\"status\":\"{}\"}}", status_name(&e))?;
+                            first.get_or_insert(e);
+                        }
+                    }
+                }
+                first.map_or(Ok((vertices, triangles)), Err)
+            }
+        };
+        match result {
+            Ok((vertices, triangles)) => write!(
+                out,
+                "\"status\":\"accepted\",\"stages\":{{\"profile\":\"accepted\",\"geometry\":\"accepted\",\"tessellation\":\"accepted\"}},\"vertices\":{vertices},\"triangles\":{triangles}"
+            )?,
+            Err(e) => failure(out, doc, &e, true)?,
+        }
+        write!(out, ",\"shells\":[{shells}],\"chord_m\":{chord:e}")?;
+        closure(out, doc, root.entity)?;
+        write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
+    }
+    out.push_str("]}");
+    Ok(())
+}
+
+fn status_name(e: &Error) -> &'static str {
+    match e.kind {
+        ErrorKind::Unsupported => "unsupported",
+        ErrorKind::ResourceLimit => "resource_limit",
+        _ => "rejected",
+    }
 }
 
 /// `tessellates` is false for existing tessellations, whose tessellation stage never

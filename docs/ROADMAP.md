@@ -443,12 +443,13 @@ adapter. These items feed Milestone 21.
 - **Point bounds are not exporter specific — covered by the delivered pole item.** 276
   of the 287 `VERTEX_LOOP` face bounds occur in OpenCASCADE and NIST files, so the
   pole item above is general.
-- **Surface models — scope decision.** 4,127 `SHELL_BASED_SURFACE_MODEL` roots
+- **Surface models — scope decision; delivered as Milestone 22.6 (2026-10-09).** 4,127
+  `SHELL_BASED_SURFACE_MODEL` roots
   outnumber the 1,460 `MANIFOLD_SOLID_BREP` roots; 2,539 of them are in 108
   OpenCASCADE files. The corpus runner does not survey them, although
   `tessellate_shell` already meshes open shells. Decide whether STEP import accepts
   `OPEN_SHELL` / `CLOSED_SHELL` surface models, reporting open results as shells,
-  never as solids.
+  never as solids. Decided: it does, as shells (22.6 below).
 - **Topology-free trimmed surfaces — scope decision.** `CURVE_BOUNDED_SURFACE`
   (3,216 records, 18 files) occurs almost only in `GEOMETRIC_SET`s, not as face
   geometry. Meshing it needs boundary-curve trimming without B-rep topology. Decide
@@ -660,10 +661,31 @@ baseline movements, never a refreshed baseline.
   shells; every repair is counted in the result and shown in the corpus report.
   Most of these roots are synthetic `dodgy-step-files`; acceptance is measured on
   the exporter files and on authored fixtures for each repair.
-- **22.6 Surface models as shell meshes.** `SHELL_BASED_SURFACE_MODEL` (4,127 roots,
+- **22.6 Surface models as shell meshes — delivered 2026-10-09.** `SHELL_BASED_SURFACE_MODEL` (4,127 roots,
   2,539 in 108 OpenCASCADE files) imports as open or closed shell meshes through
   `tessellate_shell`, reported as shells and never as solids. The corpus runner
   surveys them as a separate root class with their own baseline outcomes.
+  Delivered: `discover_surface_models` and `import_surface_model` (Rust) reuse the
+  curved profile's face and edge adapters; the profile gains `OPEN_SHELL`,
+  `ORIENTED_OPEN_SHELL` and the surface model root. Each declared shell is validated
+  open or closed as declared, without a solid, kept as its own B-rep (`SurfaceShell`:
+  entity, closure, face entities, open boundary edges) and meshed as one connected
+  component, watertight when closed, with no volume or orientation check. The survey's
+  `surface_models` section, `surface_model_result`, the `surface_model` stage and two
+  new baseline fields form the corpus class; files without surface models compare
+  unchanged. Of the 4,127 path-level roots, 2,242 are in physically accepted inputs
+  (1,756 are in `bug26451_Test_STEP.stp`, which the parser rejects); 893 mesh: 519 of
+  780 OpenCASCADE, 29 of 31 NIST and 345 of 1,431 `dodgy-step-files` roots. The
+  remaining exporter failures belong to 22.2 (tessellation) and 22.3 (edges off their
+  surfaces); sewing and C/C++ exposure are not part of this item (22.5, 22.10
+  follow-up). Evidence: `tests/surface_model.rs`
+  (`surface_model_open_patches_mesh_as_one_open_shell`,
+  `surface_model_closed_shells_are_watertight_shells_not_solids`,
+  `surface_model_rejections_are_typed_and_located`,
+  `surface_model_unmodified_catia_surface_export`), `scripts/test_corpus_surface.py`,
+  the authored `surface-*.step` fixtures and two hash-pinned exporter files in
+  `check_geometry.py` (CATIA V5 open shells, Pro/ENGINEER closed shell), and the
+  reviewed corpus movement in [VALIDATION.md](VALIDATION.md).
 - **22.7 Mapped-item placements and tolerated unit encodings.** Link assemblies whose
   occurrences are placed by `MAPPED_ITEM` or Cartesian transformation operators (9
   shape roots are unplaced today) and tolerate, as counted adaptations, the

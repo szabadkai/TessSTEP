@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 import re
 
-STAGES = ("physical_parse", "references", "schema", "product", "geometry", "tessellation")
+import corpus_surface
+
+STAGES = ("physical_parse", "references", "schema", "product", "geometry", "tessellation", "surface_model")
 FAULTS = {"crash", "timeout", "runner_error", "nondeterministic"}
 UNTESTED = {"not_run", "not_configured", "not_integrated", "not_implemented", "not_applicable"}
 
@@ -175,7 +177,8 @@ def aggregate(cases, baseline_present=False):
         tested = sum(n for status, n in counts.items() if status not in UNTESTED)
         stages[stage] = {"tested": tested, "total": len(cases), "statuses": dict(sorted(counts.items()))}
     times = sorted(c.get("seconds", 0) for c in cases)
-    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases), "schema": schema_totals(cases), "product": product_totals(cases), "coverage": coverage_totals(cases), "ap_join": ap_join(cases),
+    return {"sources": dict(sorted(sources.items())), "stages": stages, "geometry": geometry_totals(cases),
+            "surface_models": corpus_surface.totals(cases, source_of), "schema": schema_totals(cases), "product": product_totals(cases), "coverage": coverage_totals(cases), "ap_join": ap_join(cases),
             "verdicts": dict(Counter(verdict(c, baseline_present) for c in cases)),
             "diagnostics": dict(Counter(code for c in cases for code in c.get("diagnostic_counts", {}))),
             "performance": {"total_input_bytes": sum(c.get("bytes", 0) for c in cases),
@@ -197,7 +200,7 @@ def render(report):
     for case in cases:
         v = verdict(case, report.get("baseline_present", False))
         stages = stages_of(case)
-        detail = {k: case[k] for k in ("expectations", "expectation_failures", "schemas", "entity_counts", "missing_references", "diagnostics", "diagnostic_counts", "stderr", "schema_result", "schema_stderr", "product_result", "product_stderr", "geometry_result", "geometry_stderr", "determinism", "baseline_change", "output_sha256", "sha256", "bytes") if k in case}
+        detail = {k: case[k] for k in ("expectations", "expectation_failures", "schemas", "entity_counts", "missing_references", "diagnostics", "diagnostic_counts", "stderr", "schema_result", "schema_stderr", "product_result", "product_stderr", "geometry_result", "surface_model_result", "geometry_stderr", "determinism", "baseline_change", "output_sha256", "sha256", "bytes") if k in case}
         name = case["paths"][0]
         paths = '<br>'.join(esc(p) for p in case["paths"])
         rows.append(f'<tr data-status="{esc(case["status"])}" data-verdict="{v}" data-source="{esc(source_of(name))}" data-stages="{esc(json.dumps(stages))}"><td><details><summary>{esc(name)}</summary>{paths}<pre>{esc(json.dumps(detail,indent=2,ensure_ascii=False))}</pre></details></td><td><span class="pill {v}">{v}</span></td><td>{esc(case["status"])}</td>'
@@ -215,6 +218,13 @@ def render(report):
                       f'{shown["occurrence_count"]:,} occurrences in {shown["files_with_occurrences"]:,} files ({shown["with_context_units"]:,} with context units); {shown["accepted"]:,} imported: '
                       f'{shown["polylines"]:,} polylines, {shown["triangles"]:,} triangles ({shown["zero_area_triangles"]:,} zero-area), {shown["points"]:,} points.</p>'
                       + table("First failing stage : kind", shown["outcomes"])) if g["files_surveyed"] else ""
+    sm = stats["surface_models"]
+    if sm["files_with_roots"]:
+        geometry_panel += (f'<h2>Surface model outcomes</h2><p class="muted">Every SHELL_BASED_SURFACE_MODEL with the curved B-rep profile, each shell meshed as a shell, never as a solid. '
+                           f'{sm["root_count"]:,} roots in {sm["files_with_roots"]:,} files; {sm["geometry_roots"]:,} passed geometry/topology and {sm["accepted_roots"]:,} produced shell meshes; '
+                           f'{sm["meshed_open_shells"]:,} of {sm["open_shells"]:,} open and {sm["watertight_closed_shells"]:,} of {sm["closed_shells"]:,} closed (watertight) shells meshed.</p>'
+                           + table("First failing stage : kind", sm["outcomes"]) + table("Failure category (IDs as N)", sm["categories"])
+                           + table("Entity type outside the import profile", sm["unsupported_entity_types"]))
     changes = report.get("baseline_changes", [])
     change_rows = ''.join(f'<tr><td>{esc(c["kind"])}</td><td>{esc(c["path"])}</td><td>{esc(json.dumps(c.get("details", {"before":c.get("before"),"after":c.get("after")})))}</td></tr>' for c in changes)
     history = ''.join(f'<tr><td>{esc(h["run_id"])}</td><td>{h["unique_inputs"]}</td><td>{h["unique_statuses"].get("clean",0)}</td><td>{h["unique_statuses"].get("rejected",0)}</td><td>{h["unique_statuses"].get("reference_errors",0)}</td><td>{h.get("seconds",0):.1f}</td></tr>' for h in report.get("history", [])[-30:])

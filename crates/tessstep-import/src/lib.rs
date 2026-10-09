@@ -42,11 +42,13 @@ pub use assembly::{
     link_assembly,
 };
 pub use brep::{Adaptations, import_brep_solid};
+pub use brep::{ImportedSurfaceModel, SurfaceShell, import_surface_model};
 pub use discovery::{
     ContextUnits, Pairing, PresentationRoot, RepresentationChoice, RepresentationPreference,
     RootRef, SolidKind, SolidRoot, TessellatedRoot, discover_presentations, discover_solids,
     discover_tessellations, select_representations,
 };
+pub use discovery::{SurfaceModelRoot, discover_surface_models};
 pub use planar::import_planar_solid;
 pub use schema::{DeclaredSchema, Protocol, declared_schema};
 pub use style::{ImportedAppearance, StyleCounts, StyleOptions, import_appearance};

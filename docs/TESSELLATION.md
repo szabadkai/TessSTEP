@@ -194,7 +194,8 @@ mechanism; see [curved import](CURVED_IMPORT.md).
 ## Owned shell and solid meshes (Milestone 17)
 
 `tessellate_shell` uses a model-local shell handle and enforces its declared closure
-and connectedness. `tessellate_solid` additionally requires a single closed component
+and connectedness; STEP surface models mesh each shell this way, never as a solid
+([curved import](CURVED_IMPORT.md#surface-models)). `tessellate_solid` additionally requires a single closed component
 with positive algebraic volume; inward orientation is diagnosed instead of repaired.
 A solid with cavity shells (`Solid::voids`) is meshed in one pass under one budget and
 must be watertight with one component per shell, a positive outer volume and a

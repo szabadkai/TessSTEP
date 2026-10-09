@@ -82,6 +82,50 @@ pub fn discover_solids(
         .collect())
 }
 
+/// A SHELL_BASED_SURFACE_MODEL root and the units of the shape representation that
+/// contains it. Surface models are a separate root class: they import as shells
+/// ([`crate::import_surface_model`]), never as solids.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SurfaceModelRoot {
+    pub entity: EntityId,
+    /// Shape representations whose items include the root, in document order.
+    pub representations: Vec<EntityId>,
+    /// Units of the unique context of those representations, or why none applies.
+    pub units: Result<ContextUnits, Error>,
+}
+
+/// Find every SHELL_BASED_SURFACE_MODEL instance and its context units by the
+/// `discover_solids` rules: candidates by physical record name, then the bounded
+/// context profile for each containing representation (for example a
+/// MANIFOLD_SURFACE_SHAPE_REPRESENTATION). Missing or conflicting units are per-root
+/// errors, never defaults.
+pub fn discover_surface_models(
+    document: &Document,
+    options: ImportOptions,
+) -> Result<Vec<SurfaceModelRoot>, Error> {
+    let mut work = Work::new(options.max_work);
+    let mut roots = Vec::new();
+    for e in document.entities().iter() {
+        work.charge(1)?;
+        if has(e, "SHELL_BASED_SURFACE_MODEL") {
+            roots.push(e.id);
+        }
+    }
+    let uses = containing(document, options, &mut work, &roots, &BTreeMap::new())?;
+    Ok(roots
+        .into_iter()
+        .zip(uses)
+        .map(|(entity, uses)| {
+            let (representations, units) = resolve(document, entity, uses);
+            SurfaceModelRoot {
+                entity,
+                representations,
+                units,
+            }
+        })
+        .collect())
+}
+
 /// An existing shape tessellation and the units of the representation containing it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TessellatedRoot {

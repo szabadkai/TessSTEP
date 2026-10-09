@@ -124,7 +124,7 @@
     },
     "CLOSED_SHELL": {
       "status": "adapted",
-      "note": ""
+      "note": "solid boundary, or a surface-model shell meshed watertight without volume checks"
     },
     "COMPLEX_TRIANGULATED_FACE": {
       "status": "adapted",
@@ -244,7 +244,7 @@
     },
     "FACE_BASED_SURFACE_MODEL": {
       "status": "unsupported",
-      "note": "surface models: roadmap scope decision (proposed: import as shell meshes, never as solids)"
+      "note": "connected face sets are not adapted (8 records in 3 corpus files); shell-based surface models import as shells (Milestone 22.6)"
     },
     "FACE_BOUND": {
       "status": "adapted",
@@ -368,7 +368,7 @@
     },
     "MANIFOLD_SURFACE_SHAPE_REPRESENTATION": {
       "status": "adapted",
-      "note": "shell container; open shells import as shells, never as solids"
+      "note": "surface-model container (context units); its shells import as shells, never as solids"
     },
     "MIN_AND_MAJOR_PLY_ORIENTATION_BASIS": {
       "status": "out_of_scope",
@@ -394,13 +394,21 @@
       "status": "out_of_scope",
       "note": "composite-ply and presentation data"
     },
+    "OPEN_SHELL": {
+      "status": "adapted",
+      "note": "surface-model shell; meshed open, boundary edges reported"
+    },
     "ORIENTED_CLOSED_SHELL": {
       "status": "adapted",
-      "note": "cavity shells"
+      "note": "cavity shells and surface-model shells"
     },
     "ORIENTED_EDGE": {
       "status": "adapted",
       "note": "$ endpoints tolerated unless strict"
+    },
+    "ORIENTED_OPEN_SHELL": {
+      "status": "adapted",
+      "note": "surface-model shell; orientation applied to its element's faces"
     },
     "ORIENTED_SURFACE": {
       "status": "unsupported",
@@ -559,8 +567,8 @@
       "note": "generic container searched for solid roots"
     },
     "SHELL_BASED_SURFACE_MODEL": {
-      "status": "unsupported",
-      "note": "surface models: named unsupported in Milestone 21; import as shell meshes, never as solids, is Milestone 22 (roadmap scope decision)"
+      "status": "adapted",
+      "note": "surface model root class: open and closed shells import as shell meshes, never as solids (Milestone 22.6)"
     },
     "SHELL_BASED_WIREFRAME_SHAPE_REPRESENTATION": {
       "status": "out_of_scope",

@@ -1,0 +1,40 @@
+[
+  {
+    "path": "vendor/opencascade-dataset/step/trj5_k1-ct-214.stp",
+    "sha256": "0af92a202a514b0709d8c0187aded75f35efcd04ce69da466ff7f1e3f2dd8736",
+    "source": "opencascade-dataset pinned revision; unmodified CATIA V5 R5 AP214 surface export (PDES/ProSTEP test round 5J); not redistributed",
+    "root": 295,
+    "metres_per_unit": 0.001,
+    "degrees": false,
+    "model_tolerance_m": 1e-06,
+    "chord_m": 0.001,
+    "normal_angle_rad": 0.5,
+    "description": "one SHELL_BASED_SURFACE_MODEL of 58 single-face OPEN_SHELLs (planes, cylinders, tori, spheres, cones, linear extrusions) with 294 open boundary edges",
+    "shells": 58,
+    "closed_shells": 0,
+    "faces": 58,
+    "boundary_edges": 294,
+    "area_m2": 0.005741320323174034,
+    "signed_volume_m3": null,
+    "tolerance": 0.01
+  },
+  {
+    "path": "vendor/opencascade-dataset/step/trj7_k1-pe-214.stp",
+    "sha256": "3df445eadcf154ae181af2b40a6aa7f1d6a30c38a89183316efd0f6bfe7b3b34",
+    "source": "opencascade-dataset pinned revision; unmodified Pro/ENGINEER 2001150 AP214 export (PDES/ProSTEP test round 7); not redistributed",
+    "root": 2167,
+    "metres_per_unit": 0.0254,
+    "degrees": true,
+    "model_tolerance_m": 1.3647142049885341e-05,
+    "chord_m": 0.001,
+    "normal_angle_rad": 0.5,
+    "description": "one SHELL_BASED_SURFACE_MODEL holding one CLOSED_SHELL of 52 FACE_SURFACEs (planes, cylinders, extrusions, tori, spheres, cones, rational B-splines) in an inch and degree context; meshed watertight with outward orientation, reported as a shell",
+    "shells": 1,
+    "closed_shells": 1,
+    "faces": 52,
+    "boundary_edges": 0,
+    "area_m2": 0.005784273262515714,
+    "signed_volume_m3": 8.54022769539225e-06,
+    "tolerance": 0.01
+  }
+]

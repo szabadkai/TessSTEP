@@ -229,4 +229,19 @@ END_ENTITY;
 ENTITY brep_with_voids SUBTYPE OF (manifold_solid_brep);
  voids : SET [1:?] OF oriented_closed_shell;
 END_ENTITY;
+(* Surface models: open and closed shells imported as shell meshes, never as solids.
+   Vertex and wire shells are outside the profile. The importer declares CFS_FACES as
+   a physical * slot for oriented_open_shell, as for oriented_closed_shell. *)
+TYPE shell = SELECT (open_shell, closed_shell);
+END_TYPE;
+ENTITY open_shell SUBTYPE OF (representation_item);
+ cfs_faces : SET [1:?] OF face_surface;
+END_ENTITY;
+ENTITY oriented_open_shell SUBTYPE OF (open_shell);
+ open_shell_element : open_shell;
+ orientation : BOOLEAN;
+END_ENTITY;
+ENTITY shell_based_surface_model SUBTYPE OF (geometric_representation_item);
+ sbsm_boundary : SET [1:?] OF shell;
+END_ENTITY;
 END_SCHEMA;
