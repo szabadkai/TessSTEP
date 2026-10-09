@@ -1,3 +1,73 @@
+# Milestone 22 integration and the 1.0.0 corpus baseline — 2026-10-10
+
+Every Milestone 22 item (22.2–22.10 and the 22.2 follow-up) was developed on its own
+branch from c80d0ff and integrated on `main` one at a time, with the reviewed corpus
+movements of each branch. Integration fixes made while merging: opt-in sewing in the
+planar and faceted profiles compacts the vertex entities that locate UV loop failures
+(22.4 with 22.5); the curved adapter carries the surface-model shell list through the
+session's decode/adapt split (22.6 with 22.8); the tolerance policy is built in that
+adapter, and its working tolerance (at least the sewing tolerance) is what the repair
+stage validates at (22.3 with 22.5); the tessellation entry points allow Clippy's
+large-error lint now that errors carry the located trim failure and the budget (22.2
+with 22.4); surface models ignore the opt-in repair stage and validate each shell at
+the working tolerance (22.6 with 22.3 and 22.5); and the coverage matrix and a repair
+fixture's expected diagnostic were regenerated for the new product profile and loop
+messages.
+
+Checks on the integrated `main` (macOS arm64, version 1.0.0), all passed:
+`cargo fmt --check`; workspace Clippy with `-D warnings`; `cargo test --workspace
+--locked --no-fail-fast`; rustdoc with `-D warnings`; the release build; the 74 script
+unit tests; `check_architecture.py` (19 packages); `check_geometry.py
+--require-external` (124 reviewed outcomes); `check_coverage.py` (501 AP242 entities);
+`check_metamorphic.py` (76 expectations); `check_product.py` (11 outcomes);
+`check_corpus.py` (138 authored fixtures); `conformance.py --check`; and
+`check_capi.py --library-dir target/release` (exactly the 95 ABI 1.0 exports, shared and
+static linkage, Debug and Release consumers). Not observed locally: the sanitizer
+consumer run (it hangs in the AddressSanitizer runtime on this macOS release), the
+MSRV build, Linux and Windows, and the nightly fuzzing and benchmark jobs. `main` has
+not been pushed, so no CI run covers this state yet.
+
+The Onshape export imports as a closed solid: 65,766 vertices, 131,556 triangles,
+5.85e-6 m³, 0.8 s in the release survey.
+
+External corpus (`corpus.py --check --repeat 2` with the AP validator and schema map):
+3,227 compatible inputs, no crash, timeout or nondeterminism, 353 s. Against the
+2026-09-27 baseline, 1,622 inputs changed; 1,530 of them only gained the surface-model
+root class. The reviewed totals, saved as the 1.0.0 baseline with `--save-baseline`
+(that run matched the reviewed run on every input):
+
+| Measure | 2026-09-27 | 2026-10-10 |
+| --- | ---: | ---: |
+| Shape roots meshed (of 1,197) | 577 | 742 |
+| Shape roots past geometry and topology | 745 | 799 |
+| Accepted product structures | 585 | 596 |
+| Placed shape roots in accepted structures (unplaced) | 607 (9) | 688 (11) |
+| Surface-model roots meshed as shells (of 2,242) | not surveyed | 1,127 |
+| `tessellation:resource_limit` roots | 54 | 3 |
+| Slowest input | `bug33261.stp`, 13 s | `bug30790.step`, 20 s |
+
+No file lost a meshed root. Stage movements other than the new class: 21 geometry
+rejected → accepted, 6 partial → accepted and 2 unsupported → accepted; 60 file-level
+tessellation outcomes became accepted (18 from partial, 16 from not run, 14 from
+rejected, 12 from resource limit), for 165 more meshed roots in all; 11 product
+rejected → accepted; 11 geometry unsupported → rejected (nine solids whose `OUTER` is an
+`OPEN_SHELL` or that reach a missing reference, now typed by the surface-model profile,
+and two `trj*_b1-ec` roots rejected for a face loop running against its surface); 7
+tessellation resource limit → rejected (NIST CTC roots now ending in
+`Polygon(UnresolvedGeometry)`, which also fail with a 2·10⁹ budget); 7 tessellation not
+run → rejected (roots newly past geometry). One reviewed regression:
+`bug32596_abc_0_13.step` geometry accepted → rejected. Discovery now reads its context
+units (metres, uncertainty 1e-17 m floored at 1e-7 m) instead of assuming millimetres,
+and an edge lies 1.624e-6 m from its surface, just beyond the 16 × 1e-7 m policy bound;
+the root never meshed.
+
+Remaining named categories with the most roots: `OpenShell` (95), `BrokenWire` (39),
+`InconsistentOrientation` (35) and `UnsewnShell` (29), all strict topology rejections
+that the opt-in repair addresses; edges (41) and vertices (10) beyond the deviation
+policy; and 27 roots
+whose face triangulation ends in `Polygon(UnresolvedGeometry)`, which is being located
+and classified as a 22.4 follow-up.
+
 # Milestone 22.10 final pass: folded revisions, failure text, ABI 1.0 freeze — 2026-10-10
 
 Delivered on main at c51e109:

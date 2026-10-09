@@ -5,9 +5,43 @@ independent of the package version; see [docs/C_API.md](docs/C_API.md). Each rel
 corpus compatibility record is `corpus/baseline.json` at its tag; see
 [docs/VALIDATION.md](docs/VALIDATION.md) for the reviewed totals.
 
-## Unreleased
+## 1.0.0 — 2026-10-10
 
-Milestone 22 (industrial hardening); see [docs/ROADMAP.md](docs/ROADMAP.md).
+Milestone 22, industrial hardening; see [docs/ROADMAP.md](docs/ROADMAP.md) and the
+reviewed evidence in [docs/VALIDATION.md](docs/VALIDATION.md). EXPRESS rules, functions
+and WHERE clauses remain unevaluated: 1.0 claims structural AP242/AP214/AP203 coverage,
+not AP conformance.
+
+- Tessellation refines in a curvature-anisotropic metric with polar caps, reuses
+  evaluations, passed facets and edge incidence across rounds and passes, and can mesh
+  a pass's faces on threads (`TessellationOptions::threads`) with identical results.
+  Every budget failure names its budget and value. The Onshape export imports as a
+  closed solid.
+- Curved import accepts edges off their surfaces and vertices off their curves within
+  `ImportOptions::deviation_factor` (16 × the model tolerance by default) as counted
+  adaptations, and names the distance and bound beyond it. B-spline sides collapsed
+  only within the tolerance are regular chart sides.
+- UV loop failures name their `EDGE_CURVE`s, vertex or loop and a cause class; the
+  importer's chart causes (boundary resolution, polygon-check cost, `.U.` closure,
+  sphere charts and others) are fixed.
+- Opt-in, tolerance-bounded sewing and orientation repair (`ImportOptions::repair`)
+  with a per-solid `RepairReport`; strict rejection stays the default and classifies
+  unsewn closed shells.
+- `SHELL_BASED_SURFACE_MODEL`s import as open or closed shell meshes, never as solids.
+- Assemblies place occurrences by mapped items and 3D Cartesian operators, and
+  tolerate counted exporter unit encodings (`ToleratedEncodings`).
+- `ImportSession` shares discovery and decoding across a document's roots; a nightly
+  benchmark records per-stage time and memory.
+- Nightly coverage-guided fuzzing of all fifteen targets under AddressSanitizer with
+  assembled seeds, minimized findings and replayed regressions.
+- C ABI 1.0 frozen at 95 exports (`abi/exports.txt`): discovery and representation
+  selection, single-root solid and surface-model import, extensible import options
+  (strictness, budgets, tolerance policy, repair), import sessions with failure text,
+  assembly import options and adaptations, and a static library target
+  (`TessSTEP::TessSTEP_static`). Consumers now require `find_package(TessSTEP 1.0)`.
+- Corpus baseline at 1.0.0: 3,227 compatible inputs, 742 meshed shape roots of 1,197
+  (577 at 0.1.0), 799 past geometry and topology, 1,127 meshed surface models and 596
+  accepted product structures.
 
 ## 0.1.0 — 2026-09-27 (pre-release)
 

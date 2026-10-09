@@ -10,7 +10,10 @@ graphics, with discovery and representation selection (Milestone 20, Rust/C/C++)
 import with elementary and B-spline geometry, computed pcurves and discovered context
 units is available in Rust; see [CURVED_IMPORT.md](CURVED_IMPORT.md). Assemblies import
 as scenes with surface colours (Milestone 21, Rust/C/C++); see
-[PRODUCT_MODEL.md](PRODUCT_MODEL.md) and [APPEARANCE.md](APPEARANCE.md). The milestone
+[PRODUCT_MODEL.md](PRODUCT_MODEL.md) and [APPEARANCE.md](APPEARANCE.md). Milestone 22
+hardened the importers for industrial exports (tolerance policy, opt-in repair, surface
+models, import sessions, named budgets) and froze the C ABI 1.0 export set; curved,
+surface-model and session import are available in Rust, C and C++. The milestone
 records below describe their delivery-time scope.
 
 This delivery implements the Milestone 0 foundation, Milestone 1 physical-parser
@@ -25,7 +28,8 @@ Milestone 19 adds explicit color/opacity and inherited appearance overrides.
 Milestone 20 imports existing shape and presentation tessellations without retessellation.
 Milestone 21 compiles the AP long forms for a corpus schema stage, records AP242 geometry
 coverage, and imports STEP assemblies as coloured scenes.
-AP conformance and industrial hardening are not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
+Milestone 22 hardens the importers for industrial exports and freezes the C ABI 1.0.
+AP conformance is not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz runs, documentation, conformance updates
 and architecture review before declaring work done. Benchmarks
 run automatically in the nightly CI workflow only; do not run them locally for milestone
@@ -355,6 +359,9 @@ stage. The curved adapters above are necessary but not sufficient for it; it als
 relies on implicit outer bounds (94 multi-bound faces, no `FACE_OUTER_BOUND`). Each
 item needs authored fixtures, typed outcomes and corpus-stage evidence. Add a
 redistributable Onshape export with these features as a hash-pinned exporter file.
+Open: the export used here is not cleared for redistribution, so it stays outside the
+repository and its evidence is recorded in [VALIDATION.md](VALIDATION.md); a cleared
+Onshape export is still needed for the pinned file.
 
 - **Toroidal surfaces, ring and degenerate — delivered 2026-09-27.** Ring
   `TOROIDAL_SURFACE`s import through the curved profile, and
@@ -611,7 +618,7 @@ conformance rows for AP242/AP214/AP203 move to "structural subset implemented",
 with limits. EXPRESS rules, functions and WHERE clauses are not evaluated, so no AP
 conformance is claimed.
 
-**Milestone 22 — industrial hardening (planned 2026-09-27).**
+**Milestone 22 — industrial hardening (planned 2026-09-27, items delivered 2026-10-10).**
 
 Goal: the importers behave predictably on large and imperfect industrial exports.
 Every budget is explicit and sized for real files, every repair is opt-in and
@@ -895,10 +902,19 @@ baseline movements, never a refreshed baseline.
   C-only and static). Post-1.0 ([C API](C_API.md#post-10)): document-level failure
   text, annotation unit text, surface models in sessions and assemblies, scene limits
   in the assembly options, Debug static consumers.
-- **22.11 Release engineering.** Cut a tagged pre-release from green CI to exercise
-  the release workflow, the four packaging targets and the installed-package gate;
-  then set the v1.0 version and changelog (the ABI export set was frozen by 22.10). The corpus baseline at the
-  tag is the compatibility record for that release.
+- **22.11 Release engineering — pre-release delivered 2026-09-27; 1.0.0 set
+  2026-10-10.** The `v0.1.0` tag (c80d0ff) ran the Release workflow green (run
+  36303712652): the tag/version check, the full CI verify with the external corpus and
+  the MSRV, release-mode tests, packages for Linux x86-64, Windows x86-64 and macOS Apple
+  Silicon and Intel built and consumer-tested outside the source tree, and a draft
+  GitHub release holding the four archives and their SHA-256 files, reviewed and left
+  unpublished. The workspace, the CMake package and its consumers are now version 1.0.0
+  (`find_package(TessSTEP 1.0)`), [CHANGELOG.md](../CHANGELOG.md) records 0.1.0 and
+  1.0.0, and the ABI 1.0 export set is frozen (22.10, `abi/exports.txt`). The reviewed
+  corpus baseline saved on 2026-10-10 is the 1.0.0 compatibility record
+  ([VALIDATION.md](VALIDATION.md)). Left to the maintainer, who owns the public
+  surface: pushing `main`, confirming CI is green on every target, and tagging `v1.0.0`,
+  which reruns the release gate and drafts the 1.0.0 release.
 
 Decision to record here before v1.0: EXPRESS rules, functions and WHERE clauses stay
 unevaluated, so v1.0 claims structural AP242/AP214/AP203 coverage and no AP
@@ -916,6 +932,18 @@ unnamed budget or an unnamed entity. Every repair and tolerance adaptation is
 opt-in or counted, and reported per root. Surface models import as shells. The C
 ABI covers discovery, curved import and import options, and its export set is
 frozen with the consumer tests passing on the installed package.
+
+Result (2026-10-10): every item is delivered and integrated on `main` with reviewed
+corpus movements, and the 1.0.0 baseline is saved: 742 of 1,197 shape roots mesh (577
+before), 1,127 surface models mesh as shells, no input times out, and no file lost a
+meshed root ([VALIDATION.md](VALIDATION.md)). Exit criteria met locally: the Onshape
+export imports as a closed solid; every repair and tolerance adaptation is opt-in or
+counted and reported per root; surface models import as shells; every budget failure
+names its budget; the C ABI covers discovery, curved import and import options and its
+export set is frozen with the installed-package consumer tests passing. Open: 27 roots
+whose triangulation ends in an unlocated `Polygon(UnresolvedGeometry)` (a 22.4
+follow-up), CI on every target (requires pushing `main`), and the pinned Onshape
+exporter file (requires a cleared export).
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
