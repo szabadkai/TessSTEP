@@ -51,8 +51,8 @@ on every PR and main push and is required again by the release workflow.
 3. Create and push a tag matching the version, for example:
 
    ```sh
-   git tag -a v0.1.0 -m "TessSTEP 0.1.0"
-   git push origin v0.1.0
+   git tag -a v1.0.0 -m "TessSTEP 1.0.0"
+   git push origin v1.0.0
    ```
 
 4. The `Release` workflow checks the tag/version agreement, reruns CI including

@@ -188,7 +188,7 @@ Set `CMAKE_PREFIX_PATH` to the installation directory when configuring your
 application, then link the package target:
 
 ```cmake
-find_package(TessSTEP 0.1 CONFIG REQUIRED)
+find_package(TessSTEP 1.0 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE TessSTEP::TessSTEP)
 ```
 

@@ -4,27 +4,27 @@ members = ["crates/*", "tools/*"]
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 
 [workspace.dependencies]
-tessstep-import = { path = "crates/tessstep-import", version = "=0.1.0" }
-tessstep-mesh = { path = "crates/tessstep-mesh", version = "=0.1.0" }
-tessstep-topology = { path = "crates/tessstep-topology", version = "=0.1.0" }
-tessstep-trim = { path = "crates/tessstep-trim", version = "=0.1.0" }
-tessstep-tessellate = { path = "crates/tessstep-tessellate", version = "=0.1.0" }
-tessstep-surfaces = { path = "crates/tessstep-surfaces", version = "=0.1.0" }
-tessstep-curves = { path = "crates/tessstep-curves", version = "=0.1.0" }
-tessstep-math = { path = "crates/tessstep-math", version = "=0.1.0" }
-tessstep-product = { path = "crates/tessstep-product", version = "=0.1.0" }
-tessstep-ap242 = { path = "crates/tessstep-ap242", version = "=0.1.0" }
-tessstep-schema = { path = "crates/tessstep-schema", version = "=0.1.0" }
-tessstep-codegen = { path = "crates/tessstep-codegen", version = "=0.1.0" }
-tessstep-express = { path = "crates/tessstep-express", version = "=0.1.0" }
-tessstep-part21 = { path = "crates/tessstep-part21", version = "=0.1.0" }
-tessstep-model = { path = "crates/tessstep-model", version = "=0.1.0" }
+tessstep-import = { path = "crates/tessstep-import", version = "=1.0.0" }
+tessstep-mesh = { path = "crates/tessstep-mesh", version = "=1.0.0" }
+tessstep-topology = { path = "crates/tessstep-topology", version = "=1.0.0" }
+tessstep-trim = { path = "crates/tessstep-trim", version = "=1.0.0" }
+tessstep-tessellate = { path = "crates/tessstep-tessellate", version = "=1.0.0" }
+tessstep-surfaces = { path = "crates/tessstep-surfaces", version = "=1.0.0" }
+tessstep-curves = { path = "crates/tessstep-curves", version = "=1.0.0" }
+tessstep-math = { path = "crates/tessstep-math", version = "=1.0.0" }
+tessstep-product = { path = "crates/tessstep-product", version = "=1.0.0" }
+tessstep-ap242 = { path = "crates/tessstep-ap242", version = "=1.0.0" }
+tessstep-schema = { path = "crates/tessstep-schema", version = "=1.0.0" }
+tessstep-codegen = { path = "crates/tessstep-codegen", version = "=1.0.0" }
+tessstep-express = { path = "crates/tessstep-express", version = "=1.0.0" }
+tessstep-part21 = { path = "crates/tessstep-part21", version = "=1.0.0" }
+tessstep-model = { path = "crates/tessstep-model", version = "=1.0.0" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -34,7 +34,7 @@ cmake --install target/cmake --config Release
 Consumers set `CMAKE_PREFIX_PATH` to that installation, then use:
 
 ```cmake
-find_package(TessSTEP 0.1 CONFIG REQUIRED)
+find_package(TessSTEP 1.0 CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE TessSTEP::TessSTEP)
 ```
 
@@ -525,10 +525,10 @@ also names, is always linked by the Apple driver and is omitted to avoid a dupli
 library warning). MSVC `/defaultlib:` directives are already embedded in the objects.
 `TessSTEP::TessSTEP` keeps its meaning (shared); a separate target rather than a
 switch keeps existing consumers' linkage unchanged and lets one build tree use both.
-`find_package(TessSTEP 0.1 CONFIG REQUIRED COMPONENTS static)` requires the archive.
+`find_package(TessSTEP 1.0 CONFIG REQUIRED COMPONENTS static)` requires the archive.
 
 ```cmake
-find_package(TessSTEP 0.1 CONFIG REQUIRED COMPONENTS static)
+find_package(TessSTEP 1.0 CONFIG REQUIRED COMPONENTS static)
 target_link_libraries(my_app PRIVATE TessSTEP::TessSTEP_static)
 ```
 

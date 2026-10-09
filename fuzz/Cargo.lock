@@ -83,7 +83,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "tessstep-ap242"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-math",
  "tessstep-model",
@@ -94,21 +94,21 @@ dependencies = [
 
 [[package]]
 name = "tessstep-codegen"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-express",
 ]
 
 [[package]]
 name = "tessstep-curves"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-math",
 ]
 
 [[package]]
 name = "tessstep-express"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "tessstep-fuzz"
@@ -134,7 +134,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-import"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-ap242",
  "tessstep-curves",
@@ -152,18 +152,18 @@ dependencies = [
 
 [[package]]
 name = "tessstep-math"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "tessstep-mesh"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-math",
 ]
 
 [[package]]
 name = "tessstep-model"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-part21",
  "tessstep-schema",
@@ -171,22 +171,22 @@ dependencies = [
 
 [[package]]
 name = "tessstep-part21"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "tessstep-product"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-math",
 ]
 
 [[package]]
 name = "tessstep-schema"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "tessstep-surfaces"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
@@ -194,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-tessellate"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
@@ -206,7 +206,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-topology"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-trim"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
