@@ -12,6 +12,7 @@ use tessstep_model::{
 use tessstep_part21::{EntityId, StepValue, ValueKind};
 
 mod presentation;
+pub(crate) use presentation::adapt as adapt_presentation;
 pub use presentation::{
     ImportedPresentation, PresentationItem, PresentationItemKind, PresentationLimits,
     import_presentation,
@@ -154,8 +155,21 @@ pub fn import_tessellated(
     options: ImportOptions,
     mesh_limits: tessstep_mesh::Limits,
 ) -> Result<ImportedTessellation, Error> {
-    let decoded = decode_profile(document, root, options)?;
-    let mut c = Context::new(&decoded, root, options, unit, mesh_limits);
+    let decoded = decode_profile(document, &[root], options)?;
+    adapt(&decoded, root, unit, options, mesh_limits)
+}
+
+/// Adapt one decoded root. `decoded` holds the root's closure, or a superset that a
+/// session decoded for several roots: only references from the root are followed.
+pub(crate) fn adapt(
+    decoded: &DecodedDocument<'_>,
+    root: EntityId,
+    unit: LengthUnit,
+    options: ImportOptions,
+    mesh_limits: tessstep_mesh::Limits,
+) -> Result<ImportedTessellation, Error> {
+    let document = decoded.document();
+    let mut c = Context::new(decoded, root, options, unit, mesh_limits);
     let view = c.view(root)?;
     let (kind, link, sources) = if c.is(view, "TESSELLATED_SOLID") {
         let link = c.link(view, "GEOMETRIC_LINK")?;
@@ -259,45 +273,20 @@ pub fn import_tessellated(
     })
 }
 
-/// Decode the selected closure with every provenance link retained but not followed.
+/// Decode the closure of the selected roots (one, or several in a session) with every
+/// provenance link retained but not followed.
 pub(crate) fn decode_profile<'a>(
     document: &'a Document,
-    root: EntityId,
+    roots: &[EntityId],
     options: ImportOptions,
 ) -> Result<DecodedDocument<'a>, Error> {
-    use crate::tessellated_profile::schema_tessstep_tessellated as schema;
-    use tessstep_schema::EntityBinding;
-    let slot = |entity, attribute| decode::LinkSlot { entity, attribute };
-    let links = [
-        slot(
-            schema::Entity_TESSELLATED_FACE::DECLARATION,
-            "GEOMETRIC_LINK",
-        ),
-        slot(
-            schema::Entity_TESSELLATED_SOLID::DECLARATION,
-            "GEOMETRIC_LINK",
-        ),
-        slot(
-            schema::Entity_TESSELLATED_SHELL::DECLARATION,
-            "TOPOLOGICAL_LINK",
-        ),
-        slot(
-            schema::Entity_TESSELLATED_EDGE::DECLARATION,
-            "GEOMETRIC_LINK",
-        ),
-        slot(
-            schema::Entity_TESSELLATED_VERTEX::DECLARATION,
-            "TOPOLOGICAL_LINK",
-        ),
-        slot(schema::Entity_STYLED_ITEM::DECLARATION, "STYLES"),
-    ];
     decode::decode_reachable_profile_with_links(
         document,
         &crate::tessellated_profile::SCHEMA_SET,
         "tessstep_tessellated",
-        &[root],
+        roots,
         &[],
-        &links,
+        &links(),
         decode::Limits {
             max_work: options.max_work,
             ..decode::Limits::default()
@@ -326,6 +315,36 @@ pub(crate) fn decode_profile<'a>(
             e.to_string()
         },
     })
+}
+
+/// The profile's link slots: decoded records keep them, traversal never follows them.
+pub(crate) fn links() -> Vec<decode::LinkSlot> {
+    use crate::tessellated_profile::schema_tessstep_tessellated as schema;
+    use tessstep_schema::EntityBinding;
+    let slot = |entity, attribute| decode::LinkSlot { entity, attribute };
+    vec![
+        slot(
+            schema::Entity_TESSELLATED_FACE::DECLARATION,
+            "GEOMETRIC_LINK",
+        ),
+        slot(
+            schema::Entity_TESSELLATED_SOLID::DECLARATION,
+            "GEOMETRIC_LINK",
+        ),
+        slot(
+            schema::Entity_TESSELLATED_SHELL::DECLARATION,
+            "TOPOLOGICAL_LINK",
+        ),
+        slot(
+            schema::Entity_TESSELLATED_EDGE::DECLARATION,
+            "GEOMETRIC_LINK",
+        ),
+        slot(
+            schema::Entity_TESSELLATED_VERTEX::DECLARATION,
+            "TOPOLOGICAL_LINK",
+        ),
+        slot(schema::Entity_STYLED_ITEM::DECLARATION, "STYLES"),
+    ]
 }
 fn winding_normal(corners: [[f64; 3]; 3]) -> Result<Vector<ModelSpace, 3>, tessstep_math::Error> {
     let [a, b, c] = corners.map(Point::<ModelSpace, 3>::new);

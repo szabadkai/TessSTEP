@@ -170,6 +170,74 @@ for the per-profile records callers apply it from `ts_document_info.entity_count
 budget failure is a `ResourceLimit` whose message names the budget and its configured
 value, for example `schema decoding work budget exceeded (max_work 5000000)`.
 
+## Document import sessions
+
+`ImportSession` (Milestone 22.8) shares one parsed document between every root,
+assembly and appearance import, so discovery and decoding cost the document's size
+once. Each discovery pass (`solids`, `tessellations`, `presentations`,
+`representation_choices`) runs once per session. `prepare(profile, roots)` decodes
+several roots' closures with one `ImportProfile` (`Faceted`, `Planar`, `Brep` or
+`Tessellated`, the last shared by shape tessellations and annotation occurrences)
+together; each `import_*` call then adapts its root from that shared decode, and
+`tessellate` meshes a solid. Unprepared roots are decoded alone.
+
+```rust,ignore
+let session = import::ImportSession::new(&document, import::ImportOptions::for_document(&document));
+let roots = session.solids()?;
+let ids: Vec<_> = roots.iter().map(|root| root.entity).collect();
+session.prepare(import::ImportProfile::Brep, &ids);
+for root in roots {
+    let units = root.units.clone()?;
+    let solid = session.import_brep_solid(root.entity, units.length, units.plane_angle, tolerance)?;
+    let mesh = session.tessellate(&solid, chord, import::TessellationOptions::default())?;
+}
+```
+
+Every result equals the free function's (`import_faceted_solid`, `import_brep_solid`,
+`import_tessellated`, `import_presentation`, ...). A shared decode is kept only when
+it succeeds within the per-root `max_work`: a root's closure is a subset of it,
+structural checks of one record never depend on other roots, and decoding work adds
+over records, so decoding the root alone would succeed with the same records within
+the same budget. Otherwise (a record outside the profile in any of the roots, or more
+work than one root's budget) every root of the group is decoded alone, exactly as the
+free functions do. Adapters follow references from their root only; the curved
+adapter scans exactly the root's closure for supplied pcurves. `import_assembly`,
+`link_assembly` and the C `ts_document_import_assembly` use a one-shot session that
+prepares each profile's selected roots; the survey and assembly examples use one
+session per document. Adapted geometry is not shared between roots: corpus closures
+share 1,281 of 2.33 million decoded records, so there is nothing to reuse. For the
+same reason a shared decode saves work only where closures overlap; for disjoint
+closures it costs somewhat more than per-root decodes (a larger working set, each
+root's closure recovered from the shared records, and the records resident until the
+last root is imported), as measured in [VALIDATION.md](VALIDATION.md).
+
+Per-root budgets keep their meaning. `SessionBudgets` bound what a session
+accumulates over all of its roots, one per stage: decoded records
+(`max_decoded_entities`), records of the closures handed to adapters, one closure per
+import (`max_adapted_entities`), and triangles of the meshes it tessellated or
+imported (`max_triangles`). Parsing stays bounded by the document's `ParseLimits` and
+each discovery pass by `max_work`. A stage is admitted while its running total is
+below the budget, so a total exceeds its budget by at most one root's share; an
+exhausted budget fails the root with a `ResourceLimit` naming it, for example
+`session decode budget exceeded (max_decoded_entities 1000000)`.
+`SessionBudgets::for_document`, which `ImportSession::new` and `import_assembly` use,
+allows 4 decoded and 16 adapted records and 256 triangles per document entity, above
+floors of 1,000,000, 1,000,000 and 20,000,000. Importing every root of every corpus
+file decoded at most one record per entity, adapted at most 1.86 and produced at most
+99,434 triangles per document (62.6 per entity) at the assembly chord
+([VALIDATION.md](VALIDATION.md)). `statistics()` counts discovery passes, shared and
+single-root decodes, fallbacks, decoded and adapted records, imports and triangles.
+
+Ownership: `ImportSession<'a>` borrows the document, and its decoded records borrow
+the document and never leave the session. A shared decode is released once each of
+its roots has been imported, so a session retains at most the union of its prepared,
+not yet imported closures; importing a root again decodes it alone. Discovery results
+are borrowed from the session; every import result is owned and independent of both.
+The session caches through interior mutability, so it is `Send` but not `Sync`. No
+session type crosses the C ABI: a C or C++ binding creates a session inside one call,
+or keeps it in a handle that also retains its document, and returns only owned
+results.
+
 ## Evidence and limits
 
 `python3 scripts/check_geometry.py` verifies generated profile reproducibility and

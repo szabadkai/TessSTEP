@@ -318,12 +318,11 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   `UnsewnShell`, apart from other open shells; the opt-in repair stage
   (`ImportOptions::repair`) sews it within a stated tolerance and counts every merge.
   See 22.5 below.
-- **Per-root import cost — decoder part delivered 2026-09-26.** Selected-root decoding
-  used to scan and charge every document entity per root; it now visits only the
-  closure, ordered through the entity index, which also removed decode budget
-  exhaustion on large files. Sharing adapter state across roots (a document-level
-  import session) and a benchmark showing that assembly import scales with total
-  closure size, not roots × document size, remain.
+- **Per-root import cost — delivered 2026-09-26 (decoder) and 2026-10-09 (session,
+  Milestone 22.8).** Selected-root decoding used to scan and charge every document
+  entity per root; it now visits only the closure, ordered through the entity index,
+  which also removed decode budget exhaustion on large files. The document import
+  session and its scaling benchmark are delivered under 22.8 below.
 - **Root and unit discovery — delivered 2026-09-26.** `discover_solids` finds every
   solid root, the shape representations containing it and their context's SI or
   conversion-based length and plane-angle units and length uncertainty, through a
@@ -746,11 +745,33 @@ baseline movements, never a refreshed baseline.
   `untyped_measure_values_are_counted_and_keep_their_unit`,
   `mapped_items_place_occurrences_without_relationships`,
   `untyped_select_values_and_profile_tolerances_are_admitted_only_by_policy`.
-- **22.8 Document import session and scaling benchmark.** One parse and one decode
-  per document shared by every root, assembly and appearance import, so a document
-  costs its size once. Add a benchmark over the largest corpus inputs
-  (`bug33261.stp` takes 13 s locally) recording time and peak memory per stage, run
-  nightly with the existing benchmarks; set explicit per-stage budgets from it.
+- **22.8 Document import session and scaling benchmark — delivered 2026-10-09.**
+  Measured first: parsing and decoding were not where the time went. `bug33261.stp`
+  (77,956 entities, 24 roots) parses in 0.14 s, decodes every closure in 0.18 s,
+  adapts in 0.42 s and tessellates for 22 s (local medians under load);
+  `trj3_s1-id-203.stp` spends 19.7 of its 19.8 s tessellating (22.2). Decoding was
+  already closure sized, so what a document repeated per root was discovery, a
+  whole-document scan. `ImportSession` borrows a parsed
+  document, runs each discovery pass once and, through `prepare`, decodes each
+  profile's roots together once; each import adapts its root from the shared records.
+  Results equal the free functions': a shared decode is kept only when it succeeds
+  within one root's `max_work`, else the group decodes alone. `import_assembly`,
+  `link_assembly`, the survey and the assembly example (with styles) use it; survey
+  JSON and `assembly --meshes` output are byte-identical on all 3,227 inputs.
+  `SessionBudgets` bound decoded records, adapted records and triangles per session
+  (`for_document`: 4, 16 and 256 per entity, from measured maxima of 1.0, 1.86 and
+  62.6) and are named in diagnostics. The nightly `session` benchmark records time and
+  peak memory per stage for both inputs and a generated series where independent
+  per-root import costs 20× the session's per root at 256 roots. Evidence:
+  `tests/session.rs`, [VALIDATION.md](VALIDATION.md). Not shared, by measurement:
+  adapted geometry between roots, since corpus closures share 1,281 of 2.33 million
+  decoded records. Sharing a decode of disjoint closures is not free: the union decode
+  costs 8 to 13% more than the per-root decodes it replaces, each root's closure must
+  be recovered, and the union stays resident until its last root is imported (decode
+  and adapt of `bug32239.STEP`'s 15 roots 0.66 → 0.80 s, survey peak RSS 180 → 198
+  MiB; corpus wall time unchanged within noise). It pays only where closures overlap;
+  whether the survey and `import_assembly` should keep preparing by default is open for
+  review. Exposing the session in C and C++ follows 22.10.
 - **22.9 Extended fuzzing — delivered 2026-10-02.** The nightly workflow builds the
   fifteen `fuzz/Cargo.toml` targets once with AddressSanitizer, coverage and debug
   assertions and fuzzes each in its own matrix job for a fixed budget (240 s;

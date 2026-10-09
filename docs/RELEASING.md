@@ -38,7 +38,9 @@ Physical parsing runs twice to detect nondeterminism. Product reports include
 numerical relationship/count expectations, so those failures appear in JUnit.
 
 The nightly workflow performs bounded instrumented fuzzing, release-mode tests
-and benchmarks. These jobs also support manual dispatch. The corpus job runs
+and benchmarks. The benchmark job also reconstructs the pinned corpus for the
+session benchmark's largest inputs; a failed download only skips those inputs.
+These jobs also support manual dispatch. The corpus job runs
 on every PR and main push and is required again by the release workflow.
 
 ## Create a release

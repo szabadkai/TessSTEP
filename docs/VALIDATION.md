@@ -329,6 +329,74 @@ pass meshes them. Its first outward-orientation rule (four chords times the curv
 area) left 78 meshed roots undecided, for example an exporter rod 10 m long and 12 mm
 in radius; the deviation is now measured per triangle.
 
+# Milestone 22.8: document import sessions and scaling benchmark — 2026-10-09
+
+Delivered: `ImportSession` (`ImportProfile`, `SessionBudgets`, `SessionStatistics`):
+discovery once per document, `prepare` decoding each profile's roots together, imports
+adapting from the shared records with the free functions' results, and per-session
+decode, adapter and triangle budgets named in diagnostics. `import_assembly` and
+`link_assembly` use a one-shot session; the survey and assembly examples (with styles)
+use one session per document. The `session` benchmark runs nightly with the corpus;
+`examples/session.rs` runs the same report on chosen files. See
+[STEP_IMPORT.md](STEP_IMPORT.md#document-import-sessions).
+
+Measurement first, before the session (release survey example with temporary stage
+timers, macOS arm64 shared with about eight concurrently compiling agents, so every
+timing here is under load): `bug33261.stp` (77,956 entities, 24 B-rep roots) parsed in
+0.13 s, decoded all closures (60,433 records) in 0.17 s, adapted in 0.5 s and spent the
+rest tessellating, where most of its 12 failing roots fail (`UnresolvedTolerance`,
+`SelfIntersection`, `ResourceLimit`); `trj3_s1-id-203.stp` (5,262 entities, 8 roots)
+spent 21 s tessellating, mostly three roots that exhaust their budgets, and 0.01 s
+decoding; `bug31711.stp` (one root, 396k closure records) decoded in 1.1 s and
+adapted for 20 s. Decoding was already closure sized (2026-09-26), and the roots'
+closures were nearly disjoint, so per-root decoding already cost the document's size
+once. What a document repeated per root was discovery: a whole-document scan plus
+representation and context decodes for each caller that needs a root's units.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace`, fmt, Clippy (`-D warnings`, all targets), rustdoc (`-D warnings`) | passed (276 tests), including `tests/session.rs` (9 tests) |
+| `check_architecture.py`, `check_geometry.py`, `check_product.py`, `check_metamorphic.py`, `conformance.py --check` | passed (83, 11 and 76 reviewed outcomes) |
+| survey JSON (timing fields removed) and `assembly --meshes` output, base `c80d0ff` against the session, every unique corpus input | byte-identical with identical exit codes on all 3,227, twice |
+| `corpus.py --check --repeat 2` with the AP validator | 3,227 compatible, no baseline change and no stage or outcome movement |
+
+Session statistics over the corpus, every root imported (survey flow) and the assembly
+flow, with unlimited session budgets: shared decodes in 135 files (137 groups), 8
+fallbacks when a root of the group leaves its profile, at most 1.0 decoded and 1.86
+adapted records per document entity, and at most 99,434 triangles per document (62.6
+per entity, at the 0.1 mm assembly chord). Roots shared 1,281 of 2,327,197 decoded
+records, mostly styles of NIST annotation occurrences and synthetic dodgy-step files.
+`SessionBudgets::for_document` therefore allows 4 decoded and 16 adapted records and
+256 triangles per entity, above floors of 1,000,000, 1,000,000 and 20,000,000.
+
+Local stage medians of three runs of `examples/session.rs` (seconds, every selected
+root at the assembly tolerances; peak memory is Linux-only and recorded nightly):
+
+| Input | Parse | Session: discover / decode / adapt / tessellate | Independent: discover / decode+adapt / tessellate |
+| --- | --- | --- | --- |
+| `bug33261.stp`, 24 roots | 0.14 | 0.002 / 0.18 / 0.42 / 21.9 | 0.044 / 0.56 / 20.8 |
+| `trj3_s1-id-203.stp`, 8 roots | 0.01 | 0.000 / 0.009 / 0.034 / 19.7 | 0.004 / 0.043 / 19.1 |
+| `bug32239.STEP`, 15 roots | 0.35 | 0.003 / 0.48 / 0.32 / 1.08 | 0.041 / 0.66 / 1.11 |
+| `bug31711.stp`, 1 root | 0.85 | 0.009 / (alone) / 16.2 / 0.03 | 0.003 / 15.8 / 0.03 |
+
+Generated documents of K washers, decode and adapt per root without tessellation:
+session 251, 294, 292 and 293 µs at K = 1, 8, 64 and 256; independent per-root import
+251, 399, 1,636 and 5,844 µs, 20× the session at 256 roots, because each root
+rediscovers its units across the whole document.
+
+Sharing a decode of disjoint closures is not free. With temporary timers, the union
+decode of `bug32239.STEP`'s 15 roots took 0.367 s against 0.340 s for the 15 per-root
+decodes (`bug33261.stp`: 0.126 against 0.112 s), and recovering each root's closure
+from the shared records 0.09 s (0.015 s), after looking each position up once and
+sorting only for the curved adapter had cut the session's adapt stage on
+`bug32239.STEP` from 0.28 to 0.20 s. The shared records stay resident until
+the last root is imported: survey peak RSS rose from 180 to 198 MiB on `bug32239.STEP`
+and from 113 to 129 MiB on `bug33261.stp` (unchanged at 588 MiB on single-root
+`bug31711.stp`). Summed corpus wall time of the survey and assembly examples did not
+change beyond noise (376 and 356 s base, 366 and 362 s session, four workers). The
+survey and `import_assembly` prepare by default so that every multi-root corpus file
+exercises shared decoding; whether to keep that default is left for review.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh

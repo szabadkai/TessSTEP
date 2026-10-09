@@ -54,8 +54,11 @@ imports every `MANIFOLD_SOLID_BREP`, `BREP_WITH_VOIDS` and `FACETED_BREP` root f
 `discover_solids`: faceted roots use the faceted profile, all others the curved B-rep
 profile. It also imports every shape tessellation root found by
 `discover_tessellations` with the existing-tessellation profile, and surveys surface
-models as a [separate root class](#surface-model-class-milestone-226). All use the
-tolerant default policy (see [STEP_IMPORT.md](STEP_IMPORT.md),
+models as a [separate root class](#surface-model-class-milestone-226). One
+[import session](STEP_IMPORT.md#document-import-sessions) per document runs discovery
+once and decodes each profile's roots together; its results equal per-root imports,
+and the product stage's `assembly` example uses one session per document likewise.
+All use the tolerant default policy (see [STEP_IMPORT.md](STEP_IMPORT.md),
 [CURVED_IMPORT.md](CURVED_IMPORT.md) and
 [EXISTING_TESSELLATIONS.md](EXISTING_TESSELLATIONS.md)). Each root reports profile,
 geometry/topology and tessellation outcomes independently, with the failing

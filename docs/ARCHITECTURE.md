@@ -595,3 +595,23 @@ model's working tolerance grows by the largest merge distance and is reported. E
 edit is counted in `RepairReport` and charged to the import work budget. No new crate
 edge, unsafe code or production dependency; the option is Rust-only until its C/C++
 exposure.
+
+## Document import session architecture review (Milestone 22.8)
+
+`ImportSession` stays inside `tessstep-import` and adds no crate edge, unsafe code or
+dependency. Each importer's entry point is split into a decode of a root set and an
+adapter over a decoded document; the free functions decode one root and adapt it, a
+session decodes several roots of one profile once and adapts each from the shared
+records. Equality with the free functions rests on the decoder's structure: per-record
+checks never depend on other roots and work adds over records, so a shared decode that
+succeeds within one root's budget implies each root's own decode succeeds with the same
+views. Anything else falls back to single-root decoding. The curved adapter's only
+whole-document scan (supplied pcurves) receives the root's closure, recomputed from the
+decoded views with the profile's link slots skipped exactly as decoding skips them.
+
+Caches use `OnceCell`, `RefCell` and `Cell`: discovery results are computed once and
+borrowed by callers, and shared decodes are released when their last root is imported.
+The session is `Send` and not `Sync`; borrowed decoded records never leave it, and every
+import result is owned. Session budgets bound cumulative decoded and adapted records and
+triangles; each is a named `ResourceLimit`, separate from the unchanged per-root budgets.
+No session type is part of the C ABI.

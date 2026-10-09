@@ -29,3 +29,7 @@ harness = false
 [[bench]]
 name = "brep"
 harness = false
+
+[[bench]]
+name = "session"
+harness = false

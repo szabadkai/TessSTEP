@@ -58,3 +58,22 @@ second. Per-root import time staying flat as the document grows is the evidence 
 selected-root decoding is closure-sized. Observed locally on macOS arm64: about 103 µs
 per import at 82, 1,312 and 10,496 entities, and 7.6 ms per 1,024-triangle
 tessellation. This is a local observation, not a memory benchmark.
+
+`cargo bench -p tessstep-import --bench session` compares document import sessions
+with independent per-root imports (Milestone 22.8). A generated document of 1, 8, 64
+and 256 washers (one shared context, one shape representation each) is imported root
+by root without tessellation: the session discovers once and decodes the roots
+together, while each independent import runs discovery, a scan of the whole document,
+to find its root's units, as a caller without a session must. Each sample runs for at
+least one second. The bench then reports, for `bug33261.stp` and `trj3_s1-id-203.stp`
+from the external corpus (`TESSSTEP_CORPUS`, absolute or relative to the workspace
+root, else `~/step-corpus`; absent inputs are skipped with a notice), the time and
+peak resident memory of each stage of importing every selected root at the
+`import_assembly` tolerances: parse, discovery, decode, adapt, tessellate and assembly
+(product linking and styles), for the session and for independent imports, with the
+session's statistics. Peak memory is read from Linux `/proc` after resetting the peak
+per stage and is `n/a` elsewhere. The nightly job reconstructs the pinned corpus before
+benchmarking; a failed download only skips those inputs. `cargo run --release -p
+tessstep-import --example session -- FILE...` runs the same report once on chosen
+files, and `tests/session.rs` runs it on two authored documents. Local observations
+are in `docs/VALIDATION.md`.

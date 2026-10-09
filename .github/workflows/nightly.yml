@@ -152,7 +152,7 @@ jobs:
           if-no-files-found: warn
   regression-and-benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -160,9 +160,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
           toolchain: stable
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
       - run: cargo test --workspace --release --locked
+      # The session benchmark reads the largest corpus inputs; without them it prints
+      # a skip notice and the other benchmarks still run.
+      - name: Download and verify pinned corpus
+        continue-on-error: true
+        run: python scripts/fetch_corpus.py --output target/step-corpus
       - name: Record benchmark output
         shell: bash
+        env:
+          TESSSTEP_CORPUS: ${{ github.workspace }}/target/step-corpus
         run: cargo bench --workspace --locked 2>&1 | tee benchmarks.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()

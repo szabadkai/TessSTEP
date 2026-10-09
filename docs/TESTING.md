@@ -277,3 +277,17 @@ under `fuzz/regressions/<target>/`, naming each one that fails. `scripts/test_fu
 covers seed assembly, the plan, libFuzzer log parsing, the run, minimization and replay
 flow against a stand-in driver, the summary and the workflow's structure. See
 `fuzz/README.md` for the procedure that turns a finding into a regression.
+
+## Document import sessions (Milestone 22.8)
+
+`cargo test -p tessstep-import --test session` builds documents of renumbered authored
+washers that share one context and, after the first copy, their DIRECTION records. It
+checks that a shared decode serves every root with the free functions' results (solids,
+meshes and errors compared through their complete Debug output), that shared records
+are decoded once and adapted per root, that a root outside the profile makes its group
+decode alone with identical errors, that discovery and selection run once, that shape
+tessellations and annotation occurrences share the tessellated profile, that
+`import_assembly` decodes its selected roots together, and that each session budget is
+named in its diagnostic. It also runs the session benchmark's stage report on two
+authored documents. The external evidence is byte-identical survey and
+`assembly --meshes` output on every corpus input; see [VALIDATION.md](VALIDATION.md).

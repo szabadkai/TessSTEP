@@ -142,8 +142,18 @@ pub fn link_assembly(
     shapes: &[ShapeAsset],
     options: AssemblyOptions,
 ) -> Result<LinkedAssembly, Error> {
-    let solids = discover_solids(document, options.import)?;
-    let tessellations = discover_tessellations(document, options.import)?;
+    ImportSession::new(document, options.import).link_assembly(shapes, options)
+}
+
+/// `link_assembly` over a session's discovery.
+pub(crate) fn link_with(
+    session: &ImportSession<'_>,
+    shapes: &[ShapeAsset],
+    options: AssemblyOptions,
+) -> Result<LinkedAssembly, Error> {
+    let document = session.document();
+    let solids = session.solids()?;
+    let tessellations = session.tessellations()?;
     let mut held: BTreeMap<EntityId, Vec<EntityId>> = BTreeMap::new();
     let roots = solids
         .iter()
@@ -778,7 +788,16 @@ pub fn import_assembly(
     document: &Document,
     options: AssemblyImportOptions,
 ) -> Result<ImportedAssembly, Error> {
-    let import = options.assembly.import;
+    ImportSession::new(document, options.assembly.import).import_assembly(options)
+}
+
+/// `import_assembly` over a session: discovery runs once, and the selected roots of
+/// each profile are decoded together.
+pub(crate) fn import_with(
+    session: &ImportSession<'_>,
+    options: AssemblyImportOptions,
+) -> Result<ImportedAssembly, Error> {
+    let document = session.document();
     if !options.minimum_model_tolerance.is_finite() || options.minimum_model_tolerance <= 0. {
         return Err(Error {
             kind: ErrorKind::InvalidOptions,
@@ -788,18 +807,33 @@ pub fn import_assembly(
             message: "minimum model tolerance must be positive and finite".into(),
         });
     }
-    let solids = discover_solids(document, import)?;
-    let tessellations = discover_tessellations(document, import)?;
-    let choices = select_representations(
-        document,
-        &solids,
-        &tessellations,
-        options.preference,
-        import,
-    )?;
+    let solids = session.solids()?;
+    let tessellations = session.tessellations()?;
+    let choices = session.representation_choices(options.preference)?;
+    // Selected roots with units are imported first; decode each profile's together.
+    let mut prepared: BTreeMap<ImportProfile, Vec<EntityId>> = BTreeMap::new();
+    for choice in choices {
+        let (profile, root, units) = match choice.selected {
+            RootRef::Solid(i) if solids[i].kind == SolidKind::FacetedBrep => {
+                (ImportProfile::Faceted, solids[i].entity, &solids[i].units)
+            }
+            RootRef::Solid(i) => (ImportProfile::Brep, solids[i].entity, &solids[i].units),
+            RootRef::Tessellation(i) => (
+                ImportProfile::Tessellated,
+                tessellations[i].entity,
+                &tessellations[i].units,
+            ),
+        };
+        if units.is_ok() {
+            prepared.entry(profile).or_default().push(root);
+        }
+    }
+    for (profile, roots) in &prepared {
+        session.prepare(*profile, roots);
+    }
     let mut shapes = Vec::new();
     let mut roots = Vec::new();
-    for choice in &choices {
+    for choice in choices {
         let members = std::iter::once(choice.selected).chain(choice.alternatives.iter().copied());
         for (k, member) in members.enumerate() {
             let (root, kind, units) = match member {
@@ -816,7 +850,7 @@ pub fn import_assembly(
             };
             let mesh = units
                 .clone()
-                .and_then(|u| import_root(document, root, kind, u, options));
+                .and_then(|u| import_root(session, root, kind, u, options));
             let ok = mesh.is_ok();
             roots.push(RootImport {
                 root,
@@ -851,18 +885,16 @@ pub fn import_assembly(
 }
 
 fn import_root(
-    document: &Document,
+    session: &ImportSession<'_>,
     root: EntityId,
     kind: ShapeRootKind,
     units: ContextUnits,
     options: AssemblyImportOptions,
 ) -> Result<Mesh, Error> {
-    let import = options.assembly.import;
     match kind {
-        ShapeRootKind::Tessellated(_) => {
-            import_tessellated(document, root, units.length, import, options.mesh)
-                .map(ImportedTessellation::into_mesh)
-        }
+        ShapeRootKind::Tessellated(_) => session
+            .import_tessellated(root, units.length, options.mesh)
+            .map(ImportedTessellation::into_mesh),
         ShapeRootKind::Solid(solid) => {
             let distance = units
                 .distance_uncertainty
@@ -882,18 +914,11 @@ fn import_root(
             )
             .map_err(|_| invalid("model tolerance out of range"))?;
             let imported = if solid == SolidKind::FacetedBrep {
-                import_faceted_solid(document, root, units.length, model, import)?
+                session.import_faceted_solid(root, units.length, model)?
             } else {
-                import_brep_solid(
-                    document,
-                    root,
-                    units.length,
-                    units.plane_angle,
-                    model,
-                    import,
-                )?
+                session.import_brep_solid(root, units.length, units.plane_angle, model)?
             };
-            imported.tessellate(options.tolerance, options.tessellation)
+            session.tessellate(&imported, options.tolerance, options.tessellation)
         }
     }
 }

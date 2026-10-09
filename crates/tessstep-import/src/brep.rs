@@ -92,8 +92,29 @@ fn import_shells(
     angle: AngleUnit,
     tolerance: ModelTolerance,
     options: ImportOptions,
-    mut surface: Option<&mut Vec<(EntityId, bool)>>,
+    surface: Option<&mut Vec<(EntityId, bool)>>,
 ) -> Result<ImportedSolid, Error> {
+    let decoded = decode_roots(document, &[root], options)?;
+    adapt(&decoded, None, root, length, angle, tolerance, options, surface)
+}
+
+/// The profile's link slots: decoded records keep them, traversal never follows them.
+pub(crate) fn links() -> Vec<decode::LinkSlot> {
+    use brep_profile::schema_tessstep_brep as s;
+    use tessstep_schema::EntityBinding;
+    vec![decode::LinkSlot {
+        entity: s::Entity_SURFACE_CURVE::DECLARATION,
+        attribute: "ASSOCIATED_GEOMETRY",
+    }]
+}
+
+/// Decode the reference closure of `roots` with the curved B-rep profile. A session
+/// decodes several roots at once; see `session.rs`.
+pub(crate) fn decode_roots<'a>(
+    document: &'a Document,
+    roots: &[EntityId],
+    options: ImportOptions,
+) -> Result<DecodedDocument<'a>, Error> {
     use brep_profile::schema_tessstep_brep as s;
     use tessstep_schema::EntityBinding;
     let schema = &brep_profile::SCHEMA_SET;
@@ -110,25 +131,39 @@ fn import_shells(
         allow_unset: !options.strict,
         allow_value: false,
     });
-    let links = [decode::LinkSlot {
-        entity: s::Entity_SURFACE_CURVE::DECLARATION,
-        attribute: "ASSOCIATED_GEOMETRY",
-    }];
-    let decoded = decode::decode_reachable_profile_with_links(
+    decode::decode_reachable_profile_with_links(
         document,
         schema,
         schema_name,
-        &[root],
+        roots,
         &omitted,
-        &links,
+        &links(),
         decode::Limits {
             max_work: options.max_work,
             ..decode::Limits::default()
         },
     )
-    .map_err(|e| profile_error(document, schema, schema_name, e))?;
+    .map_err(|e| profile_error(document, schema, schema_name, e))
+}
+
+/// Adapt one decoded root. `closure` is `None` when `decoded` holds exactly the
+/// root's closure; a session that decoded several roots together passes the root's
+/// closure in declaration order, so the supplied pcurves scanned below are the
+/// root's own.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn adapt(
+    decoded: &DecodedDocument<'_>,
+    closure: Option<&[EntityId]>,
+    root: EntityId,
+    length: LengthUnit,
+    angle: AngleUnit,
+    tolerance: ModelTolerance,
+    options: ImportOptions,
+    mut surface: Option<&mut Vec<(EntityId, bool)>>,
+) -> Result<ImportedSolid, Error> {
+    let document = decoded.document();
     let mut c = Context {
-        decoded: &decoded,
+        decoded,
         raw: RawBrep::default(),
         points: BTreeMap::new(),
         point_entities: Vec::new(),
@@ -159,7 +194,11 @@ fn import_shells(
     // Supplied pcurves are retained as links on surface curves and decoded apart,
     // so a pcurve outside the profile never rejects the solid.
     let mut candidates = Vec::new();
-    for view in decoded.entities() {
+    let scope: Vec<&EntityView<'_>> = match closure {
+        None => decoded.entities().iter().collect(),
+        Some(ids) => ids.iter().filter_map(|&id| decoded.get(id)).collect(),
+    };
+    for view in scope {
         if c.is(view, "SURFACE_CURVE") {
             if let ValueKind::Aggregate(values) = &c.attr(view, "ASSOCIATED_GEOMETRY")?.kind {
                 for v in values {

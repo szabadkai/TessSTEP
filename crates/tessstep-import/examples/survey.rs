@@ -88,22 +88,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         options.max_records,
         doc.entities().len()
     )?;
-    let roots = discover_solids(&doc, options)?;
-    let tessellations = discover_tessellations(&doc, options)?;
-    let choices = select_representations(
-        &doc,
-        &roots,
-        &tessellations,
-        RepresentationPreference::Exact,
-        options,
-    )?;
+    // One session shares discovery and each profile's decode across all roots; every
+    // result equals the free functions'.
+    let session = ImportSession::new(&doc, options);
+    let roots = session.solids()?;
+    let tessellations = session.tessellations()?;
+    let choices = session.representation_choices(RepresentationPreference::Exact)?;
     // Each root's selection status and the entity IDs of its group's other members.
     let entity = |r: &RootRef| match *r {
         RootRef::Solid(i) => roots[i].entity,
         RootRef::Tessellation(i) => tessellations[i].entity,
     };
     let mut selection = std::collections::BTreeMap::new();
-    for choice in &choices {
+    for choice in choices {
         let members: Vec<RootRef> = std::iter::once(choice.selected)
             .chain(choice.alternatives.iter().copied())
             .collect();
@@ -128,6 +125,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ",\"parse\":\"accepted\",\"root_count\":{total},\"truncated\":{},\"roots\":[",
         total > max_roots
     )?;
+    let surveyed = roots.iter().take(max_roots);
+    let (faceted, curved): (Vec<_>, Vec<_>) =
+        surveyed.partition(|r| r.kind == SolidKind::FacetedBrep);
+    let ids = |roots: Vec<&SolidRoot>| roots.iter().map(|r| r.entity).collect::<Vec<_>>();
+    session.prepare(ImportProfile::Faceted, &ids(faceted));
+    session.prepare(ImportProfile::Brep, &ids(curved));
+    let shells: Vec<EntityId> = tessellations
+        .iter()
+        .take(max_roots.saturating_sub(roots.len()))
+        .map(|t| t.entity)
+        .collect();
+    session.prepare(ImportProfile::Tessellated, &shells);
     for (index, root) in roots.iter().take(max_roots).enumerate() {
         let started = Instant::now();
         let (id, kind) = (root.entity, root.kind.step_name());
@@ -152,9 +161,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let distance = declared.unwrap_or(1e-7).max(1e-7);
         let model = ModelTolerance::new(Length::metres(distance)?, Angle::radians(1e-8)?)?;
         let imported = if faceted {
-            import_faceted_solid(&doc, id, length, model, options)
+            session.import_faceted_solid(id, length, model)
         } else {
-            import_brep_solid(&doc, id, length, angle, model, options)
+            session.import_brep_solid(id, length, angle, model)
         };
         // Chord 1e-3 of the solid's vertex bounding-box diagonal, within 1e-6..1e-3 m.
         let mut chord = 1e-6;
@@ -177,7 +186,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 Angle::radians(0.1).expect("finite angle"),
             )
             .expect("valid tolerance");
-            solid.tessellate(tolerance, TessellationOptions::default())
+            session.tessellate(&solid, tolerance, TessellationOptions::default())
         });
         if index > 0 {
             out.push(',');
@@ -231,13 +240,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(u) => (u.length, "context_units"),
             Err(_) => (unit, "assumed"),
         };
-        let result = import_tessellated(
-            &doc,
-            root.entity,
-            length,
-            options,
-            tessstep_mesh::Limits::default(),
-        );
+        let result =
+            session.import_tessellated(root.entity, length, tessstep_mesh::Limits::default());
         if index > 0 || !roots.is_empty() {
             out.push(',');
         }
@@ -266,7 +270,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
     }
     out.push(']');
-    presentations(&mut out, &doc, unit, max_roots, options)?;
+    presentations(&mut out, &session, unit, max_roots)?;
     surface_models(&mut out, &doc, unit, max_roots, options)?;
     out.push('}');
     println!("{out}");
@@ -345,25 +349,21 @@ fn record_name(doc: &Document, id: EntityId) -> String {
 /// Bounded presentation summary: counts, outcomes and the first failures.
 fn presentations(
     out: &mut String,
-    doc: &Document,
+    session: &ImportSession<'_>,
     unit: LengthUnit,
     max_roots: usize,
-    options: ImportOptions,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let roots = discover_presentations(doc, options)?;
+    let doc = session.document();
+    let roots = session.presentations()?;
+    let occurrences: Vec<EntityId> = roots.iter().take(max_roots).map(|r| r.entity).collect();
+    session.prepare(ImportProfile::Tessellated, &occurrences);
     let mut outcomes = std::collections::BTreeMap::new();
     let (mut accepted, mut polylines, mut triangles, mut points, mut zero_area) = (0, 0, 0, 0, 0);
     let mut failures = String::new();
     let mut failed = 0;
     for root in roots.iter().take(max_roots) {
         let length = root.units.as_ref().map_or(unit, |u| u.length);
-        match import_presentation(
-            doc,
-            root.entity,
-            length,
-            options,
-            PresentationLimits::default(),
-        ) {
+        match session.import_presentation(root.entity, length, PresentationLimits::default()) {
             Ok(p) => {
                 accepted += 1;
                 polylines += p.polyline_count();

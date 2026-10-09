@@ -6,7 +6,10 @@ use super::{Context, Identity, decode_profile, winding_normal};
 use crate::{Error, ErrorKind, ImportOptions};
 use std::collections::BTreeMap;
 use tessstep_math::{LengthUnit, ModelSpace, NumericalTolerance, Point, Vector};
-use tessstep_model::{Document, decode::EntityView};
+use tessstep_model::{
+    Document,
+    decode::{DecodedDocument, EntityView},
+};
 use tessstep_part21::{EntityId, ValueKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,9 +161,22 @@ pub fn import_presentation(
     options: ImportOptions,
     limits: PresentationLimits,
 ) -> Result<ImportedPresentation, Error> {
-    let decoded = decode_profile(document, root, options)?;
+    let decoded = decode_profile(document, &[root], options)?;
+    adapt(&decoded, root, unit, options, limits)
+}
+
+/// Adapt one decoded occurrence or geometric set. `decoded` holds its closure, or a
+/// superset that a session decoded for several roots: only references from the root
+/// are followed.
+pub(crate) fn adapt(
+    decoded: &DecodedDocument<'_>,
+    root: EntityId,
+    unit: LengthUnit,
+    options: ImportOptions,
+    limits: PresentationLimits,
+) -> Result<ImportedPresentation, Error> {
     let mut c = Context::new(
-        &decoded,
+        decoded,
         root,
         options,
         unit,

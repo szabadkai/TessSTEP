@@ -36,6 +36,7 @@ mod pcurve;
 mod planar;
 mod repair;
 mod schema;
+mod session;
 mod style;
 mod tessellated;
 mod uv_loops;
@@ -57,6 +58,7 @@ pub use encodings::ToleratedEncodings;
 pub use planar::import_planar_solid;
 pub use repair::{RepairOptions, RepairReport};
 pub use schema::{DeclaredSchema, Protocol, declared_schema};
+pub use session::{ImportProfile, ImportSession, SessionBudgets, SessionStatistics};
 pub use style::{ImportedAppearance, StyleCounts, StyleOptions, import_appearance};
 pub use tessellated::{
     EdgeConnection, ImportedPresentation, ImportedTessellation, PresentationItem,
@@ -329,6 +331,18 @@ fn import_solid(
     options: ImportOptions,
     planar: bool,
 ) -> Result<ImportedSolid, Error> {
+    let decoded = decode_solid(document, &[root], options, planar)?;
+    adapt_solid(&decoded, root, unit, tolerance, options, planar)
+}
+
+/// Decode the reference closure of `roots` with the faceted or edge-based planar
+/// profile. A session decodes several roots at once; see `session.rs`.
+pub(crate) fn decode_solid<'a>(
+    document: &'a Document,
+    roots: &[EntityId],
+    options: ImportOptions,
+    planar: bool,
+) -> Result<DecodedDocument<'a>, Error> {
     use tessstep_schema::EntityBinding;
     let schema = if planar {
         &planar_profile::SCHEMA_SET
@@ -355,11 +369,11 @@ fn import_solid(
     } else {
         "tessstep_faceted"
     };
-    let decoded = decode::decode_reachable_profile(
+    decode::decode_reachable_profile(
         document,
         schema,
         schema_name,
-        &[root],
+        roots,
         if planar { &slots } else { &[] },
         decode::Limits {
             max_work: options.max_work,
@@ -383,9 +397,23 @@ fn import_solid(
         } else {
             e.to_string()
         },
-    })?;
+    })
+}
+
+/// Adapt one decoded root. `decoded` holds the root's closure, or a superset that a
+/// session decoded for several roots: the adapter only follows references from the
+/// root, so the result is the same.
+pub(crate) fn adapt_solid(
+    decoded: &DecodedDocument<'_>,
+    root: EntityId,
+    unit: LengthUnit,
+    tolerance: ModelTolerance,
+    options: ImportOptions,
+    planar: bool,
+) -> Result<ImportedSolid, Error> {
+    let document = decoded.document();
     let mut c = Context {
-        decoded: &decoded,
+        decoded,
         raw: RawBrep::default(),
         points: BTreeMap::new(),
         point_entities: Vec::new(),

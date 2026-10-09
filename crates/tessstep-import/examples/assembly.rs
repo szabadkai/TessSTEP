@@ -62,17 +62,23 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     );
     let mut options = AssemblyImportOptions::default();
     options.assembly.import.strict = strict;
-    let solids = discover_solids(&doc, options.assembly.import)?;
-    let tessellations = discover_tessellations(&doc, options.assembly.import)?;
+    // One session discovers roots once for the report, the assembly and its styles.
+    let session = ImportSession::new(&doc, options.assembly.import);
+    let solids = session.solids()?;
+    let tessellations = session.tessellations()?;
     let discovered: BTreeSet<_> = solids
         .iter()
         .map(|s| s.entity)
         .chain(tessellations.iter().map(|t| t.entity))
         .collect();
     let result = if meshes {
-        import_assembly(&doc, options).map(|i| (i.assembly, Some(i.roots)))
+        session
+            .import_assembly(options)
+            .map(|i| (i.assembly, Some(i.roots)))
     } else {
-        link_assembly(&doc, &[], options.assembly).map(|a| (a, None))
+        session
+            .link_assembly(&[], options.assembly)
+            .map(|a| (a, None))
     };
     let accepted = match result {
         Ok((assembly, roots)) => {
@@ -167,7 +173,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
                         lo, hi
                     )?;
                 }
-                match import_appearance(&doc, &assembly, StyleOptions::default()) {
+                match session.import_appearance(&assembly, StyleOptions::default()) {
                     Ok(styles) => {
                         let c = styles.counts();
                         let a = styles.appearance();
