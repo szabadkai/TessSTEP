@@ -34,6 +34,7 @@ mod discovery;
 mod encodings;
 mod pcurve;
 mod planar;
+mod repair;
 mod schema;
 mod style;
 mod tessellated;
@@ -54,6 +55,7 @@ pub use discovery::{SurfaceModelRoot, discover_surface_models};
 
 pub use encodings::ToleratedEncodings;
 pub use planar::import_planar_solid;
+pub use repair::{RepairOptions, RepairReport};
 pub use schema::{DeclaredSchema, Protocol, declared_schema};
 pub use style::{ImportedAppearance, StyleCounts, StyleOptions, import_appearance};
 pub use tessellated::{
@@ -120,6 +122,9 @@ pub struct ImportOptions {
     /// geometry: `$` instead of `*` in derived ORIENTED_EDGE endpoint slots, and the
     /// unit, measure and complex-instance encodings counted by [`ToleratedEncodings`].
     pub strict: bool,
+    /// Opt-in topology repair of solid B-reps (sewing and orientation); off by
+    /// default, so topology defects are rejected. See [`RepairOptions`].
+    pub repair: RepairOptions,
 }
 impl Default for ImportOptions {
     fn default() -> Self {
@@ -127,6 +132,7 @@ impl Default for ImportOptions {
             max_work: 5_000_000,
             max_records: 100_000,
             strict: false,
+            repair: RepairOptions::default(),
         }
     }
 }
@@ -147,6 +153,7 @@ impl ImportOptions {
                 .max(entities.saturating_mul(Self::WORK_PER_ENTITY)),
             max_records: defaults.max_records.max(entities),
             strict: defaults.strict,
+            repair: defaults.repair,
         }
     }
 }
@@ -159,8 +166,14 @@ pub struct ImportedSolid {
     adaptations: Adaptations,
     /// STEP identity of edges and vertices, for locating tessellation errors.
     topology: uv_loops::TopologyEntities,
+    repairs: RepairReport,
 }
 impl ImportedSolid {
+    /// Topology repairs applied by the opt-in repair stage ([`ImportOptions::repair`]);
+    /// all zero without it.
+    pub fn repairs(&self) -> RepairReport {
+        self.repairs
+    }
     pub(crate) fn topology(&self) -> &uv_loops::TopologyEntities {
         &self.topology
     }
@@ -251,8 +264,9 @@ fn tessellation_limit(e: &tessstep_tessellate::TessellationErrorKind) -> bool {
 /// (including ADVANCED_FACE), explicit FACE_OUTER_BOUND and POLY_LOOP boundaries.
 /// Only this root's reference closure is structurally checked against the bundled
 /// original reduced profile. Unrelated records and FILE_SCHEMA are not validated.
-/// Shared points/edges are identified by STEP point IDs, never by proximity.
-/// No unit inference, assembly placement, repair, curved edges or surfaces is performed.
+/// Shared points/edges are identified by STEP point IDs, never by proximity, unless
+/// the opt-in [`ImportOptions::repair`] sews them (counted in [`ImportedSolid::repairs`]).
+/// No unit inference, assembly placement, curved edges or surfaces is performed.
 pub fn import_faceted_solid(
     document: &Document,
     root: EntityId,
@@ -473,42 +487,32 @@ fn import_solid(
         closed: true,
     });
     c.raw.solids.push(Solid::new(ShellId(0)));
-    let mut topology = uv_loops::TopologyEntities {
-        edges: vec![None; c.raw.edges.len()],
-        vertices: c.point_entities.clone(),
-    };
+    let mut edges = vec![None; c.raw.edges.len()];
     for (&entity, &(edge, _)) in &c.edge_entities {
-        if let Some(slot) = topology.edges.get_mut(edge.0) {
+        if let Some(slot) = edges.get_mut(edge.0) {
             *slot = Some(entity);
         }
     }
-    let brep = c
-        .raw
-        .validate(
-            tolerance,
-            ValidationLimits {
-                max_records: options.max_records,
-                max_work: options.max_work,
-            },
-        )
-        .map_err(|e| Error {
-            kind: if e.defect == Defect::ResourceLimit {
-                ErrorKind::ResourceLimit
-            } else {
-                ErrorKind::InvalidGeometry
-            },
-            stage: Stage::Topology,
-            entity: Some(root),
-            source: document.entities().get(root).map(|e| e.source),
-            message: e.to_string(),
-        })?
-        .normalize();
+    let mut locator = repair::Locator {
+        document,
+        root,
+        edges,
+        vertices: c.point_entities.clone(),
+    };
+    let (raw, report, tolerance) =
+        repair::sew_raw(std::mem::take(&mut c.raw), tolerance, options, &mut locator)?;
+    let topology = uv_loops::TopologyEntities {
+        edges: locator.edges.clone(),
+        vertices: locator.vertices.clone(),
+    };
+    let (brep, repairs) = repair::finish(raw, tolerance, options, report, &locator)?;
     Ok(ImportedSolid {
         brep,
         faces,
         root,
         adaptations: Adaptations::default(),
         topology,
+        repairs,
     })
 }
 struct Context<'d, 'a> {

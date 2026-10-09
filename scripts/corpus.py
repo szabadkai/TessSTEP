@@ -19,6 +19,7 @@ import time
 
 from corpus_report import aggregate, render, FAULTS, stages_of
 import corpus_surface
+from corpus_repair import summarize_repairs
 
 ROOT = Path(__file__).resolve().parents[1]
 EXTENSIONS = {".step", ".stp", ".p21"}
@@ -248,7 +249,9 @@ def summarize_survey(payload):
             "closure_roots": dict(sorted(Counter(t for r in roots for t in r.get("closure", {})).items())),
             "closure_failing_roots": dict(sorted(Counter(t for r in failures for t in r.get("closure", {})).items())),
             "closure_truncated": sum(bool(r.get("closure_truncated")) for r in roots),
-            "roots": [{k: v for k, v in r.items() if k not in ("seconds", "closure")} for r in roots[:20]]}
+            "roots": [{k: v for k, v in r.items() if k not in ("seconds", "closure")} for r in roots[:20]],
+            # Opt-in repair runs only (--geometry-repair); strict reports keep their shape.
+            **({"repairs": summarize_repairs(roots)} if payload.get("repair") else {})}
 
 
 def stage_outcome(roots, stage):
@@ -492,12 +495,16 @@ def main():
     parser.add_argument("--product-validator", type=Path, help="Product checker; requires the schema validator and uses its schema name")
     parser.add_argument("--geometry-max-work", type=int, help="Explicit import work budget for every root (default: sized by entity count)")
     parser.add_argument("--geometry-max-records", type=int, help="Explicit import record budget for every root (default: sized by entity count)")
+    parser.add_argument("--geometry-repair", action="store_true",
+                        help="Survey with the opt-in sewing and orientation repair (use a separate --output and compare with a strict run)")
     parser.add_argument("--geometry-metres-per-unit", type=float, default=0.001,
                         help="Fallback source length unit for roots without discovered context units (default 0.001: millimetres)")
     args = parser.parse_args()
     if not (math.isfinite(args.geometry_metres_per_unit) and args.geometry_metres_per_unit > 0):
         parser.error("--geometry-metres-per-unit must be finite and positive")
     geometry_budgets = [f"--max-{name}={value}" for name, value in (("work", args.geometry_max_work), ("records", args.geometry_max_records)) if value is not None]
+    if args.geometry_repair:
+        geometry_budgets.append("--repair")
     if any(value is not None and value < 0 for value in (args.geometry_max_work, args.geometry_max_records)):
         parser.error("import budgets must be non-negative")
     if args.product_validator and (not args.schema_name or not args.product_validator.is_file()):
@@ -565,7 +572,8 @@ def main():
         survey_snapshot = Path(directory) / survey.name
         shutil.copy2(survey, survey_snapshot)
         geometry_config = {"scope": "every solid and shape tessellation root and tessellated annotation occurrence; selected-root profiles; exact representations preferred; "
-                                    "every SHELL_BASED_SURFACE_MODEL as shells, never as solids", "policy": "tolerant default",
+                                    "every SHELL_BASED_SURFACE_MODEL as shells, never as solids",
+                           "policy": "tolerant default with opt-in sewing and orientation repair" if args.geometry_repair else "tolerant default",
                            "metres_per_unit": args.geometry_metres_per_unit, "binary_sha256": digest(survey_snapshot)}
         product_snapshot = None
         product_config = None

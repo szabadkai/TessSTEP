@@ -1,8 +1,10 @@
 //! Usage: cargo run -p tessstep-import --example brep -- FILE ROOT_ID METRES_PER_UNIT
-//!     [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict]
+//!     [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict] [--repair]
 //! Imports one MANIFOLD_SOLID_BREP with the curved B-rep profile and reports
 //! profile/geometry/tessellation stages independently as JSON. Plane angles are
 //! radians unless --degrees is given; the model tolerance defaults to 1e-8 m.
+//! --repair enables the opt-in sewing and orientation repair at the default sewing
+//! tolerance; the repair counts are reported either way.
 #![forbid(unsafe_code)]
 use std::{fs::File, io::BufReader};
 use tessstep_import::*;
@@ -24,6 +26,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         found.map(|i| args.remove(i)).is_some()
     };
     let strict = flag("--strict");
+    let repair = flag("--repair");
     let degrees = flag("--degrees");
     let mut value = |name: &str, default: f64| -> Result<f64, Box<dyn std::error::Error>> {
         Ok(match args.iter().position(|a| a == name) {
@@ -38,7 +41,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let model_tolerance = value("--model-tolerance", 1e-8)?;
     let chord = value("--chord", 1e-6)?;
     if args.len() != 3 {
-        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict]".into());
+        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict] [--repair]".into());
     }
     let root = EntityId::new(args[1].parse()?).ok_or("root must be nonzero")?;
     let unit = LengthUnit::metres_per_unit(args[2].parse()?)?;
@@ -55,6 +58,11 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let tolerance = TessellationTolerance::new(Length::metres(chord)?, Angle::radians(0.1)?)?;
     let options = ImportOptions {
         strict,
+        repair: if repair {
+            RepairOptions::enabled()
+        } else {
+            RepairOptions::default()
+        },
         ..ImportOptions::default()
     };
     let imported = import_brep_solid(&doc, root, unit, angle, model, options);
@@ -62,6 +70,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         .as_ref()
         .map(|s| s.adaptations())
         .unwrap_or_default();
+    let repairs = imported.as_ref().map(|s| s.repairs()).unwrap_or_default();
     let result =
         imported.and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
     let adapted = format!(
@@ -74,6 +83,16 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         adaptations.collapsed_faces,
         adaptations.supplied_pcurves,
         adaptations.rejected_pcurves
+    ) + &format!(
+        ",\"merged_vertices\":{},\"merged_edges\":{},\"max_merge_distance_m\":{:e},\"disconnected_shells\":{},\"flipped_faces\":{},\"reversed_loops\":{},\"reoriented_shells\":{},\"undecided_shells\":{}",
+        repairs.merged_vertices,
+        repairs.merged_edges,
+        repairs.max_merge_distance,
+        repairs.disconnected_shells,
+        repairs.flipped_faces,
+        repairs.reversed_loops,
+        repairs.reoriented_shells,
+        repairs.undecided_shells
     );
     match result {
         Ok(mesh) => {

@@ -77,6 +77,8 @@ impl TsImportOptions {
             max_work: count(self.max_work)?,
             max_records: count(self.max_records)?,
             strict: self.flags & TS_IMPORT_STRICT != 0,
+            // The opt-in repair stage is not exposed in C yet: C imports stay strict.
+            ..ImportOptions::default()
         };
         let model = ModelTolerance::new(
             Length::metres(self.model_distance_m).ok()?,

@@ -216,12 +216,20 @@ Useful options:
 python3 scripts/corpus.py --corpus /path/to/step-corpus --timeout 60
 python3 scripts/corpus.py --output reports/experiment --baseline corpus/baseline.json
 python3 scripts/corpus.py --geometry-max-work 50000000 --geometry-max-records 200000
+python3 scripts/corpus.py --check --geometry-repair --output reports/corpus-repair
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 The geometry stage sizes its import budgets from each document's entity count
 (`ImportOptions::for_document`) and records them per file; `--geometry-max-work` and
 `--geometry-max-records` replace that rule with one explicit budget for every root.
+`--geometry-repair` surveys every solid root with the opt-in sewing and orientation
+repair (`RepairOptions::enabled`, see [curved import](CURVED_IMPORT.md#opt-in-topology-repair)):
+each root reports its repair counts, each file their totals, and `summary.md` the repaired
+roots per source. The default run is strict and its reports do not change; write repair-on
+runs to a separate `--output` and compare them with a strict run rather than saving them
+as the baseline. In strict runs a closed shell whose faces share no edges or vertices is
+the `UnsewnShell` category, apart from `OpenShell`.
 `TESSSTEP_CORPUS` also overrides the default corpus location. Alternate or
 partial corpora should use a separate output directory and baseline. The large
 external corpus is not required for ordinary `cargo test --workspace` runs.

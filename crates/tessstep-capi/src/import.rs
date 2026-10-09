@@ -283,6 +283,7 @@ unsafe fn tessellate_import(
             max_work: work,
             max_records: records,
             strict: matches!(profile, Profile::Planar { strict: true }),
+            ..ImportOptions::default()
         };
         let imported = match profile {
             Profile::Planar { .. } => {

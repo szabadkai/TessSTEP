@@ -154,6 +154,7 @@ pub unsafe extern "C" fn ts_document_import_tessellated(
                 max_work: work,
                 max_records: records,
                 strict,
+                ..ImportOptions::default()
             },
             tessstep_mesh::Limits {
                 max_vertices: vertices,
@@ -427,6 +428,7 @@ pub unsafe extern "C" fn ts_document_import_presentation(
                 max_work: work,
                 max_records: records,
                 strict,
+                ..ImportOptions::default()
             },
             PresentationLimits {
                 max_vertices: vertices,

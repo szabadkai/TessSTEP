@@ -3,7 +3,8 @@ use super::*;
 /// Import one selected MANIFOLD_SOLID_BREP with planar faces and straight LINE
 /// EDGE_CURVEs. Shared vertices/edges retain VERTEX_POINT/EDGE_CURVE identity.
 /// One plain FACE_BOUND is an unambiguous outer bound; multiple bounds require
-/// one explicit FACE_OUTER_BOUND. No coordinate welding, healing or unit inference.
+/// one explicit FACE_OUTER_BOUND. No coordinate welding or unit inference; topology
+/// repair only when [`ImportOptions::repair`] enables it.
 /// ORIENTED_EDGE endpoint slots must be `*`, or `$` unless `options.strict`; their
 /// values come from EDGE_ELEMENT.
 pub fn import_planar_solid(

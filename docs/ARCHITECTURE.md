@@ -579,3 +579,19 @@ solids and `tessstep_tessellate::tessellate_shell` already enforced declared clo
 and connectedness. Discovery reuses the representation and unit resolver as a separate
 root class. No new crate edge, unsafe code or production dependency is introduced; C/C++
 exposure of surface models is a follow-up to Milestone 22.10.
+
+## Milestone 22.5 topology repair architecture review
+
+Repair is a stage of its own, never a side effect of validation. `tessstep-topology`
+gains a `repair` module of pure functions on `RawBrep` (sewing plans, face
+orientation, gap diagnosis) that callers run before `RawBrep::validate`; `ValidatedBrep`
+and `NormalizedBrep` are unchanged and still never heal. Decisions that need the trimmer
+or a tessellation (loops running against their surface, the volume sign of a closed
+shell) stay in `tessstep-import`, which already composes those crates, and rebuild the
+normalized B-rep through validation. The curved importer maps a sewing plan onto its own
+edge and face records before computing pcurves, so no pcurve is ever retargeted to a
+curve it was not computed for. Repairs keep coordinates, curves and surfaces; the sewn
+model's working tolerance grows by the largest merge distance and is reported. Every
+edit is counted in `RepairReport` and charged to the import work budget. No new crate
+edge, unsafe code or production dependency; the option is Rust-only until its C/C++
+exposure.

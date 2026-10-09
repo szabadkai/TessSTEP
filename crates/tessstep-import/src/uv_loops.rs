@@ -219,6 +219,7 @@ mod tests {
             root: id(2),
             adaptations: Adaptations::default(),
             topology: TopologyEntities { edges, vertices },
+            repairs: Default::default(),
         }
     }
     /// The located kind, entity and message of the first face's trimming failure.

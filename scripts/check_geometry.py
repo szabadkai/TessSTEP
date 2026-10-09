@@ -117,10 +117,43 @@ BREP_EXPECTED = {
     "brep-unknown-closure-cylinder.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
     "brep-cut-sphere.step": (("accepted",) * 3, (0, 1, 0, 1, 1), (3584 / 3 * math.pi * 1e-9, 0.01)),
     "brep-pinched-pocket.step": (("accepted", "accepted", "rejected"), None, None),
+
+    # Topology repair fixtures (corpus/geometry/repair_fixtures.py): strict import
+    # rejects each defect; REPAIR_EXPECTED checks the opt-in repair of the same files.
+    "brep-repair-duplicated.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-repair-broken-wire.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-repair-flipped-face.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-repair-reversed-loop.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-repair-wrong-sense.step": (("accepted", "accepted", "rejected"), None, None),
+    "brep-repair-inside-out.step": (("accepted", "accepted", "rejected"), None, None),
+    "brep-repair-unsewn.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-repair-unsewn-cylinder.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-repair-unsewn-gap.step": (("accepted", "rejected", "not_run"), None, None),
+    "brep-repair-gap.step": (("accepted", "rejected", "not_run"), None, None),
+}
+# Opt-in repair (`brep --repair`, sewing tolerance ten times the 1e-8 m model
+# tolerance): the strict diagnostic, then the repaired stages, repair counts, volume
+# with its relative tolerance (or None) and a fragment of the repair diagnostic.
+REPAIR_COUNTS = ("merged_vertices", "merged_edges", "disconnected_shells", "flipped_faces", "reversed_loops", "reoriented_shells")
+REPAIR_EXPECTED = {
+    "brep-repair-duplicated.step": ("OpenShell at shell 0", ("accepted",) * 3, (1, 3, 0, 0, 0, 0), (6e-6, 2e-5), None),
+    "brep-repair-broken-wire.step": ("BrokenWire at wire 1", ("accepted",) * 3, (1, 0, 0, 0, 0, 0), (6e-6, 1e-12), None),
+    "brep-repair-flipped-face.step": ("InconsistentOrientation at shell 0", ("accepted",) * 3, (0, 0, 0, 1, 0, 0), (6e-6, 1e-12), None),
+    "brep-repair-reversed-loop.step": ("InconsistentOrientation at shell 0", ("accepted",) * 3, (0, 0, 0, 0, 1, 0), (6e-6, 1e-12), None),
+    "brep-repair-wrong-sense.step": ("WrongOrientation", ("accepted",) * 3, (0, 0, 0, 0, 1, 0), (6e-6, 1e-12), None),
+    "brep-repair-inside-out.step": ("NonPositiveVolume", ("accepted",) * 3, (0, 0, 0, 0, 0, 1), (6e-6, 1e-12), None),
+    "brep-inverted-cavity.step": ("CavityOrientation", ("accepted",) * 3, (0, 0, 0, 0, 0, 1), (7e-6, 1e-12), None),
+    "brep-repair-unsewn.step": ("UnsewnShell at shell 0", ("accepted",) * 3, (16, 12, 1, 0, 0, 0), (6e-6, 1e-12), None),
+    "brep-repair-unsewn-cylinder.step": ("UnsewnShell at shell 0", ("accepted",) * 3, (2, 2, 1, 0, 0, 0),
+                                         (math.pi * 2000e-9, 2e-3), None),  # twice the chord over the radius
+    "brep-repair-unsewn-gap.step": ("UnsewnShell at shell 0", ("accepted", "rejected", "not_run"), (0, 0, 0, 0, 0, 0), None,
+                                    "UnsewnShell at shell 0: a free edge lies apart from the nearest free edge, beyond the sewing tolerance"),
+    "brep-repair-gap.step": ("OpenShell at shell 0", ("accepted", "rejected", "not_run"), (0, 0, 0, 0, 0, 0), None,
+                             "needs 5.000e-5 m; sewing tolerance 1.000e-7 m"),
 }
 BREP_CHORD = 1e-5
 # Mesh components of accepted solids with BREP_WITH_VOIDS cavities (others have one).
-BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2}
+BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2, "brep-inverted-cavity.step": 2}
 ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges", "collapsed_faces",
                "supplied_pcurves", "rejected_pcurves")
 
@@ -208,6 +241,8 @@ def main():
         subprocess.run([sys.executable, str(ROOT / "corpus/geometry/brep_fixtures.py"), "--output", scratch], check=True)
         subprocess.run([sys.executable, str(ROOT / "corpus/geometry/assembly_fixtures.py"), "--output", scratch], check=True)
         subprocess.run([sys.executable, str(ROOT / "corpus/geometry/surface_fixtures.py"), "--output", scratch], check=True)
+
+        subprocess.run([sys.executable, str(ROOT / "corpus/geometry/repair_fixtures.py"), "--output", scratch], check=True)
         for fixture in sorted(Path(scratch).iterdir()):
             assert fixture.read_bytes() == (ROOT / "corpus/geometry" / fixture.name).read_bytes(), f"Regenerate {fixture.name}"
     binary = target / "examples" / ("faceted"+suffix)
@@ -290,6 +325,18 @@ def main():
             bound = 1e-12 if math.isinf(radius) else 2 * BREP_CHORD / radius
             case["passed"] &= r.get("boundary_edges") == 0 and r.get("components") == BREP_COMPONENTS.get(name, 1)
             case["passed"] &= abs(r.get("volume_m3", 0) - exact) <= bound * exact
+        cases.append(case)
+    for name, (strict, expected, counts, volume, diagnostic) in REPAIR_EXPECTED.items():
+        plain = inspect(brep_binary, ROOT / "corpus/geometry" / name, scope="brep-solid", extra=["--chord", str(BREP_CHORD)])
+        case = inspect(brep_binary, ROOT / "corpus/geometry" / name, scope="brep-solid", extra=["--chord", str(BREP_CHORD), "--repair"])
+        r = case["result"]
+        case["expected"] = {"repair": True, "strict_diagnostic": strict, "stages": expected, "repairs": counts, "volume": volume, "diagnostic": diagnostic}
+        case["passed"] = (strict in plain["diagnostic"] and tuple(r[k] for k in ("profile", "geometry", "tessellation")) == expected
+                          and tuple(r.get(k) for k in REPAIR_COUNTS) == counts and (diagnostic is None or diagnostic in case["diagnostic"]))
+        if volume is not None:
+            exact, relative = volume
+            case["passed"] &= r.get("boundary_edges") == 0 and r.get("components") == BREP_COMPONENTS.get(name, 1)
+            case["passed"] &= abs(r.get("volume_m3", 0) - exact) <= relative * exact
         cases.append(case)
     # The curved profile reproduces the planar profile's accepted fixtures.
     for name in ("planar-box.step", "planar-tube.step"):
@@ -402,7 +449,8 @@ def main():
     for c in cases:
         r=c["result"]
         rows.append("<tr>"+"".join("<td>"+html.escape(str(v))+"</td>" for v in
-                    [Path(c["path"]).name+(" (strict)" if isinstance(c["expected"],dict) and "strict" in c["expected"] else ""),c["passed"],r["profile"],r["geometry"],r["tessellation"],c["diagnostic"]])+"</tr>")
+                    [Path(c["path"]).name+(" (strict)" if isinstance(c["expected"],dict) and "strict" in c["expected"] else "")
+                     +(" (repair)" if isinstance(c["expected"],dict) and c["expected"].get("repair") else ""),c["passed"],r["profile"],r["geometry"],r["tessellation"],c["diagnostic"]])+"</tr>")
     (output/"index.html").write_text('<!doctype html><html lang="en"><meta charset="utf-8"><title>STEP import verification</title>'
         '<style>body{font:16px system-ui;margin:32px}td,th{padding:12px;border:1px solid #ccc;text-align:left}table{border-collapse:collapse}</style>'
         '<h1>STEP import verification</h1><p>Selected-root reduced profiles. Explicit source units. Full AP schema and product validation are unmeasured.</p>'

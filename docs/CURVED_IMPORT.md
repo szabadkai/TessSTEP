@@ -245,6 +245,83 @@ whether the importer inserted them); it does not decide whether the STEP input o
 an importer chart caused it. [VALIDATION.md](VALIDATION.md) classifies the corpus
 failures by cause. Evidence: `uv_loops::tests`, `tests/uv_loops.rs`.
 
+## Opt-in topology repair
+
+Strict rejection is the default: a shell that is open, unsewn or inconsistently
+oriented, a broken wire and an inward shell are typed failures. `ImportOptions::repair`
+(`RepairOptions`, `Copy`, off by default) enables a tolerance-bounded repair stage in
+this importer and in the planar and faceted profiles ([topology](TOPOLOGY.md#opt-in-repair)):
+
+| `RepairOptions` field | Default | Meaning |
+| --- | --- | --- |
+| `sew` | `false` | merge coincident boundary vertices (of free edges and wire breaks) and free edges of different faces |
+| `orient` | `false` | flip faces into a consistent orientation per shell, reverse the loops of faces whose loops run against their surface, then reverse closed solid shells whose algebraic volume has the wrong sign |
+| `sewing_factor` | `10.0` (`DEFAULT_SEWING_FACTOR`) | sewing tolerance as a multiple of the model distance tolerance |
+
+`RepairOptions::enabled()` turns both repairs on at the default factor. This importer
+sews its edge and face records before planning, so every pcurve, seam and chart is
+computed for the surviving edges; the planar and faceted profiles sew their raw
+B-reps directly (their straight pcurves stay affine). Merged vertices keep the position
+of their representative and merged edges the curve of their survivor, so the sewn
+B-rep is planned, validated, trimmed and tessellated at the model tolerance plus the
+largest merge distance (`NormalizedBrep::model_tolerance`). Face orientation runs on
+the raw B-rep before validation. After validation every face that the trimmer rejects as
+wrongly oriented (it would lie to the right of its outer loop in the surface chart, as
+when a loop is written clockwise about its face normal or `SAME_SENSE` is wrong) has
+all its loops and its orientation reversed together, which keeps the shell's incidence;
+the reversal is kept only when the trimmer then accepts the face. Finally each closed
+shell of the solid is tessellated coarsely (chord 1e-2 of its extent and 0.5 rad, then
+1e-3 and 0.25 rad), and an outer shell enclosing a negative volume or a cavity shell
+enclosing a positive one is reversed. The sign counts only when the volume exceeds twice
+the volume between the mesh and the surfaces, estimated per curved-face triangle as its
+area times its centroid's distance from the surface at its mean UV; otherwise, or when
+the coarse tessellation fails, the shell keeps its orientation and is counted as
+undecided.
+
+`ImportedSolid::repairs()` returns a `RepairReport` (all zero without repair):
+
+| `RepairReport` field | Meaning |
+| --- | --- |
+| `merged_vertices`, `merged_edges` | vertices and free edges merged into coincident ones |
+| `max_merge_distance` | largest distance between merged vertices or edge curves, metres |
+| `disconnected_shells` | closed shells whose faces shared no edge or vertex before sewing |
+| `flipped_faces` | faces flipped to agree with their shell |
+| `reversed_loops` | faces whose loops (and orientation) were reversed because they ran against the surface |
+| `reoriented_shells` | closed solid shells reversed by their volume sign |
+| `undecided_shells` | closed solid shells whose volume sign could not be decided |
+| `sewing_tolerance` | sewing tolerance in force, metres (zero without sewing) |
+
+A shell that sewing cannot close fails at the topology stage with its classification
+and the distance sewing would need, located at the free STEP edge, for example
+`OpenShell at shell 0: a free edge lies apart from the nearest free edge, beyond the
+sewing tolerance (edge #56 to edge #148 needs 5.000e-5 m; sewing tolerance 1.000e-7 m)`;
+a broken wire names the distance across its first break, and a non-orientable shell
+says so. Repairs never change a valid solid: every curved fixture imports identically
+with repair on. Not repaired: T-junctions and partially overlapping edges, three or more
+coincident free edges, a single reversed `ORIENTED_EDGE` or bound inside an otherwise
+consistent loop, missing faces and self-intersections. Evidence (fixtures from
+[`repair_fixtures.py`](../corpus/geometry/repair_fixtures.py), each rejected strictly):
+`repair_is_opt_in_and_strict_import_rejects_every_defect`,
+`repair_sews_duplicated_and_unsewn_boundaries` (a duplicated corner 5e-8 m away and
+three duplicated edges, a broken wire, an unsewn box and an unsewn cylinder whose cap
+circle runs the other way), `repair_reorients_flipped_faces_and_inside_out_shells`
+(one inward face, a loop written clockwise about its face normal, a wrong `SAME_SENSE`,
+an inside-out box, an outward cavity),
+`repair_rejects_gaps_beyond_the_sewing_tolerance_with_the_distance` (a 0.05 mm corner
+gap and an unsewn box with faces 0.01 mm apart, which stays an `UnsewnShell`),
+`repair_applies_to_the_planar_and_faceted_profiles`,
+`repair_leaves_valid_solids_unchanged` and
+`repair_budgets_determinism_and_mutation_smoke` (record order and 240 byte mutations).
+In the corpus survey every merge distance was zero (each sewn duplicate was exact).
+
+For a C/C++ binding (pending, after the 22.10 import options): the option is the three
+`RepairOptions` fields above (two flags and a positive finite factor; `sewing_factor`
+that does not give a finite positive tolerance is an `InvalidOptions` error when `sew`
+is set), and the report is the nine `RepairReport` fields (seven counts, two distances in
+metres). Repair costs one trimmer pass over every face and a coarse tessellation of every
+closed shell of each repaired-on root (the repair-on corpus survey took 758 s against
+539 s strict).
+
 ## Root and unit discovery
 
 `discover_solids(document, options)` finds every `MANIFOLD_SOLID_BREP`,
@@ -313,8 +390,8 @@ export of 58 single-face open shells and a Pro/ENGINEER closed shell of 52 faces
 
 ## Limits and evidence
 
-Open shells in solids, offset curves and surfaces, reversed `TRIMMED_CURVE`s nested
-inside other curves, and healing are unsupported. `OFFSET_SURFACE`,
+Open shells in solids, offset curves and surfaces and reversed `TRIMMED_CURVE`s nested
+inside other curves are unsupported; topology repair is opt-in (above). `OFFSET_SURFACE`,
 `RECTANGULAR_TRIMMED_SURFACE`, `RECTANGULAR_COMPOSITE_SURFACE`, `COMPOSITE_CURVE`,
 `OFFSET_CURVE_3D` and `PCURVE` or `DEGENERATE_PCURVE` used directly as edge geometry
 are rejected by name at the profile stage (`brep_rare_geometry_is_a_named_rejection`). Profile rejection is not an AP

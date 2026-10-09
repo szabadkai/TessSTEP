@@ -204,7 +204,7 @@
       "feature": "STEP geometry / topology / meshes",
       "status": "faceted, edge-based planar and curved B-rep subsets implemented",
       "test": "planar_edge_brep_to_mesh_preserves_topology_and_line_trims",
-      "limitations": "Explicit root/units or discovered context units; reduced profiles; elementary, B-spline and swept surfaces with computed pcurves; pole and apex charts; BREP_WITH_VOIDS cavities; no healing or AP claim"
+      "limitations": "Explicit root/units or discovered context units; reduced profiles; elementary, B-spline and swept surfaces with computed pcurves; pole and apex charts; BREP_WITH_VOIDS cavities; strict by default with opt-in, counted topology repair; no AP claim"
     },
     {
       "feature": "public C ABI",
@@ -493,6 +493,12 @@
       "status": "implemented",
       "test": "topology_cavity_shells_are_closed_and_uniquely_owned",
       "limitations": "closed, uniquely owned void shells sharing no edge or vertex with other shells of the solid; containment not checked"
+    },
+    {
+      "feature": "Opt-in topology repair (sewing, face, loop and shell orientation)",
+      "status": "implemented",
+      "test": "repair_sews_duplicated_and_unsewn_boundaries",
+      "limitations": "off by default (ImportOptions::repair); sewing tolerance ten times the model tolerance by default; every merge, flip, loop reversal and shell reorientation counted per root; positions, curves and surfaces never moved; T-junctions, partial overlaps, missing faces and single reversed edges in consistent loops not repaired; Rust only"
     },
     {
       "feature": "Shared mesh assets and nested occurrence scenes",

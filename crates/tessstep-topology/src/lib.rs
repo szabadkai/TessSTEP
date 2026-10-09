@@ -2,8 +2,10 @@
 //! Validation is not proof of nonintersection, volume containment or STEP conformance.
 #![forbid(unsafe_code)]
 mod geometry;
+mod repair;
 mod validate;
 pub use geometry::*;
+pub use repair::*;
 use tessstep_math::{ModelSpace, ParameterSpace, Point3};
 pub use validate::*;
 

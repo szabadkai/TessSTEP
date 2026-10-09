@@ -23,8 +23,9 @@ returns a located typed first-defect report or a privately constructed `Validate
 Callers needing the raw object after failure can clone before validation.
 `ValidatedBrep::normalize` moves it into immutable `NormalizedBrep`, retaining a
 canonical edge-to-coedge incidence table. Normalization never merges vertices,
-changes coordinates, reverses wires, or silently heals geometry. No healing API is
-implemented; any future healing must report each edit and tolerance separately.
+changes coordinates, reverses wires, or silently heals geometry. Repair is a separate,
+explicit stage on raw B-reps that callers run before validation and whose every edit
+is counted ([opt-in repair](#opt-in-repair)); validation and normalization never call it.
 
 Validation checks finite increasing edge ranges, evaluable endpoints and agreement
 with vertices within an explicit model distance tolerance, typed references, exact
@@ -39,11 +40,65 @@ solid's shells may not share an edge (`NonManifoldEdge`) or vertex
 (`NonManifoldVertex`); cavity containment and nesting are not checked. Evidence:
 `topology_cavity_shells_are_closed_and_uniquely_owned`.
 
+A closed shell of several faces that share no edge and no vertex, each face with its
+own boundary records, is a *disconnected* (unsewn) closed shell and fails as
+`UnsewnShell` rather than `OpenShell`, so that this exporter defect is classified
+apart from shells with missing faces or isolated free edges. Evidence:
+`repair_unsewn_closed_shells_are_classified_apart_from_open_shells`.
+
 These are structural validity states: validation does **not** certify self-intersection,
 face/surface agreement, continuous curve interiors, shell outwardness, positive volume,
 or containment. UV reconstruction checks sampled pcurve agreement separately. Surface
 singularities are diagnosed by downstream operations; structural acceptance does not
 establish regular geometry. No mesh or watertightness claim follows.
+
+## Opt-in repair
+
+`tessstep_topology::repair` holds the tolerance-bounded repairs that an importer may
+apply, on request, to a raw B-rep before validating it. None changes a coordinate, a
+curve or a surface; each returns what it did, and the caller reports it.
+
+* **Sewing.** `plan_sewing(raw, model, tolerance, limits)` chooses merges and
+  `SewPlan::apply` performs them. Candidates are the end vertices of *free* edges (one
+  use in all shells, not collapsed) and the two vertices at each wire break, in one
+  shell. Candidate pairs within `tolerance` are merged nearest first (constrained single
+  linkage): a cluster keeps the position of its lowest-indexed vertex, and a merge is
+  refused when a member would lie farther than `tolerance` from it or when it would put
+  both ends of an edge into one cluster (no edge ever collapses, however short). Then
+  each pair of free edges of different faces that join the same merged vertices and
+  whose curves lie within `tolerance` of each other (exactly for two lines, otherwise
+  17 samples of each projected onto the other) becomes one edge: the analytic curve
+  survives a B-spline, otherwise the lower index. Three or more coincident free edges
+  stay unsewn. A moved use flips when the survivor runs the other way, and `apply`
+  swaps its pcurve interval, which keeps an affine correspondence only for straight
+  edges; an importer with curved pcurves maps the plan onto its own records before it
+  computes them. The plan reports merged vertices and edges, the largest merge
+  distance and the closed shells that were disconnected before sewing. Because
+  positions are kept, a sewn model must be validated, trimmed and tessellated at the
+  model tolerance plus the largest merge distance.
+* **Face orientation.** `orient_faces(raw, limits)` flips faces so that, in each shell,
+  the two uses of every edge shared by two faces have opposite effective orientations.
+  Each edge-connected group of faces keeps the orientation of most of its faces (its
+  first face on a tie); a group that no flips make consistent is a non-orientable
+  `InconsistentOrientation` error. Only `Face::orientation` changes: loops stay
+  oriented with their surface. A face whose loops run against its surface is found by
+  the trimmer (`WrongOrientation`), so the importers reverse such loops after
+  validation, together with the face orientation.
+* **Gaps.** When a sewn model still fails as `OpenShell`, `UnsewnShell` or `BrokenWire`,
+  `diagnose_gap` measures what sewing would need: the distance from the shell's first
+  free edge to the nearest other free edge, or across the wire's first break. A
+  `RepairError` names the edges, the needed distance and the tolerance in force.
+
+Loop direction and outward orientation need the trimmer and the algebraic volume of
+each closed shell, so the importers decide them after validation (see
+[curved import](CURVED_IMPORT.md#opt-in-topology-repair)). Repairs run on models with
+valid handles only; any other model is left for validation to diagnose. Every repair
+charges the caller's work budget. Evidence: `tests/repair.rs` in this crate
+(`repair_sews_coincident_boundaries_into_a_valid_closed_shell`,
+`repair_merges_only_within_the_sewing_tolerance`,
+`repair_never_collapses_an_edge_and_mends_broken_wires`,
+`repair_orients_faces_by_the_majority_of_each_group`,
+`repair_budgets_and_invalid_models_are_explicit`).
 
 ## Collapsed edges
 

@@ -28,6 +28,10 @@ pub enum Defect {
     NonManifoldEdge,
     InconsistentOrientation,
     OpenShell,
+    /// A closed shell of several faces that share no edge or vertex: each face has its
+    /// own boundary records (a disconnected, or unsewn, closed shell). Reported instead
+    /// of [`Defect::OpenShell`] so that this exporter defect is classified apart.
+    UnsewnShell,
     DisconnectedShell,
     NonManifoldVertex,
 }
@@ -73,6 +77,31 @@ fn spend(work: &mut usize, n: usize) -> Result<(), Report> {
     Ok(())
 }
 impl RawBrep {
+    /// Whether the faces of a shell (at least two) share no edge and no vertex.
+    fn unsewn(
+        &self,
+        shell: &Shell,
+        incidence: &BTreeMap<EdgeId, Vec<(usize, bool)>>,
+        work: &mut usize,
+    ) -> Result<bool, Report> {
+        if shell.faces.len() < 2 {
+            return Ok(false);
+        }
+        let mut owner = BTreeMap::new();
+        for (edge, uses) in incidence {
+            spend(work, uses.len() + 2)?;
+            let face = uses[0].0;
+            if uses.iter().any(|u| u.0 != face) {
+                return Ok(false);
+            }
+            for v in self.edges[edge.0].vertices {
+                if *owner.entry(v).or_insert(face) != face {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
     /// First deterministic defect; input geometry is never healed or rewritten.
     pub fn validate(
         self,
@@ -245,7 +274,12 @@ impl RawBrep {
                     continue;
                 }
                 if uses.len() == 1 && shell.closed {
-                    return Err(fail(Defect::OpenShell, "shell", si));
+                    let defect = if self.unsewn(shell, &incidence, &mut work)? {
+                        Defect::UnsewnShell
+                    } else {
+                        Defect::OpenShell
+                    };
+                    return Err(fail(defect, "shell", si));
                 }
                 if uses.len() == 2 {
                     if uses[0].1 == uses[1].1 {

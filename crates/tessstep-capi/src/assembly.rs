@@ -118,6 +118,7 @@ impl TsAssemblyOptions {
             max_work: count(self.max_work)?,
             max_records: count(self.max_records)?,
             strict: self.flags & TS_IMPORT_STRICT != 0,
+            ..ImportOptions::default()
         };
         o.assembly.expansion.max_work = o.assembly.import.max_work;
         o.assembly.expansion.max_instances = count(self.max_instances)?;

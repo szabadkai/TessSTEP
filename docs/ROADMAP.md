@@ -313,10 +313,11 @@ authored fixtures, typed outcomes and corpus-stage evidence before delivery.
   outside the profile, and says "outside the selected import profile" rather than
   "unknown to the schema". Evidence:
   `planar_unsupported_entities_are_named_as_outside_the_profile`.
-- **Disconnected closed shells — Milestone 22.5.** Some exporters write `CLOSED_SHELL`s whose faces
-  share no edges or vertices. Strict rejection stays the default. Any sewing must be
-  an explicit, opt-in, tolerance-bounded repair stage whose repairs are reported.
-  Reports should classify this defect separately from other open-shell failures.
+- **Disconnected closed shells — delivered 2026-10-09 (Milestone 22.5).** A
+  `CLOSED_SHELL` whose faces share no edges or vertices fails strictly as
+  `UnsewnShell`, apart from other open shells; the opt-in repair stage
+  (`ImportOptions::repair`) sews it within a stated tolerance and counts every merge.
+  See 22.5 below.
 - **Per-root import cost — decoder part delivered 2026-09-26.** Selected-root decoding
   used to scan and charge every document entity per root; it now visits only the
   closure, ordered through the entity index, which also removed decode budget
@@ -672,13 +673,28 @@ baseline movements, never a refreshed baseline.
   `uv_loops::tests`, `brep::scan::tests` and `tests/uv_loops.rs` with
   `brep-unknown-closure-cylinder.step`, `brep-cut-sphere.step` and
   `brep-pinched-pocket.step`.
-- **22.5 Opt-in sewing and orientation repair.** 123 `OpenShell`, 38 `BrokenWire`
-  and 35 `InconsistentOrientation` roots. Strict rejection stays the default. Add an
-  explicit, tolerance-bounded repair stage that sews coincident edges and vertices,
-  reorients shells and classifies disconnected `CLOSED_SHELL`s apart from other open
-  shells; every repair is counted in the result and shown in the corpus report.
-  Most of these roots are synthetic `dodgy-step-files`; acceptance is measured on
-  the exporter files and on authored fixtures for each repair.
+- **22.5 Opt-in sewing and orientation repair — delivered 2026-10-09.** 123 `OpenShell`,
+  38 `BrokenWire` and 35 `InconsistentOrientation` roots. Strict rejection stays the
+  default and its outcomes are unchanged; a disconnected `CLOSED_SHELL` (faces sharing
+  no edge or vertex) now fails as `UnsewnShell` (29 of the 123 roots). The repair stage
+  is `tessstep_topology::{plan_sewing, orient_faces, diagnose_gap}` on raw B-reps, run
+  by the curved, planar and faceted importers when `ImportOptions::repair`
+  (`RepairOptions { sew, orient, sewing_factor }`, off by default, sewing tolerance ten
+  times the model tolerance) asks for it: coincident boundary vertices and free edges
+  merge without moving any coordinate (the sewn model is checked at the model tolerance
+  plus the largest merge distance), faces flip into a consistent orientation, faces
+  whose loops run against their surface are reversed when the trimmer then accepts
+  them, and closed solid shells are reversed by the sign of a coarse tessellation's
+  volume. `ImportedSolid::repairs()` counts every edit (`RepairReport`); a shell that
+  sewing cannot close fails with its classification and the distance it would need.
+  The survey and corpus runner take `--repair` / `--geometry-repair`; the repair-on
+  survey meshes 642 of 1,197 roots (strict 577): 59 synthetic roots and six OpenCASCADE
+  exporter roots (four `BREP_WITH_VOIDS` whose cavity shells face out of their
+  cavities, an inside-out shell and a face whose loop runs against its surface).
+  T-junctions, partial overlaps, missing faces and single reversed edges in consistent
+  loops are not repaired; C/C++ exposure of the option is a follow-up of 22.10.
+  Evidence: `tests/repair.rs` in `tessstep-topology` and `tessstep-import`, ten
+  generated fixtures (`repair_fixtures.py`), [VALIDATION.md](VALIDATION.md).
 - **22.6 Surface models as shell meshes — delivered 2026-10-09.** `SHELL_BASED_SURFACE_MODEL` (4,127 roots,
   2,539 in 108 OpenCASCADE files) imports as open or closed shell meshes through
   `tessellate_shell`, reported as shells and never as solids. The corpus runner

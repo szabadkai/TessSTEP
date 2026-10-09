@@ -1,6 +1,7 @@
 //! Edge-based B-rep solids with elementary, B-spline and swept geometry.
 mod scan;
 mod sphere;
+mod sewing;
 mod supplied;
 mod surface_model;
 mod swept;
@@ -65,9 +66,10 @@ pub struct Adaptations {
 /// pcurves) are counted in [`ImportedSolid::adaptations`]; none changes geometry.
 ///
 /// `angle` scales plane-angle measures (cone semi-angles and conic and surface
-/// parameters of supplied pcurves). No coordinate welding, healing or unit inference
-/// is performed. ORIENTED_EDGE endpoint slots must be `*`, or `$` unless
-/// `options.strict`.
+/// parameters of supplied pcurves). No unit inference is performed, and no topology is
+/// merged or reoriented unless `options.repair` enables the opt-in repair stage, whose
+/// edits are counted in [`ImportedSolid::repairs`]. ORIENTED_EDGE endpoint slots must
+/// be `*`, or `$` unless `options.strict`.
 pub fn import_brep_solid(
     document: &Document,
     root: EntityId,
@@ -1247,8 +1249,10 @@ impl Builder {
         options: ImportOptions,
         closed: Option<Vec<bool>>,
     ) -> Result<ImportedSolid, Error> {
-        let tolerance = c.tolerance.distance().as_metres();
         let mut faces = std::mem::take(&mut self.faces);
+        // Opt-in sewing first: it may grow the working tolerance by its merge distance.
+        let repairs = self.sew(c, &mut faces, root, options)?;
+        let tolerance = c.tolerance.distance().as_metres();
         self.collapse_slivers(c, &mut faces, tolerance)?;
         // Plan every face; annular faces without aligned seam vertices request edge
         // splits, which are applied to all faces before planning again.
@@ -1354,26 +1358,13 @@ impl Builder {
             });
         }
         let raw = std::mem::take(&mut c.raw);
-        let brep = raw
-            .validate(
-                c.tolerance,
-                ValidationLimits {
-                    max_records: options.max_records,
-                    max_work: options.max_work,
-                },
-            )
-            .map_err(|e| Error {
-                kind: if e.defect == Defect::ResourceLimit {
-                    ErrorKind::ResourceLimit
-                } else {
-                    ErrorKind::InvalidGeometry
-                },
-                stage: Stage::Topology,
-                entity: Some(root),
-                source: c.decoded.document().entities().get(root).map(|e| e.source),
-                message: e.to_string(),
-            })?
-            .normalize();
+        let locator = crate::repair::Locator {
+            document: c.decoded.document(),
+            root,
+            edges: self.edges.iter().map(|e| e.entity).collect(),
+            vertices: Vec::new(),
+        };
+        let (brep, repairs) = crate::repair::finish(raw, c.tolerance, options, repairs, &locator)?;
         Ok(ImportedSolid {
             brep,
             faces: face_entities,
@@ -1388,6 +1379,7 @@ impl Builder {
                 edges: self.edges.iter().map(|e| e.entity).collect(),
                 vertices: std::mem::take(&mut c.point_entities),
             },
+            repairs,
         })
     }
 }

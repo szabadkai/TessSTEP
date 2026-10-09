@@ -1,4 +1,4 @@
-//! Usage: cargo run -p tessstep-import --example survey -- [--max-work=N] [--max-records=N] FILE METRES_PER_UNIT [MAX_ROOTS]
+//! Usage: cargo run -p tessstep-import --example survey -- [--max-work=N] [--max-records=N] [--repair] FILE METRES_PER_UNIT [MAX_ROOTS]
 //! Imports every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the
 //! matching selected-root profile, every shape tessellation root with the existing
 //! tessellation profile, and every tessellated annotation occurrence with the
@@ -14,6 +14,10 @@
 //! explicitly, and the output records the budgets used.
 //! SHELL_BASED_SURFACE_MODEL roots are a separate `surface_models` class (bounded by
 //! MAX_ROOTS on their own), each shell meshed as a shell, never as a solid.
+
+//! explicitly, and the output records the budgets used. `--repair` enables the opt-in
+//! sewing and orientation repair (`RepairOptions::enabled`) and reports each solid
+//! root's repair counts; the default survey is strict.
 #![forbid(unsafe_code)]
 use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
 use tessstep_import::*;
@@ -29,10 +33,12 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let (mut max_work, mut max_records) = (None, None);
+    let (mut max_work, mut max_records, mut repair) = (None, None, false);
     let mut args = vec![String::new()];
     for arg in std::env::args().skip(1) {
-        if let Some(value) = arg.strip_prefix("--max-work=") {
+        if arg == "--repair" {
+            repair = true;
+        } else if let Some(value) = arg.strip_prefix("--max-work=") {
             max_work = Some(value.parse::<usize>()?);
         } else if let Some(value) = arg.strip_prefix("--max-records=") {
             max_records = Some(value.parse::<usize>()?);
@@ -42,7 +48,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if !(3..=4).contains(&args.len()) {
         return Err(
-            "usage: survey [--max-work=N] [--max-records=N] FILE METRES_PER_UNIT [MAX_ROOTS]"
+            "usage: survey [--max-work=N] [--max-records=N] [--repair] FILE METRES_PER_UNIT [MAX_ROOTS]"
                 .into(),
         );
     }
@@ -70,6 +76,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(max_records) = max_records {
         options.max_records = max_records;
+    }
+    if repair {
+        options.repair = RepairOptions::enabled();
+        out.push_str(",\"repair\":true");
     }
     write!(
         out,
@@ -148,6 +158,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         };
         // Chord 1e-3 of the solid's vertex bounding-box diagonal, within 1e-6..1e-3 m.
         let mut chord = 1e-6;
+        let repairs = imported.as_ref().ok().map(ImportedSolid::repairs);
         let result = imported.and_then(|solid| {
             let mut lo = [f64::INFINITY; 3];
             let mut hi = [f64::NEG_INFINITY; 3];
@@ -191,6 +202,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => failure(&mut out, &doc, &e, true)?,
         }
         write!(out, ",\"chord_m\":{chord:e}")?;
+        if repair {
+            let r = repairs.unwrap_or_default();
+            write!(
+                out,
+                ",\"repairs\":{{\"merged_vertices\":{},\"merged_edges\":{},\"max_merge_distance_m\":{:e},\"disconnected_shells\":{},\"flipped_faces\":{},\"reversed_loops\":{},\"reoriented_shells\":{},\"undecided_shells\":{}}}",
+                r.merged_vertices,
+                r.merged_edges,
+                r.max_merge_distance,
+                r.disconnected_shells,
+                r.flipped_faces,
+                r.reversed_loops,
+                r.reoriented_shells,
+                r.undecided_shells
+            )?;
+        }
         closure(&mut out, &doc, id)?;
         write!(out, ",\"seconds\":{:.6}}}", started.elapsed().as_secs_f64())?;
     }

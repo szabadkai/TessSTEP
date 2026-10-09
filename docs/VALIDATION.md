@@ -258,6 +258,77 @@ boundary that is simple at floating-point resolution; `bug24593_281946` #50,
 `nist_ctc_04_asme1_ap203` #1250). No root lost its mesh or an accepted stage, and no
 category reads `coedge: None` any more. The baseline was not refreshed.
 
+# Milestone 22.5: opt-in sewing and orientation repair — 2026-10-09
+
+Delivered: the `UnsewnShell` topology defect for disconnected closed shells; the repair
+stage in `tessstep_topology` (`plan_sewing`, `SewPlan::apply`, `orient_faces`,
+`diagnose_gap`); `ImportOptions::repair` (`RepairOptions { sew, orient, sewing_factor }`,
+off by default) in the curved, planar and faceted importers, with loop reversal and
+outward shell orientation after validation; `ImportedSolid::repairs()`
+(`RepairReport`); `brep --repair`, `survey --repair` and `corpus.py --geometry-repair`;
+ten generated fixtures (`corpus/geometry/repair_fixtures.py`). See
+[TOPOLOGY.md](TOPOLOGY.md#opt-in-repair) and
+[CURVED_IMPORT.md](CURVED_IMPORT.md#opt-in-topology-repair).
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | 280 passed, including `tests/repair.rs` in `tessstep-topology` (6) and `tessstep-import` (7) |
+| fmt, Clippy (`-D warnings`, all targets and features), `cargo doc` (`-D warnings`) | passed |
+| `check_geometry.py --require-external` | 104 reviewed outcomes passed: the ten repair fixtures strictly (each rejected, with its strict diagnostic) and with `--repair` (counts, stages, volumes, gap diagnostics), the inverted-cavity fixture repaired |
+| `check_metamorphic.py`, `check_architecture.py`, `conformance.py --check`, script unit tests (48) | passed |
+| `check_capi.py --library-dir target/release` | passed (the C imports keep repair off; no ABI change) |
+| `corpus.py --check` with the AP validator (strict) | 3,227 compatible, no baseline change; 577 meshed, 745 passing geometry/topology, as in the baseline |
+| `corpus.py --check --geometry-repair` (separate output) | 3,227 compatible, 60 changed inputs, no regression; 642 meshed, 800 passing geometry/topology |
+
+Strict classification: the 123 `OpenShell` roots of the baseline now split into 94
+`OpenShell` and 29 `UnsewnShell` (all in `dodgy-step-files`: the generator's cubes whose
+six faces own their vertices and edges, Pf008/Pf009/Pf017/Pf033 coplanar face grids,
+Tsh066, Tfa024/100/245, A102, P023). No other message, stage or count moved; the
+baseline stores no messages, so `--check` reports no change.
+
+Repair-on survey by strict failure class (roots in per-file details; the meshed totals
+come from per-file counts):
+
+| Source | Strict outcome | Roots | Repair-on outcome |
+| --- | --- | ---: | --- |
+| dodgy-step-files | `InconsistentOrientation` | 29 | meshed |
+| | | 2 | `DisconnectedShell` (two cubes in one shell) |
+| | | 2 | polygon `SelfIntersection` at tessellation |
+| | | 1 | `OpenShell` with its gap distance |
+| | `UnsewnShell` | 18 | meshed (sewn: 16 vertices and 12 edges per cube) |
+| | | 8 | `OpenShell` with the gap distance (sewn face grids that are open sheets) |
+| | | 3 | `UnsewnShell` with the gap distance (faces apart beyond the tolerance) |
+| | `OpenShell` | 5 | meshed |
+| | trim `WrongOrientation` | 7 | meshed (loops reversed) |
+| | `BrokenWire` | 1 | `UnsewnShell` with its gap distance |
+| opencascade-dataset | `CavityOrientation` | 4 | meshed: `brep_wv1.stp` #935, `tr8_bv1_db.stp` #935, `tr8_bv1_sy.stp` #486, `tr8_bv1_tc.stp` #461 (two cavity shells each reversed) |
+| | `NonPositiveVolume` | 1 | meshed: `PRO7071.stp` #213 (inside-out shell reversed) |
+| | `InconsistentOrientation` | 1 | meshed: `ec_exhaust-A.stp` #2632 (one face whose loop ran against its surface) |
+| nist-pmi | trim `WrongOrientation` | 2 | still rejected: `nist_ftc_06_asme1_rd.stp` #101 reverses two faces and then fails `UnresolvedTolerance` on another (22.2); `nist_stc_06_asme1_ap242-e3.stp` #4078 reverses two faces, and face #7's reversal is not accepted by the trimmer |
+
+Meshed roots: +59 in `dodgy-step-files`, +6 in `opencascade-dataset`, none in
+`nist-pmi`, `stepcode` or `foxtrot`; no root lost. The remaining 37 `BrokenWire` roots
+are not duplicates (their breaks are 0.12 mm to 1 m apart, typically a reversed edge in
+a loop) and now name that distance; the remaining open shells are genuinely open
+(missing faces, open sheets, `bug28414_bug_toroidal_surface.stp` #472, a single torus
+face whose free edges are 9.5 mm apart) or hold coincident free edges that cannot be
+paired (three or more, or within one face). `Tsh005.stp`, a cube with one vertex
+written 1.1 µm off, is rejected with `needs 1.100e-6 m; sewing tolerance 1.000e-6 m`. Repair totals: 288 merged vertices and 288
+merged edges, all at distance zero (18 disconnected shells), 83 flipped faces, 243
+faces with reversed loops, 57 reoriented shells; 112 shells were undecided (their coarse
+tessellation failed, mostly roots that also fail or exhaust budgets at tessellation). The
+repair-on survey took 758 s against 539 s strict.
+
+Review notes. A first repair-on run reported 31 strict `BrokenWire` roots as
+non-orientable shells: an orientation conflict found before validation hid the earlier
+defect. A non-orientable shell is now reported only when validation itself fails on
+orientation. The same run moved 51 roots from topology to a trim `WrongOrientation`:
+their faces' loops run against their surfaces (the synthetic cubes write every loop
+clockwise about its outward normal), which face flips cannot fix; the loop reversal
+pass meshes them. Its first outward-orientation rule (four chords times the curved
+area) left 78 meshed roots undecided, for example an exporter rod 10 m long and 12 mm
+in radius; the deviation is now measured per triangle.
+
 # Milestone 22.1: named budgets and document-sized import defaults — 2026-09-27
 
 Delivered: every parse, decode, adapter, discovery, assembly, style, pcurve and mesh
