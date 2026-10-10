@@ -5,6 +5,10 @@ independent of the package version; see [docs/C_API.md](docs/C_API.md). Each rel
 corpus compatibility record is `corpus/baseline.json` at its tag; see
 [docs/VALIDATION.md](docs/VALIDATION.md) for the reviewed totals.
 
+## Unreleased
+
+Parity work against HOOPS Exchange on the PreForm CAD collection.
+
 ## 1.0.0 — 2026-10-10
 
 Milestone 22, industrial hardening; see [docs/ROADMAP.md](docs/ROADMAP.md) and the
