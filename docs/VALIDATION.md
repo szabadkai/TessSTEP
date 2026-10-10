@@ -1,3 +1,21 @@
+# Milestone 22.11: CI and the 1.0.0 release workflow — 2026-10-10
+
+`main` at 86f2536 was pushed with the maintainer's approval. CI run 38025959160
+passed every job: build and test on ubuntu-24.04, windows-2022 and macos-15 (with the
+C/C++ sanitizer consumers on Linux and macOS and the distributable package smoke test),
+the Rust 1.85 MSRV build, dependency licenses and advisories, and the external corpus
+regression against the saved 1.0.0 baseline. The annotated tag `v1.0.0` (86f2536) then
+ran the Release workflow (run 38026639055): the tag/version check, the same CI verify,
+release-mode tests and packages for x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc,
+x86_64-apple-darwin and aarch64-apple-darwin, each installed and consumer-tested
+outside the source tree, and a draft GitHub release "TessSTEP v1.0.0" with the four
+archives (8.6–10.7 MB, now including the static library) and their SHA-256 files. The
+release log shows, for every target, exactly the 95 symbols of `abi/exports.txt`
+exported with no Rust exports, and the relocated installed-package consumers passing
+in Debug and Release with shared and static linkage. The 1.0.0 draft awaits the
+maintainer's publication. The `v0.1.0` pre-release draft (run 36303712652, reviewed on
+2026-10-02) was published as a GitHub pre-release on 2026-10-10.
+
 # Milestone 22.4 follow-up: triangulator failures — 2026-10-10
 
 Delivered on 42366af: a hole's bridge leaves the copy of a repeated polygon vertex

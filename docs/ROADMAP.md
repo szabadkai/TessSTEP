@@ -917,14 +917,17 @@ baseline movements, never a refreshed baseline.
   36303712652): the tag/version check, the full CI verify with the external corpus and
   the MSRV, release-mode tests, packages for Linux x86-64, Windows x86-64 and macOS Apple
   Silicon and Intel built and consumer-tested outside the source tree, and a draft
-  GitHub release holding the four archives and their SHA-256 files, reviewed and left
-  unpublished. The workspace, the CMake package and its consumers are now version 1.0.0
+  GitHub release holding the four archives and their SHA-256 files, reviewed and
+  published as a GitHub pre-release on 2026-10-10. The workspace, the CMake package and its consumers are now version 1.0.0
   (`find_package(TessSTEP 1.0)`), [CHANGELOG.md](../CHANGELOG.md) records 0.1.0 and
   1.0.0, and the ABI 1.0 export set is frozen (22.10, `abi/exports.txt`). The reviewed
   corpus baseline saved on 2026-10-10 is the 1.0.0 compatibility record
-  ([VALIDATION.md](VALIDATION.md)). Left to the maintainer, who owns the public
-  surface: pushing `main`, confirming CI is green on every target, and tagging `v1.0.0`,
-  which reruns the release gate and drafts the 1.0.0 release.
+  ([VALIDATION.md](VALIDATION.md)). With the maintainer's approval `main` was pushed
+  (CI run 38025959160 green on every target) and `v1.0.0` tagged at 86f2536; its
+  Release workflow (run 38026639055) passed and drafted the 1.0.0 release with the four
+  archives and their checksums; on every target the package exports exactly the 95
+  ABI 1.0 symbols and its installed consumers pass (shared and static, Debug and
+  Release). Publishing the 1.0.0 draft is the maintainer's step.
 
 Decision to record here before v1.0: EXPRESS rules, functions and WHERE clauses stay
 unevaluated, so v1.0 claims structural AP242/AP214/AP203 coverage and no AP
@@ -954,7 +957,10 @@ export set is frozen with the installed-package consumer tests passing. The 27 r
 whose triangulation ended in an unlocated `Polygon(UnresolvedGeometry)` were resolved
 by the 22.4 follow-up: 20 mesh, 7 fail later with named errors, and no root fails on
 an unclassified polygon error. The pinned Onshape exporter file moved to post-1.0
-(decided 2026-10-10). Open until `main` is pushed: CI on every target.
+(decided 2026-10-10). CI is green on every target for the pushed `main` (run
+38025959160: Linux, macOS and Windows builds and tests, the MSRV, dependency policy
+and the external corpus), and the `v1.0.0` tag's Release workflow passed (run
+38026639055), drafting the 1.0.0 release with its four archives for review.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
