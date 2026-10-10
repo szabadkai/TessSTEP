@@ -609,3 +609,102 @@ fn boundary_passes_reuse_evaluations_and_threads_change_nothing() {
         );
     }
 }
+
+/// A fillet ring: the torus band v in [v0, v1] around the whole axis, bounded by
+/// the circles at both ends and one seam use per side.
+fn torus_band_between(major: f64, minor: f64, [v0, v1]: [f64; 2]) -> RawBrep {
+    let at = |v: f64| [major + minor * v.cos(), 0., minor * v.sin()];
+    let mut r = RawBrep {
+        vertices: vec![
+            Vertex {
+                position: Point::new(at(v0)).unwrap(),
+            },
+            Vertex {
+                position: Point::new(at(v1)).unwrap(),
+            },
+        ],
+        ..Default::default()
+    };
+    let circle = |frame, radius| {
+        CurveGeometry::Analytic(Curve::circle(frame, Length::metres(radius).unwrap()).unwrap())
+    };
+    let ring = |v: f64| {
+        circle(
+            frame3([0., 0., minor * v.sin()], [1., 0., 0.], [0., 1., 0.]),
+            major + minor * v.cos(),
+        )
+    };
+    r.edges = vec![
+        Edge {
+            vertices: [VertexId(0); 2],
+            curve: ring(v0),
+            range: [0., TAU],
+        },
+        Edge {
+            vertices: [VertexId(1); 2],
+            curve: ring(v1),
+            range: [0., TAU],
+        },
+        Edge {
+            vertices: [VertexId(0), VertexId(1)],
+            curve: circle(frame3([major, 0., 0.], [1., 0., 0.], [0., 0., 1.]), minor),
+            range: [v0, v1],
+        },
+    ];
+    r.coedges = vec![
+        coedge(0, true, line2([0., v0], [1., 0.], [0., TAU])),
+        coedge(2, true, line2([TAU, 0.], [0., 1.], [v0, v1])),
+        coedge(1, false, line2([0., v1], [1., 0.], [0., TAU])),
+        coedge(2, false, line2([0., 0.], [0., 1.], [v0, v1])),
+    ];
+    r.wires.push(Wire {
+        coedges: (0..4).map(CoedgeId).collect(),
+    });
+    r.faces.push(Face {
+        surface: SurfaceGeometry::Analytic(
+            Surface::torus(
+                frame3([0.; 3], [1., 0., 0.], [0., 1., 0.]),
+                Length::metres(major).unwrap(),
+                Length::metres(minor).unwrap(),
+            )
+            .unwrap(),
+        ),
+        outer: WireId(0),
+        holes: vec![],
+        orientation: Orientation::Forward,
+    });
+    r
+}
+
+#[test]
+fn fillet_bands_converge_where_splits_walk_along_them() {
+    // Facets spanning two rows of these bands pass the 0.1 rad angle tolerance and
+    // facets spanning three fail, so a split that put a vertex between two rows made
+    // the next facet along the band fail: the refinement walked around the ring one
+    // facet per round and ran out of rounds. The proportions are those of the NIST
+    // FTC 11 fillets (30 mm by 1.5 mm, from the outer equator to a plane 0.425 mm
+    // above it) and the FTC 06 ones (0.575 in by 0.125 in, inner side from 140°).
+    const INCH: f64 = 0.0254;
+    let cases = [
+        (
+            30. * MM,
+            1.5 * MM,
+            [0., PI - (0.425_f64 / 1.5).asin()],
+            4.26e-5,
+        ),
+        (
+            0.575 * INCH,
+            0.125 * INCH,
+            [(-23. / 30_f64).acos(), PI],
+            4.05e-4,
+        ),
+    ];
+    for (major, minor, range, chord) in cases {
+        let n = normalize(torus_band_between(major, minor, range));
+        let t = tol(chord, 0.1);
+        let mesh = tessellate_faces(&n, &[FaceId(0)], t, TessellationOptions::default()).unwrap();
+        verify_within(&mesh, &n, t, 1.05);
+        let again = tessellate_faces(&n, &[FaceId(0)], t, TessellationOptions::default()).unwrap();
+        assert_eq!(mesh.data().positions, again.data().positions);
+    }
+}

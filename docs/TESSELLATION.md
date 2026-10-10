@@ -53,6 +53,21 @@ reject a 5 µm edge or samples refined closer than it. A failure is
 `BoundaryError::Resolution` and names the coedges involved (for example a coarse chord
 of one edge crossing a nearby edge).
 
+Since the trim reconstruction has already validated the loops at the model tolerance,
+such a failure in `tessellate_faces` means a chord cuts across a nearby edge, and the
+face requests a boundary refinement instead of failing: of each pair of the named
+coedges' segments that cross or come within the resolution (neighbours in the loop
+apart), the longer chord is split at its edge-parameter midpoint for the next
+boundary pass. The longer chord is the one that cuts across; splitting both would
+chase a pair of tangent edges toward their common vertex. A face does this in at most
+8 passes and then reports the check's failure as before, and loops that the trim
+reconstruction rejects (edges that actually cross) still fail there. The NIST CTC 04
+sphere face #14302 is such a case: its B-spline edge #14293 ends with a hook a few
+µm long whose last control leg lies along the tangent of the arc #13914 at their
+vertex #13908, so the two edges meet tangentially, and the B-spline is sampled at
+its dense knots right beside the vertex while the arc's first chord cut across them.
+One refinement pass meshes it.
+
 ## Bounds and limitations
 
 Logical output/evaluation limits and a depth ceiling of 48 fail explicitly without
@@ -194,6 +209,21 @@ boundary leaves failing (requests used to trickle in a few per pass until the pa
 limit). Facets beside an already requested segment would otherwise keep splitting
 into slivers along it, hence the second condition. Within a face, a facet that passed
 is not probed again in later rounds: its corners determine every probe.
+
+Splitting an edge also splits the facet beyond it, which may have passed. On a fillet
+band whose normal turns just under the angle tolerance across two rows of the
+curvature metric, facets spanning two rows pass and facets spanning three fail, so a
+vertex placed between two rows makes the next facet along the band fail, its split
+the next one, and the refinement walks around the ring one facet per round until it
+runs out of rounds (the NIST FTC 06 and FTC 11 torus fillets walked 0.049 rad and
+0.0245 rad per round on rings of 2π; a CTC 02 B-spline fillet does so at a 0.1 mm
+chord). A face whose refinement runs out of rounds is
+therefore refined again from the start with split closure, and keeps it in later
+passes: within each round, the pieces of facets that passed and were split for a
+neighbour are tested at once and split again while they fail, so the walk completes
+in the round; pieces of failing facets still wait for the next round's flips (closing
+those too would split the coarse initial triangulation into slivers). Faces that
+converge within the rounds are meshed exactly as before.
 
 Nothing is evaluated or tested twice when the answer is already known, and each
 reuse returns exactly what repeating the work would, so meshes are unchanged:

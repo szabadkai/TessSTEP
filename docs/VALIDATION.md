@@ -1,3 +1,85 @@
+# HOOPS parity: refinement walks on fillet bands and tangent boundary chords — 2026-10-10
+
+Eight PreForm CAD collection files failed tessellation where HOOPS Exchange meshes a
+closed body. In `nist_ftc_06_asme1_rd`/`_ap242-e2` and `nist_ftc_11_asme1_rb`/`_ap242-e2`
+(all four also in the corpus's NIST PMI set), one face ran out of the 32 refinement rounds.
+The same happened to the three `nist_ctc_02` variants on the assembly path's fixed
+0.1 mm chord. In `nist_ctc_04_asme1_ap242-e1`, face #14302 failed the mesh-boundary
+resolution check as "tangent edges at a vertex".
+
+**Round exhaustion is a walk, not a cycle.** The faces are torus fillets: FTC 11 face
+#175 (R 30 mm, r 1.5 mm, from the outer equator to v = 163.5°) and FTC 06 face #366
+(R 0.575 in, r 0.125 in, inner side from 140° to 180°). CTC 02 face #1473 is a rational
+degree 3 × 2 B-spline fillet. In the last rounds, one facet per walk front fails, always
+at a corner, by 0.1015–0.1202 rad against the 0.1 rad tolerance. Its corners lie on
+three successive rows of the band (v = 2.854, 2.765 and 2.676 on FTC 11). Facets spanning
+two rows pass, because the normal turns just under the tolerance across them. Splitting
+the failing facet's longest edge, across the band, puts a vertex between two rows.
+After the flips, the facet beyond it spans three rows and fails in the next round.
+So the refinement walked around the ring one facet per round: 0.0245 rad per round on
+FTC 11, which would need about 250 rounds for 2π, and two opposite walks of 0.049 rad per
+round on FTC 06. No metric or flip cycle repeats a state, and no singularity is
+involved: facets spanning one row pass. A face that runs out of rounds is now refined
+again from the start with split closure, and keeps closure in later passes. In closure
+mode, the pieces of facets that passed and were split for a neighbour are tested at
+once within the round, and split again while they fail. Closing every piece also split
+the coarse initial triangulation into slivers: FTC 11 face #175 exceeded the 100,000
+vertices of `planar.max_vertices` in round 0. Pieces of failing facets therefore still
+wait for the next round's flips. Faces that converge within their rounds are never
+retried, so their meshes are unchanged. FTC 06 and FTC 11 now mesh in 32,674–35,566
+triangles.
+
+**The CTC 04 edges are tangent in the input.** Face #14302 lies on a 5 mm sphere.
+Its arc #13914 and B-spline #14293 meet at vertex #13908. Away from the vertex, the
+B-spline (352 control points) follows the great circle in y = 337.18 mm, which crosses
+the arc at 18.7°. Its last control leg, from (−149.0057, 337.1787) to (−149.0000,
+337.1768) mm, lies along the arc's tangent (0.947, −0.321, 0). The last few µm of the
+B-spline therefore form a hook that ends tangent to the arc. The trim reconstruction
+accepts the loop at the model tolerance. At mesh resolution, though, the B-spline is
+sampled at its dense knots beside the vertex, and the arc's first chord (the quarter
+arc has 8 samples) crosses segment 186 of the B-spline. Since trimming already validates
+the loops, a resolution failure in `tessellate_faces` now requests a boundary refinement:
+the longer chord of each crossing pair is split at its edge-parameter midpoint, for up to
+8 passes, after which the failure is reported as before. Splitting both chords chased the
+pair toward the vertex: over eight passes the arc's request crept from parameter 1.5585 to
+1.5700, against the vertex's π/2, without resolving. Splitting only the longer chord meshes the face in one
+pass. Edges that actually cross are still rejected by the trim reconstruction.
+
+| File (PreForm collection) | Before | Survey now (mm³) | HOOPS (mm³) | Δ |
+| --- | --- | ---: | ---: | ---: |
+| `nist_ftc_06_asme1_ap242-e2.stp` | `max_rounds`, face 1 | 3,322,600.7 | 3,323,492.0 | −0.027 % |
+| `nist_ftc_06_asme1_rd.stp` | `max_rounds`, face 104 | 3,322,666.3 | 3,323,482.2 | −0.025 % |
+| `nist_ftc_11_asme1_ap242-e2.stp` | `max_rounds`, face 4 | 5,128.28 | 5,131.12 | −0.055 % |
+| `nist_ftc_11_asme1_rb.stp` | `max_rounds`, face 4 | 5,123.23 | 5,125.29 | −0.040 % |
+| `nist_ctc_04_asme1_ap242-e1.stp` | tangent edges, face #14302 | 17,520,897.9 | 17,519,939.2 | +0.005 % |
+
+The CTC 04 siblings mesh at 17,520,405.6 mm³ (AP203) and 17,520,200.5 mm³ (`rd`), so the
+spread is 0.004 %. On the assembly path (`assembly --meshes AP242`, 0.1 mm chord), the
+`nist_ctc_02` files now place their root. The AP203 file meshes at 47,105,888 mm³ against
+HOOPS 47,101,979 (+0.008 %), and `ap242-e2` at 47,110,452 against 47,107,226 (+0.007 %).
+`rc` meshes at 47,105,425; its HOOPS mesh is open (384 boundary edges, 48,297,787 mm³).
+The five files above place within 0.06 % of HOOPS on that path too. Of the collection's
+54 files, 49 now mesh every root in the survey (44 before), and the other 49 survey
+results are identical to main's. On the assembly path, only `nist_stc_06` and
+`nist_stc_07` still fail to import (UV trimming: wrong orientation; a non-contractible
+loop), and the three parser rejections remain.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | passed (92 test binaries, 353 tests), including `fillet_bands_converge_where_splits_walk_along_them` (both band shapes fail with `max_rounds` without the retry) and `chords_crossing_a_tangent_edge_are_refined` (a planar horn whose arc chord crosses a tangent B-spline meshes; a variant whose spline crosses the arc still fails in trimming) |
+| fmt, Clippy (`-D warnings`, all targets and features), `cargo doc` (`-D warnings`) | passed |
+| `check_architecture.py`, `check_geometry.py` (125 outcomes), `check_metamorphic.py`, `check_product.py`, `check_corpus.py`, `conformance.py --check`, script unit tests | passed |
+| `check_capi.py --library-dir target/release` (no sanitizers) | passed; the C ABI is unchanged |
+| `corpus.py --check`, shared AP validator, saved 1.0.0 baseline | 3,227 compatible, no regressions, 270 s; 11 inputs changed (8 below, and the 3 product-stage changes of the keycaps work) |
+
+Reviewed corpus movements, per root, against a run of `90c06b6` (baseline not saved):
+9 roots move from `tessellation:invalid_geometry` to accepted and none move the other
+way. The 1,456 roots accepted by both runs have identical vertex counts, triangle counts
+and volumes. Seven of the nine had exhausted `max_rounds`: the four NIST FTC roots above,
+`bug31685_2.stp` #8084 (an FTC 06 copy), `trj6_pm4-ec-203.stp` #803 and `bug33261.stp`
+#46406. Two had tangent-edge resolution failures: CTC 04 and `bug33261.stp` #23856
+(face #13310). No `max_rounds` failure remains in the corpus.
+
 # HOOPS parity: the Shapr3D keycaps assembly — 2026-10-10
 
 `samples/keycaps.step` of the PreForm CAD collection (a Shapr3D AP242 export written by

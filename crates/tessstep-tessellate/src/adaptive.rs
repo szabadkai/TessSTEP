@@ -8,7 +8,7 @@ use tessstep_math::{Direction3, ModelSpace, NumericalTolerance, Point3, Tessella
 use tessstep_mesh::{Mesh, MeshData};
 use tessstep_surfaces::{AxisDomain, Evaluation};
 use tessstep_topology::{
-    EdgeId, FaceId, NormalizedBrep, ShellId, SolidId, SurfaceGeometry, VertexId,
+    CoedgeId, EdgeId, FaceId, NormalizedBrep, RawBrep, ShellId, SolidId, SurfaceGeometry, VertexId,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -228,6 +228,127 @@ struct Probes {
 struct FaceMemory {
     jets: BTreeMap<[u64; 2], Evaluation<ModelSpace>>,
     passed: BTreeSet<[[u64; 2]; 3]>,
+    closure: bool,
+    crossings: usize,
+}
+/// Boundary passes in which one face may refine chords that its resolution check
+/// found crossing; the check's failure is reported after that.
+const CROSSING_PASSES: usize = 8;
+/// Pairs of polygon segments a crossing search tests at most.
+const CROSSING_PAIRS: usize = 4_000_000;
+/// The chords to refine when the mesh boundary fails its resolution check: segments
+/// of the two coedges the failure names that cross or come within `eps` of each
+/// other, other than neighbours in their loop. Of each such pair the longer chord is
+/// split at its edge-parameter midpoint: it is the one that cuts across the other
+/// edge (a coarse chord beside a finely sampled edge that is tangent at their common
+/// vertex); refining both would chase the pair toward the vertex. Empty when the
+/// failure names no pair, nothing is found or the search would be too large.
+fn crossings(
+    raw: &RawBrep,
+    boundary: &crate::FaceBoundary<'_>,
+    error: &tessstep_trim::Error,
+    eps: f64,
+    work: &mut Work,
+) -> Result<Vec<(EdgeId, f64)>, Failure> {
+    let (Some(a), Some(b)) = (error.coedge, error.other) else {
+        return Ok(Vec::new());
+    };
+    struct Segment {
+        coedge: CoedgeId,
+        edge: EdgeId,
+        // Loop and position in the polygon the check validated.
+        at: (usize, usize),
+        points: [[f64; 2]; 2],
+        parameters: [f64; 2],
+    }
+    // The checked polygons take each use's samples but its last, so a use's last
+    // segment ends at the next use's first sample.
+    let mut segments = Vec::new();
+    let mut lengths = Vec::new();
+    for (l, uses) in std::iter::once(&boundary.outer)
+        .chain(&boundary.holes)
+        .enumerate()
+    {
+        let mut index = 0;
+        for (k, u) in uses.iter().enumerate() {
+            let next = uses[(k + 1) % uses.len()].samples[0].uv;
+            let n = u.samples.len();
+            for (j, w) in u.samples.windows(2).enumerate() {
+                if u.coedge == a || u.coedge == b {
+                    segments.push(Segment {
+                        coedge: u.coedge,
+                        edge: raw.coedges[u.coedge.0].edge,
+                        at: (l, index),
+                        points: [w[0].uv, if j + 2 == n { next } else { w[1].uv }],
+                        parameters: [w[0].edge_sample.parameter, w[1].edge_sample.parameter],
+                    });
+                }
+                index += 1;
+            }
+        }
+        lengths.push(index);
+    }
+    let first: Vec<&Segment> = segments.iter().filter(|s| s.coedge == a).collect();
+    let second: Vec<&Segment> = segments.iter().filter(|s| s.coedge == b).collect();
+    // A search larger than its bound or the work left reports the check's failure.
+    let pairs = first.len().saturating_mul(second.len());
+    if pairs > CROSSING_PAIRS || pairs > work.remaining {
+        return Ok(Vec::new());
+    }
+    work.charge(pairs)?;
+    let orient = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
+        (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    };
+    let distance = |p: [f64; 2], [a, b]: [[f64; 2]; 2]| {
+        let d = [b[0] - a[0], b[1] - a[1]];
+        let n = d[0] * d[0] + d[1] * d[1];
+        let t = if n > 0. {
+            (((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / n).clamp(0., 1.)
+        } else {
+            0.
+        };
+        (p[0] - a[0] - t * d[0]).hypot(p[1] - a[1] - t * d[1])
+    };
+    let length = |[p, q]: [[f64; 2]; 2]| (q[0] - p[0]).hypot(q[1] - p[1]);
+    let mut out = BTreeSet::new();
+    for s in &first {
+        for t in &second {
+            let (l, i) = s.at;
+            let neighbours = l == t.at.0 && {
+                let n = lengths[l];
+                let j = t.at.1;
+                i == j || (i + 1) % n == j || (j + 1) % n == i
+            };
+            if neighbours {
+                continue;
+            }
+            let [p, q] = s.points;
+            let [r, w] = t.points;
+            let crossing = (orient(p, q, r) > 0.) != (orient(p, q, w) > 0.)
+                && (orient(r, w, p) > 0.) != (orient(r, w, q) > 0.);
+            let near = distance(r, s.points)
+                .min(distance(w, s.points))
+                .min(distance(p, t.points))
+                .min(distance(q, t.points))
+                <= eps;
+            if crossing || near {
+                let longer = if length(s.points) >= length(t.points) {
+                    s
+                } else {
+                    t
+                };
+                let [t0, t1] = longer.parameters;
+                let mid = t0 + (t1 - t0) * 0.5;
+                if mid != t0 && mid != t1 {
+                    out.insert((longer.edge, mid.to_bits()));
+                }
+            }
+        }
+    }
+    Ok(out
+        .into_iter()
+        .map(|(e, t)| (e, f64::from_bits(t)))
+        .collect())
 }
 impl FaceMemory {
     /// A regular vertex at `uv`, evaluated once per face.
@@ -705,6 +826,9 @@ enum Outcome {
     Refine(Vec<(EdgeId, f64)>),
 }
 mod pole;
+/// Mesh one face for the current boundary pass. A face whose refinement runs out of
+/// rounds is refined again with split closure (see `refine_face`), and keeps it in
+/// later passes; faces that converge are meshed exactly as before.
 fn face_mesh(
     shared: &SharedEdges<'_>,
     face: FaceId,
@@ -713,10 +837,47 @@ fn face_mesh(
     memory: &mut FaceMemory,
     work: &mut Work,
 ) -> Result<Outcome, Failure> {
+    if !memory.closure {
+        match refine_face(shared, face, tolerance, options, memory, work, false) {
+            Err(Failure::UnresolvedTolerance)
+                if work.exhausted == budget("max_rounds", options.max_rounds) =>
+            {
+                memory.closure = true;
+                work.exhausted = None;
+            }
+            other => return other,
+        }
+    }
+    refine_face(shared, face, tolerance, options, memory, work, true)
+}
+/// Refinement rounds flip, test every triangle not known to pass, and split the
+/// longest edge of each failing one. Inserting a vertex on an edge also splits the
+/// facet beyond it, which may have passed: where facets spanning two rows of the
+/// curvature metric pass and those spanning three fail (a fillet band whose normal
+/// turns just under the angle tolerance across two rows), each such split makes the
+/// next facet along the band fail, so the refinement walks along the band one facet
+/// per round and runs out of rounds. With `closure` the pieces of facets that passed
+/// are tested again within the round and split while they fail, so the walk
+/// completes in one round; the pieces of failing facets still wait for the flips of
+/// the next round.
+#[allow(clippy::too_many_arguments)]
+fn refine_face(
+    shared: &SharedEdges<'_>,
+    face: FaceId,
+    tolerance: TessellationTolerance,
+    options: TessellationOptions,
+    memory: &mut FaceMemory,
+    work: &mut Work,
+    closure: bool,
+) -> Result<Outcome, Failure> {
     let raw = shared.brep.data();
     let surface = &raw.faces[face.0].surface;
-    let mapped = shared
-        .face_boundary(
+    let crate::MappedBoundary {
+        boundary: mapped,
+        eps,
+        checked,
+    } = shared
+        .mapped_boundary(
             face,
             options.planar.trim,
             options.planar.max_vertices.saturating_mul(2),
@@ -733,6 +894,21 @@ fn face_mesh(
             };
             Failure::Boundary(e)
         })?;
+    // The trim reconstruction has validated the loops at the model tolerance, so a
+    // polygon of edge samples that is not simple at floating-point resolution has a
+    // chord cutting across a nearby edge: refine it in the next boundary pass.
+    match checked {
+        Ok(()) => {}
+        Err(BoundaryError::Resolution(e)) if memory.crossings < CROSSING_PASSES => {
+            let requests = crossings(raw, &mapped, &e, eps, work)?;
+            if requests.is_empty() {
+                return Err(Failure::Boundary(BoundaryError::Resolution(e)));
+            }
+            memory.crossings += 1;
+            return Ok(Outcome::Refine(requests));
+        }
+        Err(e) => return Err(Failure::Boundary(e)),
+    }
     let sizing = sizing(&mapped, tolerance, shared.brep.model_tolerance())?;
     let mut vertices = Vec::new();
     let mut boundaries = Vec::new();
@@ -873,188 +1049,211 @@ fn face_mesh(
             &mut known,
             work,
         )?;
-        let mut split = BTreeSet::new();
-        let mut requests = Vec::new();
-        let mut folded = false;
-        for (slot, &tri) in triangles.iter().enumerate() {
-            work.charge(1)?;
-            if known[slot] {
-                continue;
-            }
-            // A facet that passed keeps passing: its corners determine every probe.
-            let corners = canonical(tri);
-            let chart = chart_key(&tri.map(|i| vertices[i as usize]));
-            if passed.contains(&corners) || chart.is_some_and(|c| memory.passed.contains(&c)) {
-                known[slot] = true;
-                continue;
-            }
-            if acceptable(
-                surface,
-                tri.map(|i| vertices[i as usize]),
-                tri,
-                tolerance,
-                resolution,
-                &mut probes,
-                work,
-            )? {
-                passed.insert(corners);
-                if let Some(c) = chart {
-                    memory.passed.insert(c);
-                }
-                known[slot] = true;
-                continue;
-            }
-            if let Some(request) = fold(tri.map(|i| vertices[i as usize]), &poles) {
-                requests.push(request);
-                folded = true;
-                continue;
-            }
-            let mut longest = (0., key(tri[0], tri[1]));
-            for k in 0..3 {
-                let length = edge_length(&vertices, sizing, tri[k], tri[(k + 1) % 3])?;
-                if length > longest.0 {
-                    longest = (length, key(tri[k], tri[(k + 1) % 3]));
-                }
-            }
-            // A ray from a pole that a boundary segment also runs along is refined on
-            // the boundary: its interior copies would otherwise split off a sliver.
-            let ray = ray(&vertices, longest.1.0, longest.1.1);
-            if let Some(&request) = constraints
-                .get(&longest.1)
-                .or_else(|| ray.and_then(|r| boundary_rays.get(&r)))
-            {
-                requests.push(request);
-            } else {
-                split.insert(longest.1);
-            }
-        }
-        // Boundary requests wait until the interior has converged or no further
-        // boundary segment is requested, so that one boundary pass resolves every
-        // facet the coarse boundary leaves failing; facets beside a requested segment
-        // would otherwise keep splitting into slivers along it. A folded fan only
-        // arises in the initial triangulation, but splits of its neighbours would
-        // propagate the fold, so it restarts the pass at once.
-        let now: BTreeSet<(EdgeId, u64)> = requests.iter().map(|r| (r.0, r.1.to_bits())).collect();
-        let settled = !now.is_empty() && now == requested;
-        requested = now;
-        if split.is_empty() || round == options.max_rounds || folded || settled {
-            if !requests.is_empty() {
-                return Ok(Outcome::Refine(requests));
-            }
-            if split.is_empty() {
-                return finish(surface, vertices, triangles, work).map(Outcome::Complete);
-            }
-            work.exhausted = budget("max_rounds", options.max_rounds);
-            return Err(Failure::UnresolvedTolerance);
-        }
-        let mut midpoints = BTreeMap::new();
-        // Edges from different copies of one pole to the same vertex are one 3D edge
-        // (the pole's ray to that vertex), split at one shared midpoint.
-        let mut rays = BTreeMap::new();
-        // Each requested midpoint is shared by every incident triangle, preventing T-junctions.
-        for (a, b) in split {
-            let ray = ray(&vertices, a, b);
-            if let Some(&m) = ray.and_then(|r| rays.get(&r)) {
-                midpoints.insert((a, b), m);
-                continue;
-            }
-            if vertices.len() >= options.planar.max_vertices {
-                return Err(work.exhaust("planar.max_vertices", options.planar.max_vertices));
-            }
-            let (p, q) = (vertices[a as usize], vertices[b as usize]);
-            // An edge from a pole copy is split on the ray to its other end.
-            let uv = match (p.free, q.free) {
-                (Some(k), None) => ray_midpoint(surface, p, q, k, work)?,
-                (None, Some(k)) => ray_midpoint(surface, q, p, k, work)?,
-                _ => [0, 1].map(|k| p.uv[k] * 0.5 + q.uv[k] * 0.5),
-            };
-            if uv == p.uv || uv == q.uv {
-                return Err(Failure::UnresolvedTolerance);
-            }
-            let point = match probes.midpoints.get(&key(a, b)) {
-                Some((at, jet)) if *at == uv => {
-                    memory.jets.insert(uv.map(f64::to_bits), *jet);
-                    RegularPoint::new(jet, sizing)?
-                }
-                _ => memory.regular(surface, uv, sizing, work)?,
-            };
-            let i = vertices.len();
-            vertices.push(Vertex {
-                uv,
-                position: point.position,
-                lifted: point.position,
-                normal: Some(point.normal),
-                source: Source::Interior(face, i),
-                free: None,
-                metric: point.metric,
-            });
-            midpoints.insert((a, b), i as u32);
-            if let Some(r) = ray {
-                rays.insert(r, i as u32);
-            }
-        }
         let mut created = vec![false; triangles.len()];
-        for slot in 0..triangles.len() {
-            let tri = triangles[slot];
-            let mut pieces = vec![tri];
-            for k in 0..3 {
-                let a = tri[k];
-                let b = tri[(k + 1) % 3];
-                let edge = key(a, b);
-                let shared = || {
-                    let r = ray(&vertices, a, b)?;
-                    (!constraints.contains_key(&edge)).then(|| rays.get(&r))?
-                };
-                if let Some(&m) = midpoints.get(&edge).or_else(shared) {
-                    let index = pieces
-                        .iter()
-                        .position(|t| t.contains(&a) && t.contains(&b))
-                        .ok_or(Failure::Geometry)?;
-                    let t = pieces.swap_remove(index);
-                    let j = t.iter().position(|&v| v == a).unwrap();
-                    if t[(j + 1) % 3] != b {
-                        return Err(Failure::Geometry);
+        // The first sweep tests every triangle not known to pass; with `closure`, later
+        // sweeps test the pieces of passing triangles the previous sweep split.
+        let mut candidates: Option<Vec<usize>> = None;
+        loop {
+            let first = candidates.is_none();
+            let mut split = BTreeSet::new();
+            let mut requests = Vec::new();
+            let mut folded = false;
+            let count = candidates.as_ref().map_or(triangles.len(), Vec::len);
+            for n in 0..count {
+                let slot = candidates.as_ref().map_or(n, |c| c[n]);
+                let tri = triangles[slot];
+                work.charge(1)?;
+                if known[slot] {
+                    continue;
+                }
+                // A facet that passed keeps passing: its corners determine every probe.
+                let corners = canonical(tri);
+                let chart = chart_key(&tri.map(|i| vertices[i as usize]));
+                if passed.contains(&corners) || chart.is_some_and(|c| memory.passed.contains(&c)) {
+                    known[slot] = true;
+                    continue;
+                }
+                if acceptable(
+                    surface,
+                    tri.map(|i| vertices[i as usize]),
+                    tri,
+                    tolerance,
+                    resolution,
+                    &mut probes,
+                    work,
+                )? {
+                    passed.insert(corners);
+                    if let Some(c) = chart {
+                        memory.passed.insert(c);
                     }
-                    pieces.push([a, m, t[(j + 2) % 3]]);
-                    pieces.push([m, b, t[(j + 2) % 3]]);
+                    known[slot] = true;
+                    continue;
+                }
+                if let Some(request) = fold(tri.map(|i| vertices[i as usize]), &poles) {
+                    requests.push(request);
+                    folded = true;
+                    continue;
+                }
+                let mut longest = (0., key(tri[0], tri[1]));
+                for k in 0..3 {
+                    let length = edge_length(&vertices, sizing, tri[k], tri[(k + 1) % 3])?;
+                    if length > longest.0 {
+                        longest = (length, key(tri[k], tri[(k + 1) % 3]));
+                    }
+                }
+                // A ray from a pole that a boundary segment also runs along is refined on
+                // the boundary: its interior copies would otherwise split off a sliver.
+                let ray = ray(&vertices, longest.1.0, longest.1.1);
+                if let Some(&request) = constraints
+                    .get(&longest.1)
+                    .or_else(|| ray.and_then(|r| boundary_rays.get(&r)))
+                {
+                    requests.push(request);
+                } else {
+                    split.insert(longest.1);
                 }
             }
-            // Both pole edges of a collapsed sliver share their ray's midpoint, which
-            // leaves pieces with a repeated corner; the sliver's rest covers them.
-            pieces.retain(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
-            if pieces.len() == 1 && pieces[0] == tri {
-                continue;
+            // Boundary requests wait until the interior has converged or no further
+            // boundary segment is requested, so that one boundary pass resolves every
+            // facet the coarse boundary leaves failing; facets beside a requested segment
+            // would otherwise keep splitting into slivers along it. A folded fan only
+            // arises in the initial triangulation, but splits of its neighbours would
+            // propagate the fold, so it restarts the pass at once.
+            if first {
+                let now: BTreeSet<(EdgeId, u64)> =
+                    requests.iter().map(|r| (r.0, r.1.to_bits())).collect();
+                let settled = !now.is_empty() && now == requested;
+                requested = now;
+                if split.is_empty() || round == options.max_rounds || folded || settled {
+                    if !requests.is_empty() {
+                        return Ok(Outcome::Refine(requests));
+                    }
+                    if split.is_empty() {
+                        return finish(surface, vertices, triangles, work).map(Outcome::Complete);
+                    }
+                    work.exhausted = budget("max_rounds", options.max_rounds);
+                    return Err(Failure::UnresolvedTolerance);
+                }
+            } else if split.is_empty() {
+                break;
             }
-            work.charge(3 * (pieces.len() + 1))?;
-            if triangles.len() + pieces.len() > options.planar.max_triangles + 1 {
+            let mut midpoints = BTreeMap::new();
+            // Edges from different copies of one pole to the same vertex are one 3D edge
+            // (the pole's ray to that vertex), split at one shared midpoint.
+            let mut rays = BTreeMap::new();
+            // Each requested midpoint is shared by every incident triangle, preventing T-junctions.
+            for (a, b) in split {
+                let ray = ray(&vertices, a, b);
+                if let Some(&m) = ray.and_then(|r| rays.get(&r)) {
+                    midpoints.insert((a, b), m);
+                    continue;
+                }
+                if vertices.len() >= options.planar.max_vertices {
+                    return Err(work.exhaust("planar.max_vertices", options.planar.max_vertices));
+                }
+                let (p, q) = (vertices[a as usize], vertices[b as usize]);
+                // An edge from a pole copy is split on the ray to its other end.
+                let uv = match (p.free, q.free) {
+                    (Some(k), None) => ray_midpoint(surface, p, q, k, work)?,
+                    (None, Some(k)) => ray_midpoint(surface, q, p, k, work)?,
+                    _ => [0, 1].map(|k| p.uv[k] * 0.5 + q.uv[k] * 0.5),
+                };
+                if uv == p.uv || uv == q.uv {
+                    return Err(Failure::UnresolvedTolerance);
+                }
+                let point = match probes.midpoints.get(&key(a, b)) {
+                    Some((at, jet)) if *at == uv => {
+                        memory.jets.insert(uv.map(f64::to_bits), *jet);
+                        RegularPoint::new(jet, sizing)?
+                    }
+                    _ => memory.regular(surface, uv, sizing, work)?,
+                };
+                let i = vertices.len();
+                vertices.push(Vertex {
+                    uv,
+                    position: point.position,
+                    lifted: point.position,
+                    normal: Some(point.normal),
+                    source: Source::Interior(face, i),
+                    free: None,
+                    metric: point.metric,
+                });
+                midpoints.insert((a, b), i as u32);
+                if let Some(r) = ray {
+                    rays.insert(r, i as u32);
+                }
+            }
+            let mut sweep = Vec::new();
+            for slot in 0..triangles.len() {
+                let tri = triangles[slot];
+                let mut pieces = vec![tri];
+                for k in 0..3 {
+                    let a = tri[k];
+                    let b = tri[(k + 1) % 3];
+                    let edge = key(a, b);
+                    let shared = || {
+                        let r = ray(&vertices, a, b)?;
+                        (!constraints.contains_key(&edge)).then(|| rays.get(&r))?
+                    };
+                    if let Some(&m) = midpoints.get(&edge).or_else(shared) {
+                        let index = pieces
+                            .iter()
+                            .position(|t| t.contains(&a) && t.contains(&b))
+                            .ok_or(Failure::Geometry)?;
+                        let t = pieces.swap_remove(index);
+                        let j = t.iter().position(|&v| v == a).unwrap();
+                        if t[(j + 1) % 3] != b {
+                            return Err(Failure::Geometry);
+                        }
+                        pieces.push([a, m, t[(j + 2) % 3]]);
+                        pieces.push([m, b, t[(j + 2) % 3]]);
+                    }
+                }
+                // Both pole edges of a collapsed sliver share their ray's midpoint, which
+                // leaves pieces with a repeated corner; the sliver's rest covers them.
+                pieces.retain(|t| t[0] != t[1] && t[1] != t[2] && t[2] != t[0]);
+                if pieces.len() == 1 && pieces[0] == tri {
+                    continue;
+                }
+                work.charge(3 * (pieces.len() + 1))?;
+                if triangles.len() + pieces.len() > options.planar.max_triangles + 1 {
+                    return Err(work.exhaust("planar.max_triangles", options.planar.max_triangles));
+                }
+                detach(&mut incident, &triangles, slot);
+                let conformity = known[slot];
+                let mut slots = Vec::with_capacity(pieces.len());
+                for (n, piece) in pieces.into_iter().enumerate() {
+                    let at = if n == 0 {
+                        triangles[slot] = piece;
+                        slot
+                    } else {
+                        triangles.push(piece);
+                        known.push(false);
+                        created.push(false);
+                        triangles.len() - 1
+                    };
+                    known[at] = false;
+                    created[at] = true;
+                    slots.push(at);
+                }
+                // At most two edges of a triangle share a ray midpoint, so a piece remains.
+                if slots.is_empty() {
+                    return Err(Failure::Geometry);
+                }
+                for at in slots {
+                    attach(&mut incident, &triangles, at);
+                    if conformity {
+                        sweep.push(at);
+                    }
+                }
+            }
+            if triangles.len() > options.planar.max_triangles {
                 return Err(work.exhaust("planar.max_triangles", options.planar.max_triangles));
             }
-            detach(&mut incident, &triangles, slot);
-            let mut slots = Vec::with_capacity(pieces.len());
-            for (n, piece) in pieces.into_iter().enumerate() {
-                let at = if n == 0 {
-                    triangles[slot] = piece;
-                    slot
-                } else {
-                    triangles.push(piece);
-                    known.push(false);
-                    created.push(false);
-                    triangles.len() - 1
-                };
-                known[at] = false;
-                created[at] = true;
-                slots.push(at);
+            if !closure {
+                break;
             }
-            // At most two edges of a triangle share a ray midpoint, so a piece remains.
-            if slots.is_empty() {
-                return Err(Failure::Geometry);
-            }
-            for at in slots {
-                attach(&mut incident, &triangles, at);
-            }
-        }
-        if triangles.len() > options.planar.max_triangles {
-            return Err(work.exhaust("planar.max_triangles", options.planar.max_triangles));
+            candidates = Some(sweep);
         }
         // After a flip ceiling the next call starts from the full queue again.
         fresh = emptied.then_some(created);

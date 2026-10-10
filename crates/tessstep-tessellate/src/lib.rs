@@ -434,6 +434,13 @@ pub struct FaceBoundary<'a> {
     pub outer: Vec<BoundaryPolyline<'a>>,
     pub holes: Vec<Vec<BoundaryPolyline<'a>>>,
 }
+/// A face boundary mapped to its chart, before its resolution check counts.
+pub(crate) struct MappedBoundary<'a> {
+    pub(crate) boundary: FaceBoundary<'a>,
+    /// The floating-point resolution the check used.
+    pub(crate) eps: f64,
+    pub(crate) checked: Result<(), BoundaryError>,
+}
 impl SharedEdges<'_> {
     /// Reconstruct the chart, then map each canonical edge sample to every face use.
     /// Position references point into this cache, including both uses of a seam.
@@ -444,6 +451,17 @@ impl SharedEdges<'_> {
         options: tessstep_trim::Options,
         max_samples: usize,
     ) -> Result<FaceBoundary<'_>, BoundaryError> {
+        let mapped = self.mapped_boundary(face, options, max_samples)?;
+        mapped.checked.map(|()| mapped.boundary)
+    }
+    /// The mapped boundary with, separately, the result of its resolution check and
+    /// the resolution it used, so that a failed check can be located on its segments.
+    pub(crate) fn mapped_boundary(
+        &self,
+        face: tessstep_topology::FaceId,
+        options: tessstep_trim::Options,
+        max_samples: usize,
+    ) -> Result<MappedBoundary<'_>, BoundaryError> {
         let trim =
             tessstep_trim::reconstruct(self.brep, face, options).map_err(BoundaryError::Trim)?;
         let surface = &self.brep.data().faces[face.0].surface;
@@ -535,8 +553,13 @@ impl SharedEdges<'_> {
             .collect();
         let eps = resolution_tolerance(loops.iter().flatten().map(|p| p.0), options.uv_tolerance)
             .ok_or(BoundaryError::Geometry(trim.outer().uses()[0].coedge))?;
-        trim.validate_resolution(&loops, eps, options.max_work)
-            .map_err(BoundaryError::Resolution)?;
-        Ok(FaceBoundary { outer, holes })
+        let checked = trim
+            .validate_resolution(&loops, eps, options.max_work)
+            .map_err(BoundaryError::Resolution);
+        Ok(MappedBoundary {
+            boundary: FaceBoundary { outer, holes },
+            eps,
+            checked,
+        })
     }
 }

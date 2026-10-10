@@ -15,6 +15,12 @@ Parity work against HOOPS Exchange on the PreForm CAD collection.
   `ToleratedEncodings::reversed_transform_items` and rejected when strict
   (`tessstep_ap242::adapt_with_policy`, `Policy`). The Shapr3D keycaps sample imports
   as a 265-instance scene; its HOOPS reference volume counts every body twice.
+- Tessellation meshes fillet bands whose refinement walked one facet per round
+  around the ring (a face that runs out of rounds is refined again with split
+  closure), and refines a boundary chord that cuts across a nearby edge, such as one
+  tangent at their common vertex, instead of failing the resolution check. Meshes
+  that already passed are unchanged; the NIST FTC 06, FTC 11, CTC 04 (AP242) and,
+  at a 0.1 mm chord, CTC 02 parts now mesh within 0.06% of the closed HOOPS meshes.
 
 ## 1.0.0 — 2026-10-10
 
