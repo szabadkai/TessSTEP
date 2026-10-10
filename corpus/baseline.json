@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "run_id": "2026-10-09T23-46-22-154489Z",
-  "source_fingerprint": "d8e898fb3511d1af4e5f0deed37f828c45293e5309b65281eb8fc09ce4e9492c",
+  "run_id": "2026-10-10T08-01-32-413799Z",
+  "source_fingerprint": "64e500f640c798de8358ed48d49729aba4391b7a5dade238010249d1ad4a42ae",
   "cases": [
     {
       "sha256": "e486bfb50625f5270d2b239c004c61f30c9f2fd8f230e395a8c10cbb8c45cb09",
@@ -13213,25 +13213,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le009.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 5,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8997,
+        "attribute": null,
+        "offset": 924
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 5,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -13339,25 +13362,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le012.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 4,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8998,
+        "attribute": null,
+        "offset": 932
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 4,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -13493,25 +13539,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le016.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 5,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8997,
+        "attribute": null,
+        "offset": 901
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 5,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -14017,7 +14086,7 @@
         "surface_model": "not_run"
       },
       "diagnostic_counts": {
-        "TS1006": 1
+        "TS1002": 1
       },
       "entity_count": null,
       "missing_references": null,
@@ -14363,25 +14432,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le040.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 4,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8998,
+        "attribute": null,
+        "offset": 1053
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 4,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -14391,25 +14483,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le041.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 4,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8998,
+        "attribute": null,
+        "offset": 1212
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 4,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -14419,25 +14534,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le042.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 5,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8997,
+        "attribute": null,
+        "offset": 1056
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 5,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -14552,25 +14690,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le046.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 3,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8999,
+        "attribute": null,
+        "offset": 1003
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 3,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -14716,25 +14877,48 @@
       "paths": [
         "vendor/dodgy-step-files/step-examples/12-1a-encoding/Le049.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "not_applicable",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 4,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 8997,
+        "attribute": null,
+        "offset": 939
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 4,
+        "status": "not_applicable",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -156738,7 +156922,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -156769,7 +156953,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 144,
         "AXIS2_PLACEMENT_3D": 271,
@@ -157104,7 +157288,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -157135,7 +157319,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 6,
         "AXIS2_PLACEMENT_3D": 12,
@@ -157801,7 +157985,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -157837,7 +158021,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 483,
         "AXIS2_PLACEMENT_3D": 918,
@@ -157971,7 +158155,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -158007,7 +158191,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 187,
         "AXIS2_PLACEMENT_3D": 387,
@@ -158466,7 +158650,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -158502,7 +158686,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 42,
         "AXIS2_PLACEMENT_3D": 60,
@@ -158539,7 +158723,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -158575,7 +158759,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 144,
         "AXIS2_PLACEMENT_3D": 271,
@@ -158615,8 +158799,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "unsupported",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -158647,7 +158831,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 304,
         "AXIS2_PLACEMENT_3D": 546,
@@ -158853,26 +159037,83 @@
       "paths": [
         "vendor/nist-pmi/unpacked/NIST-PMI-STEP-Files/nist_stc_10_asme1_ap242-e2.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
-        "tessellation": "not_run",
-        "surface_model": "not_run"
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "accepted",
+        "product": "accepted",
+        "geometry": "accepted",
+        "tessellation": "accepted",
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1011": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
-      "presentation_accepted": null,
+      "entity_count": 12073,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "accepted",
+        "entity_count": 12073,
+        "unevaluated": {
+          "diagnostics": 11648,
+          "rules": 43654,
+          "derived": 18694
+        },
+        "tolerated": {
+          "unset_derived": 0,
+          "unordered_complex": 0
+        }
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+        "entity_count": 12073,
+        "status": "accepted",
+        "products": 1,
+        "occurrences": 0,
+        "definition_nodes": 1,
+        "asset_instances": 0,
+        "placed_roots": 1,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 1,
+      "geometry_closure_types": {
+        "ADVANCED_FACE": 256,
+        "AXIS2_PLACEMENT_3D": 541,
+        "BOUNDED_SURFACE": 1,
+        "B_SPLINE_CURVE_WITH_KNOTS": 17,
+        "B_SPLINE_SURFACE": 1,
+        "B_SPLINE_SURFACE_WITH_KNOTS": 1,
+        "CARTESIAN_POINT": 1378,
+        "CIRCLE": 286,
+        "CLOSED_SHELL": 1,
+        "CONICAL_SURFACE": 8,
+        "CYLINDRICAL_SURFACE": 117,
+        "DIRECTION": 1330,
+        "EDGE_CURVE": 551,
+        "EDGE_LOOP": 371,
+        "FACE_BOUND": 379,
+        "GEOMETRIC_REPRESENTATION_ITEM": 1,
+        "LINE": 248,
+        "MANIFOLD_SOLID_BREP": 1,
+        "ORIENTED_EDGE": 1102,
+        "PLANE": 77,
+        "RATIONAL_B_SPLINE_SURFACE": 1,
+        "REPRESENTATION_ITEM": 1,
+        "SPHERICAL_SURFACE": 10,
+        "SURFACE": 1,
+        "TOROIDAL_SURFACE": 43,
+        "VECTOR": 248,
+        "VERTEX_LOOP": 8,
+        "VERTEX_POINT": 376
+      },
+      "presentation_accepted": 68,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
     },
@@ -160887,7 +161128,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -160918,7 +161159,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 37,
         "AXIS2_PLACEMENT_3D": 77,
@@ -163987,28 +164228,73 @@
       "paths": [
         "vendor/opencascade-dataset/step/bug29478.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "accepted",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "rejected"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 129,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "AttributeCount",
+        "message": "physical parameter count differs from explicit attribute count",
+        "entity": 111,
+        "attribute": null,
+        "offset": 9322
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AUTOMOTIVE_DESIGN",
+        "entity_count": 129,
+        "status": "accepted",
+        "products": 1,
+        "occurrences": 0,
+        "definition_nodes": 1,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
-      "surface_model_accepted_roots": null,
-      "surface_model_closure_types": null
+      "surface_model_accepted_roots": 0,
+      "surface_model_closure_types": {
+        "ADVANCED_FACE": 1,
+        "BOUNDED_SURFACE": 1,
+        "B_SPLINE_CURVE_WITH_KNOTS": 2,
+        "B_SPLINE_SURFACE": 1,
+        "B_SPLINE_SURFACE_WITH_KNOTS": 1,
+        "CARTESIAN_POINT": 38,
+        "DIRECTION": 2,
+        "EDGE_CURVE": 4,
+        "EDGE_LOOP": 1,
+        "FACE_OUTER_BOUND": 1,
+        "GEOMETRIC_REPRESENTATION_ITEM": 1,
+        "LINE": 2,
+        "OPEN_SHELL": 1,
+        "ORIENTED_EDGE": 4,
+        "RATIONAL_B_SPLINE_SURFACE": 1,
+        "REPRESENTATION_ITEM": 1,
+        "SHELL_BASED_SURFACE_MODEL": 1,
+        "SURFACE": 1,
+        "TRIMMED_CURVE": 2,
+        "VECTOR": 2,
+        "VERTEX_POINT": 4
+      }
     },
     {
       "sha256": "beeda988f12da7c9c86529a533aadb470f2bad0fd4f77f6fc7ec41f17cebc471",
@@ -164795,7 +165081,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -164826,7 +165112,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 147,
         "AXIS2_PLACEMENT_3D": 309,
@@ -165027,7 +165313,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -165063,7 +165349,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 405,
         "AXIS2_PLACEMENT_3D": 832,
@@ -165111,26 +165397,78 @@
       "paths": [
         "vendor/opencascade-dataset/step/bug32049_sp7_10nx_242.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
-        "tessellation": "not_run",
-        "surface_model": "not_run"
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "accepted",
+        "geometry": "accepted",
+        "tessellation": "accepted",
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1011": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
-      "presentation_accepted": null,
+      "entity_count": 11990,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "RequiredValue",
+        "message": "required value is unset",
+        "entity": 86,
+        "attribute": "FORM_VARIANCE",
+        "offset": 5767
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
+        "entity_count": 11990,
+        "status": "accepted",
+        "products": 1,
+        "occurrences": 0,
+        "definition_nodes": 1,
+        "asset_instances": 0,
+        "placed_roots": 1,
+        "unplaced_roots": 0,
+        "excluded": 0
+      },
+      "geometry_accepted_roots": 1,
+      "geometry_closure_types": {
+        "ADVANCED_FACE": 256,
+        "AXIS2_PLACEMENT_3D": 541,
+        "BOUNDED_SURFACE": 1,
+        "B_SPLINE_CURVE_WITH_KNOTS": 17,
+        "B_SPLINE_SURFACE": 1,
+        "B_SPLINE_SURFACE_WITH_KNOTS": 1,
+        "CARTESIAN_POINT": 1431,
+        "CIRCLE": 286,
+        "CLOSED_SHELL": 1,
+        "CONICAL_SURFACE": 8,
+        "CYLINDRICAL_SURFACE": 117,
+        "DIRECTION": 1330,
+        "EDGE_CURVE": 551,
+        "EDGE_LOOP": 371,
+        "FACE_BOUND": 379,
+        "GEOMETRIC_REPRESENTATION_ITEM": 1,
+        "LINE": 248,
+        "MANIFOLD_SOLID_BREP": 1,
+        "ORIENTED_EDGE": 1102,
+        "PLANE": 77,
+        "RATIONAL_B_SPLINE_SURFACE": 1,
+        "REPRESENTATION_ITEM": 1,
+        "SPHERICAL_SURFACE": 10,
+        "SURFACE": 1,
+        "TOROIDAL_SURFACE": 43,
+        "VECTOR": 248,
+        "VERTEX_LOOP": 8,
+        "VERTEX_POINT": 376
+      },
+      "presentation_accepted": 78,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
     },
@@ -165623,7 +165961,7 @@
         "schema": "rejected",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "partial",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -165662,7 +166000,7 @@
           "unordered_complex": 0
         }
       },
-      "geometry_accepted_roots": 22,
+      "geometry_accepted_roots": 24,
       "geometry_closure_types": {
         "ADVANCED_FACE": 1622,
         "AXIS2_PLACEMENT_3D": 2709,
@@ -165813,7 +166151,7 @@
         "physical_parse": "accepted",
         "references": "resolved",
         "schema": "accepted",
-        "product": "rejected",
+        "product": "accepted",
         "geometry": "accepted",
         "tessellation": "not_applicable",
         "surface_model": "no_surface_models"
@@ -165842,11 +166180,22 @@
         "scope": "product-structure",
         "declared": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
         "entity_count": 105,
-        "status": "rejected",
-        "kind": "InvalidGeometry",
-        "stage": "Product",
-        "entity": null,
-        "message": "invalid product graph: MissingLink"
+        "status": "accepted",
+        "products": 3,
+        "occurrences": 2,
+        "definition_nodes": 3,
+        "asset_instances": 0,
+        "placed_roots": 1,
+        "unplaced_roots": 0,
+        "excluded": 0,
+        "tolerated": {
+          "explicit_si_dimensions": 0,
+          "unset_si_dimensions": 0,
+          "omitted_conversion_dimensions": 0,
+          "untyped_measures": 0,
+          "unordered_complex": 0,
+          "reversed_transform_items": 2
+        }
       },
       "geometry_accepted_roots": 1,
       "geometry_closure_types": {
@@ -166615,25 +166964,49 @@
       "paths": [
         "vendor/opencascade-dataset/step/mat.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
-        "schema": "not_configured",
-        "product": "not_configured",
-        "geometry": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
+        "schema": "rejected",
+        "product": "rejected",
+        "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1011": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
-      "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "entity_count": 271,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "policy": "retain-unevaluated",
+        "status": "rejected",
+        "code": "RequiredValue",
+        "message": "required value is unset",
+        "entity": 22,
+        "attribute": "NAME",
+        "offset": 1381
+      },
+      "product_result": {
+        "format_version": 1,
+        "scope": "product-structure",
+        "declared": "CONFIG_CONTROL_DESIGN",
+        "entity_count": 271,
+        "status": "rejected",
+        "products": 0,
+        "occurrences": 0,
+        "definition_nodes": 0,
+        "asset_instances": 0,
+        "placed_roots": 0,
+        "unplaced_roots": 0,
+        "excluded": 52,
+        "excluded_first": "Product InvalidGeometry at Some(EntityId(22)): product record #70: RequiredValue: required value is unset"
+      },
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {},
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null
@@ -167904,7 +168277,7 @@
         "schema": "accepted",
         "product": "accepted",
         "geometry": "accepted",
-        "tessellation": "rejected",
+        "tessellation": "accepted",
         "surface_model": "accepted"
       },
       "diagnostic_counts": {},
@@ -167940,7 +168313,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 405,
         "AXIS2_PLACEMENT_3D": 832,
@@ -172932,7 +173305,7 @@
         "physical_parse": "accepted",
         "references": "resolved",
         "schema": "rejected",
-        "product": "rejected",
+        "product": "accepted",
         "geometry": "partial",
         "tessellation": "partial",
         "surface_model": "no_surface_models"
@@ -172956,11 +173329,22 @@
         "scope": "product-structure",
         "declared": "CONFIG_CONTROL_DESIGN",
         "entity_count": 5622,
-        "status": "rejected",
-        "kind": "InvalidGeometry",
-        "stage": "Product",
-        "entity": null,
-        "message": "invalid product graph: MissingLink"
+        "status": "accepted",
+        "products": 13,
+        "occurrences": 14,
+        "definition_nodes": 17,
+        "asset_instances": 0,
+        "placed_roots": 8,
+        "unplaced_roots": 0,
+        "excluded": 0,
+        "tolerated": {
+          "explicit_si_dimensions": 0,
+          "unset_si_dimensions": 0,
+          "omitted_conversion_dimensions": 0,
+          "untyped_measures": 0,
+          "unordered_complex": 0,
+          "reversed_transform_items": 14
+        }
       },
       "geometry_accepted_roots": 5,
       "geometry_closure_types": {
@@ -172998,7 +173382,7 @@
         "physical_parse": "accepted",
         "references": "resolved",
         "schema": "rejected",
-        "product": "rejected",
+        "product": "accepted",
         "geometry": "partial",
         "tessellation": "partial",
         "surface_model": "no_surface_models"
@@ -173022,11 +173406,22 @@
         "scope": "product-structure",
         "declared": "AUTOMOTIVE_DESIGN",
         "entity_count": 5579,
-        "status": "rejected",
-        "kind": "InvalidGeometry",
-        "stage": "Product",
-        "entity": null,
-        "message": "invalid product graph: MissingLink"
+        "status": "accepted",
+        "products": 13,
+        "occurrences": 14,
+        "definition_nodes": 17,
+        "asset_instances": 0,
+        "placed_roots": 8,
+        "unplaced_roots": 0,
+        "excluded": 0,
+        "tolerated": {
+          "explicit_si_dimensions": 0,
+          "unset_si_dimensions": 0,
+          "omitted_conversion_dimensions": 0,
+          "untyped_measures": 0,
+          "unordered_complex": 0,
+          "reversed_transform_items": 14
+        }
       },
       "geometry_accepted_roots": 5,
       "geometry_closure_types": {
@@ -174809,7 +175204,7 @@
       "geometry_accepted_roots": 0,
       "geometry_closure_types": {},
       "presentation_accepted": null,
-      "surface_model_accepted_roots": 54,
+      "surface_model_accepted_roots": 55,
       "surface_model_closure_types": {
         "ADVANCED_FACE": 59,
         "AXIS1_PLACEMENT": 22,
@@ -176910,7 +177305,7 @@
       "geometry_accepted_roots": 0,
       "geometry_closure_types": {},
       "presentation_accepted": null,
-      "surface_model_accepted_roots": 54,
+      "surface_model_accepted_roots": 55,
       "surface_model_closure_types": {
         "ADVANCED_FACE": 59,
         "AXIS1_PLACEMENT": 22,
@@ -179781,7 +180176,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 10,
+      "geometry_accepted_roots": 11,
       "geometry_closure_types": {
         "ADVANCED_FACE": 801,
         "AXIS1_PLACEMENT": 5,
@@ -183383,25 +183778,46 @@
       "paths": [
         "vendor/opencascade-dataset/step/trj9_ap209-mp.stp"
       ],
-      "status": "rejected",
+      "status": "clean",
       "stages": {
-        "physical_parse": "rejected",
-        "references": "not_run",
+        "physical_parse": "accepted",
+        "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "not_run",
+        "geometry": "rejected",
         "tessellation": "not_run",
-        "surface_model": "not_run"
+        "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
         "TS1006": 1
       },
-      "entity_count": null,
-      "missing_references": null,
-      "schema_result": null,
+      "entity_count": 18063,
+      "missing_references": 0,
+      "schema_result": {
+        "format_version": 1,
+        "scope": "schema-structure",
+        "status": "not_configured",
+        "declared": "STRUCTURAL_ANALYSIS_DESIGN"
+      },
       "product_result": null,
-      "geometry_accepted_roots": null,
-      "geometry_closure_types": null,
+      "geometry_accepted_roots": 0,
+      "geometry_closure_types": {
+        "ADVANCED_FACE": 24,
+        "AXIS2_PLACEMENT_3D": 24,
+        "B_SPLINE_CURVE_WITH_KNOTS": 28,
+        "CARTESIAN_POINT": 172,
+        "CLOSED_SHELL": 4,
+        "DIRECTION": 68,
+        "EDGE_CURVE": 48,
+        "EDGE_LOOP": 24,
+        "FACE_BOUND": 24,
+        "LINE": 20,
+        "MANIFOLD_SOLID_BREP": 4,
+        "ORIENTED_EDGE": 96,
+        "PLANE": 24,
+        "VECTOR": 20,
+        "VERTEX_POINT": 32
+      },
       "presentation_accepted": null,
       "surface_model_accepted_roots": null,
       "surface_model_closure_types": null

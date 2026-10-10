@@ -1,3 +1,24 @@
+# HOOPS Exchange parity on the PreForm collection — 2026-10-10
+
+An internal, non-redistributable collection of 54 STEP files used by PreForm (NIST
+D2MI, PMI and UUID models, user samples and one 55 MB, 646-root support attachment)
+was surveyed with the release `survey` example and compared with a HOOPS Exchange
+probe of the same files (its unsimplified mesh volumes). Nothing from the collection is
+in this repository. Before the parity work, at 1.0.0: 51 of 54 files parsed and 44
+meshed every root. After the parser, tessellation, loop-healing and assembly-linking
+changes above: all 54 parse and 53 mesh every root; the 646-root attachment, for which
+the HOOPS probe recorded no mesh, meshes 545 roots (the rest are deviations beyond the
+survey chord or the 16× policy, unsewn shells and other named failures). Where both
+mesh every root, 47 of 53 files agree with HOOPS within 0.1% in volume and 51 within
+0.6%. Three of the larger gaps are HOOPS meshes that are open (10 to 524 boundary
+edges), where TessSTEP agrees with the closed exporter variants of the same parts; the
+other is a 270 mm³ part at −0.56%. HOOPS's assembly volume for one Shapr3D export counts
+every body twice; TessSTEP's per-body total matches half of it within 0.13%.
+
+The reviewed corpus baseline was saved after these changes: 3,227 compatible inputs,
+13 more physically accepted files (tolerated exporter slips), 778 meshed shape roots and
+1,130 meshed surface models, no lost mesh.
+
 # HOOPS parity: input-sized parse budgets and two exporter slips — 2026-10-10
 
 Three PreForm CAD collection files failed at the physical parser. HOOPS Exchange opens
