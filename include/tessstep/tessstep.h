@@ -116,7 +116,9 @@ TS_API ts_status TS_CALL ts_parse_options_init(ts_parse_options *out);
  * UTF-8). data may be NULL only when size==0; empty input yields TS_PARSE_ERROR.
  * Success acquires one document and leaves error_report NULL. Failure leaves
  * document NULL; syntax/unsupported/budget errors acquire one error_report.
- * Parse success does NOT imply reference, schema, geometry or mesh validity. */
+ * Parse success does NOT imply reference, schema, geometry or mesh validity.
+ * The parse is strict; ts_document_parse_with_policy (ABI 1.1) also accepts
+ * counted exporter slips. */
 TS_API ts_status TS_CALL ts_document_parse(const uint8_t *data, size_t size,
     const ts_parse_options *options, ts_document **out, ts_diagnostics **error_report);
 TS_API ts_status TS_CALL ts_document_retain(const ts_document *document);
@@ -249,6 +251,34 @@ TS_API ts_status TS_CALL ts_document_tessellate_planar_with_policy(
     const ts_document *document, uint64_t entity_id, double metres_per_unit,
     const ts_planar_options *options, const ts_import_policy *policy,
     ts_mesh **out, ts_import_error *error);
+
+/* ABI 1.1: parse budgets sized from an input of input_bytes bytes, as Rust
+ * ParseLimits::for_input sizes them. Every budget is the ts_parse_options_init
+ * default, except that max_input_bytes is raised to input_bytes and max_entities,
+ * max_records, max_total_values and max_aggregate_elements are raised to the most
+ * of each that input_bytes of syntax can hold (7, 3, 2 and 2 bytes per item). No
+ * budget falls below its default and each stays explicit in the record. Logical
+ * allocation then grows with the input: about ten times its bytes for exporter
+ * files, several times more for hostile input. */
+TS_API ts_status TS_CALL ts_parse_options_for_input(uint64_t input_bytes, ts_parse_options *out);
+/* ABI 1.1: ts_document_parse with a conformance policy. NULL policy or flags 0
+ * selects the tolerant default, which accepts two exporter slips and counts them:
+ * a string backslash whose following characters complete no directive (as in
+ * 'C:\temp') is a literal backslash, and $ stands for a FILE_DESCRIPTION or
+ * FILE_NAME string or string-list element (the value stays $). Each accepted kind
+ * is one warning in ts_document_diagnostics (TS1006 and TS1011, at its first
+ * occurrence). TS_IMPORT_STRICT rejects both, as ts_document_parse does. Unknown
+ * flag bits or nonzero reserved fail with TS_INVALID_ARGUMENT after clearing
+ * outputs. options and policy are borrowed during the call only. */
+TS_API ts_status TS_CALL ts_document_parse_with_policy(const uint8_t *data, size_t size,
+    const ts_parse_options *options, const ts_import_policy *policy, ts_document **out,
+    ts_diagnostics **error_report);
+/* ABI 1.1: how many slips of one kind the parse accepted; zero for strict parses.
+ * Unknown kinds return TS_NOT_FOUND with out zero. */
+#define TS_DEVIATION_LITERAL_BACKSLASH 1u
+#define TS_DEVIATION_NULL_HEADER_STRING 2u
+TS_API ts_status TS_CALL ts_document_deviation_count(const ts_document *document,
+    uint32_t kind, uint64_t *out);
 
 /* Existing triangulated tessellations (Milestone 20): a selected TESSELLATED_SOLID,
  * TESSELLATED_SHELL or triangulated surface set becomes an owned mesh WITHOUT

@@ -40,7 +40,9 @@ fn main() -> ::std::process::ExitCode {
         Err(error) => { eprintln!("{error}"); return ExitCode::from(2); }
     };
     let policy_name = if policy.retain_unevaluated { "retain-unevaluated" } else { "strict" };
-    let document = match ::tessstep_model::parse(BufReader::new(file), Default::default()) {
+    // Budgets sized from the file length, as the corpus runner's physical stage sizes them.
+    let budgets = ::tessstep_model::ParseLimits::for_input(file.metadata().map_or(0, |m| m.len()));
+    let document = match ::tessstep_model::parse(BufReader::new(file), budgets) {
         Ok(document) => document,
         Err(error) => {
             println!("{{\"format_version\":1,\"scope\":\"schema-structure\",\"policy\":\"{policy_name}\",\"status\":\"not_run\",\"code\":\"{:?}\"}}",error.code);

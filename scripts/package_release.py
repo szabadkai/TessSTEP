@@ -15,6 +15,9 @@ import zipfile
 from check_capi import SYMBOLS, install_package, verify_installed
 
 ROOT = Path(__file__).resolve().parents[1]
+# The newest ABI 1.x level in the record: the release that added its latest symbols.
+ABI_LEVEL = max((line.split()[0] for line in (ROOT / "abi/exports.txt").read_text(encoding="utf-8").splitlines()
+                 if line.strip() and not line.startswith("#")), key=lambda v: tuple(map(int, v.split("."))))
 
 
 def validate_tag(ref, version):
@@ -75,7 +78,7 @@ def main():
         verify_installed(package)
         (package / "PACKAGE.json").write_text(json.dumps({"version": version, "target": args.target,
             "commit": os.environ.get("GITHUB_SHA", "local"), "tools": ["stepdump", "expressc"],
-            "c_abi": {"version": 1, "frozen": "1.0", "exports": len(SYMBOLS), "record": "abi/exports.txt", "linkage": ["shared", "static"],
+            "c_abi": {"version": 1, "frozen": "1.0", "level": ABI_LEVEL, "exports": len(SYMBOLS), "record": "abi/exports.txt", "linkage": ["shared", "static"],
                       "scope": "documents_meshes_scenes_appearance_solid_surface_tessellated_presentation_assembly_import_discovery_sessions"},
             "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP", "static_target": "TessSTEP::TessSTEP_static"},
             "tessellation": "planar_faceted_and_curved_brep_explicit_root_and_units"}, indent=2) + "\n", encoding="utf-8")

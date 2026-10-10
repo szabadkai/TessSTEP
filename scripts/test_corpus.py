@@ -61,6 +61,19 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(self.inspect_payload({}, 101)["status"], "crash")
         self.assertEqual(self.inspect_payload({}, -9)["status"], "crash")
 
+    def test_tolerated_slips_are_clean_warnings_with_counted_deviations(self):
+        result = self.inspect_payload({"format_version": 1, "scope": "physical-syntax",
+                                       "diagnostics": [{"severity": "warning", "code": "TS1006"}, {"severity": "warning", "code": "TS1011"}],
+                                       "document": {"entity_count": 1, "headers": {}, "unresolved_references": [],
+                                                    "deviations": {"literal_backslashes": 2, "null_header_strings": 1}}}, 0)
+        self.assertEqual(result["status"], "clean")
+        self.assertEqual(result["deviations"], {"literal_backslashes": 2, "null_header_strings": 1})
+        self.assertEqual(result["diagnostic_counts"], {"TS1006": 1, "TS1011": 1})
+        quiet = self.inspect_payload({"format_version": 1, "scope": "physical-syntax", "diagnostics": [],
+                                      "document": {"entity_count": 1, "headers": {}, "unresolved_references": [],
+                                                   "deviations": {"literal_backslashes": 0, "null_header_strings": 0}}}, 0)
+        self.assertNotIn("deviations", quiet)
+
     def test_header_records_can_preserve_duplicate_names(self):
         result = self.inspect_payload({"format_version": 1, "scope": "physical-syntax", "diagnostics": [],
                                        "document": {"entity_count": 1, "headers": [{"name": "FILE_SCHEMA", "parameters": [["AP242"]]}], "unresolved_references": []}}, 0)

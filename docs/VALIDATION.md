@@ -1,3 +1,135 @@
+# HOOPS parity: input-sized parse budgets and two exporter slips — 2026-10-10
+
+Three PreForm CAD collection files failed at the physical parser. HOOPS Exchange opens
+the two NIST files and has no result for the first (its probe exits 1):
+
+| File (PreForm collection) | 1.0 rejection | Cause |
+| --- | --- | --- |
+| `jira/PP-30107/Bad_STEP.stp` (55.7 MB) | `TS1201` total value budget exceeded (limit 4000000) | 951,613 entities, 961,634 records and 4,582,879 values, 15 % over the default value budget |
+| `nist/d2mi/827-9999-904 rev c.stp` | `TS1006` unknown string directive, line 45751 | one unescaped backslash in a material path string |
+| `nist/pmi/nist_stc_10_asme1_ap242-e2.stp` | `TS1011` FILE_NAME structure | `$` as FILE_NAME authorisation |
+
+**Budgets sized from the input.** `ParseLimits::for_input(bytes)` keeps every default
+and raises `max_input_bytes` to the length and the entity, record, total value and
+aggregate element budgets to the most of each that many bytes can hold (7, 3, 2 and 2
+bytes per item: `#1=A();`, `A()`, `$,`), never below the defaults
+([PART21.md](PART21.md#budgets)). The budgets stay explicit and named in their
+diagnostics. Across the 2,913 parseable inputs of both collections the densest holds a
+value per 5.45 bytes (`nist_stc_09`, tessellated), the largest entity count is
+Bad_STEP's, and the longest list has 44,848 elements. `stepdump` sizes a file's budgets
+by default (`--default-budgets` and standard input keep the defaults; `--max-<name>=N`
+applies after sizing), as do the survey, the assembly example, generated validators and
+so the corpus runner, and C callers through `ts_parse_options_for_input` (ABI 1.1).
+
+**Memory.** At 1 GB peak RSS for a 55.7 MB file, parsing Bad_STEP spent most of its
+memory on two avoidable allocations. `tessstep_model::parse` kept a second map of every
+ID with its source span only to report duplicates, now found through the entity index
+and the external references (−99 MB). List elements were pushed into growing vectors,
+leaving 2.53 million unused slots of 80 bytes behind; they now collect on one shared
+stack and move into an exactly sized vector when the list closes (−185 MB; trimming
+each vector afterwards freed nothing, because the allocator kept the fragments). The
+rest is the public 1.x representation: 80 bytes per value, of which the source span
+takes 48, 144 per entity. `Document::diagnostics` and `stepdump` now collect only
+missing references instead of all 2–3 million reference uses. The survey prepared
+every root's shared decode at once (350 MB for this file); it now prepares 64 solid
+roots at a time, just before importing them, with identical results.
+
+| Bad_STEP (release, this machine, other agents running) | 1.0 (budget raised) | Now |
+| --- | ---: | ---: |
+| Parse only | 853 MB, 1.81 s | 569 MB, 1.66 s |
+| `stepdump --json` | 991 MB, 1.72 s | 568 MB, 1.6–2.2 s |
+| Survey (every root) | rejected at parse (716 MB) | 790 MB, 8.1 s (999 MB preparing every root at once) |
+
+**Exporter slips.** The parse is tolerant by default ([PART21.md](PART21.md#exporter-slips)):
+a string backslash whose following characters complete no directive opening is a
+literal backslash, and `$` stands for a FILE_DESCRIPTION or FILE_NAME string or list
+element. Each kind is counted (`Document::deviations`, with its first location) and
+reported as one warning with the code a strict parse fails with (`TS1006`, `TS1011`).
+A complete directive opening with a malformed payload still fails, as do backslashes
+outside strings and `$` in FILE_SCHEMA. `Conformance::Strict`, `stepdump --strict` and
+`survey --strict-syntax` reject both slips; a strict parse accepts exactly what 1.0
+accepted. The authored fixture `corpus/part21/tolerated/exporter-slips.step` and an
+authored variant of the cylinder fixture reproduce both slips; the cylinder imports
+with the same mesh as the conforming file. The C entry point `ts_document_parse` stays
+strict, because its ABI 1.0 contract rejects both slips; `ts_document_parse_with_policy`
+(ABI 1.1, the existing `ts_import_policy`, `TS_IMPORT_STRICT`) has the tolerant
+default, and `ts_document_deviation_count` reads the counts
+([C API](C_API.md#abi-11-parse-budgets-and-exporter-slips)).
+
+| File | Survey now | HOOPS (`simplifyMm=-1`) | Δ volume |
+| --- | --- | --- | ---: |
+| `827-9999-904 rev c.stp` (1 literal backslash) | 1 root, closed, 20,828 triangles, 22,862.98 mm³, 0.14 s | 20,442 triangles, boundary 0, 22,868.865 mm³ | −0.026 % |
+| `nist_stc_10_asme1_ap242-e2.stp` (1 `$`) | 1 root, closed, 85,808 triangles, 188,407.39 mm³, 0.37 s; 68 of 68 annotation occurrences | 201,114 triangles, boundary 0, 188,338.903 mm³ | +0.036 % |
+| `Bad_STEP.stp` | 646 solid roots, 545 closed, 862,042 triangles, 8,124,245 mm³; 8.1 s, 790 MB | no result (exit 1) | — |
+
+`Bad_STEP.stp` now imports end to end. Its 209 products place 302 occurrences of 646
+solid roots (643 `MANIFOLD_SOLID_BREP`, 3 `BREP_WITH_VOIDS`); the 1,300+ bodies count
+occurrences. The survey now surveys every root unless `--max-roots=N` or `MAX_ROOTS`
+bound it (1,000 before; no corpus file reaches it), so nothing is truncated. No stage
+meets a budget: import budgets follow the entity count and each group's shared decode
+stays within its budget. Of the 8.1 s, parsing takes about 1 s, discovery, selection
+and the shared decodes about 1.5 s, and the 646 roots 4.9 s. Of the 101 roots that do
+not mesh, none fails on scale. 65 accept an edge-to-surface deviation within 16 times
+their model tolerance but larger than the survey's chord, 1e-3 of the root's diagonal
+(clamped to 1 µm–1 mm), so the mesh could not stay within it. 15 have an edge or vertex
+beyond 16 times the tolerance. 10 are unsewn shells, which `--repair` sews (555 roots),
+and 1 has a non-manifold vertex. 9 fail tessellation (boundary resolution, UV trimming,
+a duplicate triangle), 1 contradicts its `same_sense` and 1 is a horn torus. On
+`90c06b6` with this change 536 roots meshed; the fillet-band fix of `572a847` adds 9.
+The other 51 files of the collection survey exactly as before this change; their peak
+RSS falls with the parse memory (keycaps 315 → 187 MB at 1.37 s).
+
+**Corpus movements and the default.** The full corpus check against the saved 1.0.0
+baseline moves 14 inputs, all physical-parse outcomes. 13 rejected inputs now parse
+with counted slips (67 literal backslashes, 4 `$` header strings) and one keeps its
+rejection with another code:
+
+| Input | Slip | Now | The file's own expectation |
+| --- | --- | --- | --- |
+| NIST `nist_stc_10_asme1_ap242-e2.stp` | `$` authorisation | every stage accepted (1 root, 68 annotations) | — (HOOPS opens it) |
+| OCCT `bug32049_sp7_10nx_242.stp` (NX via ST-Developer) | `$` authorisation | geometry and tessellation accepted, 78 annotations; schema `RequiredValue` | — |
+| OCCT `mat.stp` (ST-Developer 1.6) | `$` originating system and authorisation | schema `RequiredValue`, product rejected | — |
+| OCCT `bug29478.stp` | `\\tsclient\D\…` in FILE_NAME | product accepted; schema `AttributeCount`; its surface model fails in the profile | — |
+| OCCT `trj9_ap209-mp.stp` (MSC Patran) | `D:\TEMP\…` in FILE_NAME | AP209 not configured; its 4 roots fail in geometry and topology | — |
+| dodgy `Le012` | `\Z\`, `\M\` | parsed, warning | "a tolerant receiver must pass the bytes through literally with a warning" |
+| dodgy `Le016` | Windows paths including `\X1` | parsed, warning | tolerant readers warn and keep literal backslashes |
+| dodgy `Le040`–`Le042` | `\Q\NNN\Q\` references | parsed literally, warning | a tolerant mode may pass them through with a warning; never substitute |
+| dodgy `Le046`, `Le049` | `\]`, `\n` | parsed, warning | heal and accept |
+| dodgy `Le009` | `\Pg\`, `\P1\`, `\P!\` | parsed literally, warning | asks receivers to reject out-of-range page selectors |
+| dodgy `Le030` | `\Q\'` | still rejected: `TS1002` after the apostrophe ends the string, not `TS1006` | warn and accept |
+
+The dodgy encoding files' schema stage rejects their own `PERSON` instances
+(`AttributeCount`). Every other dodgy encoding, header and syntax defect keeps its
+rejection: malformed hexadecimal groups, surrogates, unterminated or nested `\X2\`,
+`\X\` with bad digits, control directives outside strings (`Wr049`, `Ls045`), missing
+or misshaped header records (FILE_DESCRIPTION without its level, eight FILE_NAME
+parameters, a bare FILE_SCHEMA string, integer implementation levels), invalid UTF-8,
+and the nesting-depth bombs `Ad002` and `Xp023`, which input-sized budgets leave alone.
+The tolerance is on by default: 12 of the 13 newly parsed inputs are exporter files
+that HOOPS or OCCT open, or test files whose stated tolerant expectation this behaviour
+meets. `Le009` is accepted against its stated expectation, with a warning, because its
+selectors complete no directive opening and the rule is that such a backslash is
+literal (a later `\S\` then decodes in the unchanged page); the strict mode rejects it.
+
+The run used a validator built from this commit (`build_ap_validator.py`, the same
+schemas and map arguments). With the shared validator, built before this change, its
+own strict parse rejects the 12 configured moved files and reports `not_run`, which the
+runner counts as 12 runner errors; nothing else differs. Rebased on `3b845e2`, the check
+moves 32 inputs: these 14 and the 18 of the keycaps, tessellation and
+loop-healing work. A run of this change on `90c06b6` moved only the 14, with the same
+signatures, and differs from the rebased run in exactly those 18 inputs.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` | passed (93 test binaries, 366 tests), including `tolerant_strings_keep_backslashes_that_start_no_directive`, `tolerant_headers_accept_null_strings_in_file_description_and_file_name`, `input_sized_budgets_cover_what_the_input_can_hold`, `tolerated_slips_are_counted_and_reported_as_warnings`, `exporter_slips_import_like_the_conforming_file` and the stepdump CLI test |
+| fmt, Clippy (`-D warnings`, all targets and features), `cargo doc` (`-D warnings`) | passed |
+| `check_capi.py --library-dir target/release` (no sanitizers) | passed: exactly the 98 recorded exports (95 of 1.0, 3 of 1.1), shared and static consumers, including the new C and C++ parse policy contracts |
+| `check_architecture.py`, `check_corpus.py` (143 fixtures), `check_cli.py`, `conformance.py --check`, script unit tests (75) | passed |
+| `package_release.py` (aarch64-apple-darwin) | passed; `PACKAGE.json` records ABI level 1.1 |
+| `corpus.py --check --repeat 2`, validator built from this commit, saved 1.0.0 baseline | 3,227 compatible, no regressions, 368 s; 32 inputs changed (14 here, 18 from main) |
+| the same with the shared validator | 12 runner errors (the stale validator's strict parse), otherwise identical |
+| PreForm bench (54 files) | 54 parse (51 before), 53 mesh every root |
+
 # Loop healing for HOOPS parity on the PreForm collection — 2026-10-10
 
 Two NIST PMI bodies in the PreForm CAD collection are meshed closed by HOOPS Exchange

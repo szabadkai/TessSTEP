@@ -13,6 +13,11 @@ performs a separate full reference-existence check. Forward references, cycles a
 self references are not inherently errors at this layer. External declarations are
 warnings requiring later resolution, not local missing-ID failures. Constants remain
 symbolic until schema processing. Signatures always receive an unverified warning.
+The exporter slips a tolerant parse accepts (see [PART21.md](PART21.md#exporter-slips))
+are counted in `Document::deviations` and reported as one warning per kind with the
+code they would fail with in a strict parse: `TS1006` for literal string backslashes
+and `TS1011` for `$` header strings, at the first occurrence. Nothing is skipped: the
+document holds every record, with the slipped characters kept as written.
 
 `stepdump` uses exit code 0 for a complete parse without error diagnostics (warnings
 are possible), 1 for parse or missing-reference errors, and 2 for usage/open/output I/O

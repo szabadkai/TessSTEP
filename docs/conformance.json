@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "scope": "Milestones 0\u20135 with bounded local 3D product semantics and independent geometry Milestones 6\u201319; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated and presentation tessellation import with discovery, representation selection and C/C++ entry points (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery; C/C++ discovery, representation selection, single-root solid import, extensible import options and static linkage (Milestone 22.10 first pass); C/C++ tolerance policy, opt-in repair, surface models, import sessions and assembly import with the extensible options (second pass); failure text, per-root reports and the frozen ABI 1.0 export set (final pass)",
+  "scope": "Milestones 0–5 with bounded local 3D product semantics and independent geometry Milestones 6–19; no complete ISO edition or AP conformance claim; selected faceted and edge-based planar STEP import; existing triangulated and presentation tessellation import with discovery, representation selection and C/C++ entry points (Milestone 20); curved B-rep import with elementary, B-spline and swept geometry pole/apex charts and cavity shells; root and context-unit discovery; C/C++ discovery, representation selection, single-root solid import, extensible import options and static linkage (Milestone 22.10 first pass); C/C++ tolerance policy, opt-in repair, surface models, import sessions and assembly import with the extensible options (second pass); failure text, per-root reports and the frozen ABI 1.0 export set (final pass)",
   "features": [
     {
       "feature": "streaming lexer",
@@ -27,6 +27,12 @@
       "limitations": "X2 scalar groups, not UTF-16 surrogate-pair compatibility"
     },
     {
+      "feature": "exporter slips",
+      "status": "implemented",
+      "test": "tolerant_strings_keep_backslashes_that_start_no_directive",
+      "limitations": "tolerant default: string backslashes that start no directive are literal, $ stands for FILE_DESCRIPTION/FILE_NAME strings; each counted in Document::deviations and one warning per kind; Conformance::Strict (stepdump --strict, ts_document_parse) rejects both"
+    },
+    {
       "feature": "exact binary bit length",
       "status": "implemented",
       "test": "all_single_nibble_binary_encodings",
@@ -42,7 +48,7 @@
       "feature": "headers and DATA sections",
       "status": "implemented",
       "test": "required_header_order_and_shape",
-      "limitations": "header structure checked; implementation-level/schema-population semantics deferred"
+      "limitations": "header structure checked; implementation-level/schema-population semantics deferred; $ for FILE_DESCRIPTION/FILE_NAME strings accepted and counted by default, rejected by Conformance::Strict"
     },
     {
       "feature": "reader chunks and source spans",
@@ -54,7 +60,7 @@
       "feature": "resource budgets",
       "status": "implemented",
       "test": "every_resource_budget_is_enforced",
-      "limitations": "finite logical budgets; not an exact RSS cap; each failure names the budget and its configured value; stepdump sets each budget as --max-<name>=N"
+      "limitations": "finite logical budgets; not an exact RSS cap; each failure names the budget and its configured value; stepdump sets each budget as --max-<name>=N; ParseLimits::for_input sizes the entity, record, value and aggregate budgets from the input length (stepdump, survey, assembly, generated validators, ts_parse_options_for_input)"
     },
     {
       "feature": "generic storage / duplicate IDs",
@@ -102,7 +108,7 @@
       "feature": "archives / BOM / tolerant recovery",
       "status": "unsupported",
       "test": null,
-      "limitations": "clear-text input only; strict first-error behavior"
+      "limitations": "clear-text input only; first-error behavior; only the counted exporter slips are tolerated, no recovery"
     },
     {
       "feature": "EXPRESS lexer and source-located AST",
@@ -208,9 +214,9 @@
     },
     {
       "feature": "public C ABI",
-      "status": "ABI 1.0 export set frozen (95 functions): physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, surface models, existing/presentation tessellation import, schema selection, assembly import, discovery, import sessions, failure text and import options",
+      "status": "ABI 1.0 export set frozen (95 functions), ABI 1.1 adds 3: physical documents, meshes, assembly scenes, appearance, faceted/planar/curved solid import, surface models, existing/presentation tessellation import, schema selection, assembly import, discovery, import sessions, failure text and import options",
       "test": "c_abi_document_and_diagnostic_contract",
-      "limitations": "frozen ABI 1.0 record abi/exports.txt (95 exports), checked against sources, header and installed libraries; 1.x may only add; physical documents, triangle meshes, explicit scenes and appearance; selected faceted, planar and curved solid import with the tolerance policy and opt-in repair, surface models as shell meshes, existing tessellation import, presentation graphics, schema selection, assembly import with imported colours and per-root reports, root and unit discovery with representation selection, import sessions, extensible import options; failure text only through sessions and per-root reports; general schema decoding not exposed"
+      "limitations": "frozen ABI 1.0 record abi/exports.txt (95 exports, 98 with the three of ABI 1.1: input-sized parse budgets, parse conformance policy, deviation counts), checked against sources, header and installed libraries; 1.x may only add; physical documents, triangle meshes, explicit scenes and appearance; selected faceted, planar and curved solid import with the tolerance policy and opt-in repair, surface models as shell meshes, existing tessellation import, presentation graphics, schema selection, assembly import with imported colours and per-root reports, root and unit discovery with representation selection, import sessions, extensible import options; failure text only through sessions and per-root reports; general schema decoding not exposed"
     },
     {
       "feature": "public C++ wrapper / CMake package",
@@ -270,7 +276,7 @@
       "feature": "C ABI 1.0 export record",
       "status": "frozen",
       "test": "c_abi_1_0_export_set_is_frozen",
-      "limitations": "abi/exports.txt lists the 95 functions of ABI 1.0; c_abi_export_record_matches_sources_and_header and check_capi.py require exports, declarations and record to agree; the 1.0 set is pinned; 1.x additions are recorded with their version"
+      "limitations": "abi/exports.txt lists the 95 functions of ABI 1.0 and the 3 of ABI 1.1; c_abi_export_record_matches_sources_and_header and check_capi.py require exports, declarations and record to agree; the 1.0 set is pinned; 1.x additions are recorded with their version"
     },
     {
       "feature": "Generated schema validator and corpus stage",
@@ -384,7 +390,7 @@
       "feature": "Bounded positive-weight NURBS curves",
       "status": "implemented",
       "test": "nurbs_curve_rational_circle_and_derivatives",
-      "limitations": "degrees 1\u201316; expanded knots, two derivatives, one-sided breaks; no zero/negative weights or automatic periodic wrapping"
+      "limitations": "degrees 1–16; expanded knots, two derivatives, one-sided breaks; no zero/negative weights or automatic periodic wrapping"
     },
     {
       "feature": "Homogeneous curve knot insertion",

@@ -825,3 +825,42 @@ fn brep_unmodified_exporter_cube_with_hole() {
     let exact = 0.0508 * 0.0254 * 0.0254 - PI * 0.00635 * 0.00635 * 0.0254;
     check_volume(&mesh, exact, 1e-6, 0.00635);
 }
+/// The PreForm collection's two exporter slips, authored into the cylinder: string
+/// backslashes that start no directive and `$` for the FILE_NAME authorisation. The
+/// tolerant parse imports the same solid; the strict parse rejects the file.
+#[test]
+fn exporter_slips_import_like_the_conforming_file() {
+    let slips = CYLINDER
+        .replace(
+            "FILE_NAME('brep-cylinder.step'",
+            r"FILE_NAME('C:\exports\brep-cylinder.step'",
+        )
+        .replace("'authored fixture','','');", "'authored fixture','',$);")
+        .replace(
+            "#1=CARTESIAN_POINT('',",
+            r"#1=CARTESIAN_POINT('Alloys\Steel',",
+        );
+    let doc = tessstep_model::parse(slips.as_bytes(), ParseLimits::default()).unwrap();
+    let deviations = doc.deviations();
+    assert_eq!(
+        (
+            deviations.literal_backslashes.count,
+            deviations.null_header_strings.count
+        ),
+        (3, 1)
+    );
+    let chord = 0.05e-3;
+    let expected = mesh(&import(CYLINDER).unwrap(), chord);
+    let actual = mesh(&import(&slips).unwrap(), chord);
+    assert_eq!(actual.data().positions, expected.data().positions);
+    assert_eq!(actual.data().triangles, expected.data().triangles);
+    assert_eq!(actual.data().face_ids, expected.data().face_ids);
+    assert!(
+        tessstep_model::parse_with(
+            slips.as_bytes(),
+            ParseLimits::default(),
+            tessstep_model::Conformance::Strict
+        )
+        .is_err()
+    );
+}

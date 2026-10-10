@@ -105,6 +105,15 @@ using ImportPolicy = ts_import_policy;
 inline ImportPolicy default_import_policy() noexcept {
     ImportPolicy policy{}; ts_import_policy_init(&policy); return policy;
 }
+// ABI 1.1: budgets sized from the input length (see ts_parse_options_for_input).
+inline ParseOptions parse_options_for_input(uint64_t input_bytes) noexcept {
+    ParseOptions options{}; ts_parse_options_for_input(input_bytes, &options); return options;
+}
+// ABI 1.1: the exporter slips a tolerant parse accepts and counts.
+enum class Deviation : uint32_t {
+    literal_backslash = TS_DEVIATION_LITERAL_BACKSLASH,
+    null_header_string = TS_DEVIATION_NULL_HEADER_STRING
+};
 // flags |= TS_IMPORT_STRICT rejects the tolerated PNMAX deviation (see tessstep.h).
 using TessellatedOptions = ts_tessellated_options;
 inline TessellatedOptions default_tessellated_options() noexcept {
@@ -175,11 +184,35 @@ public:
 
     // Bytes are borrowed only during the call. This parses physical syntax only;
     // diagnostics() performs the separate reference/trust analysis.
+    // The parse is strict, as ts_document_parse is.
     static Result<Document> parse(std::string_view bytes, const ParseOptions* options = nullptr) {
         ts_document* raw = nullptr;
         ts_diagnostics* raw_report = nullptr;
         const auto status = ts_document_parse(reinterpret_cast<const uint8_t*>(bytes.data()),
             bytes.size(), options, &raw, &raw_report);
+        return parsed(status, raw, raw_report);
+    }
+    // ABI 1.1: a nullptr policy (or flags 0) accepts and counts the exporter slips of
+    // Deviation; flags |= TS_IMPORT_STRICT rejects them.
+    static Result<Document> parse(std::string_view bytes, const ParseOptions* options,
+        const ImportPolicy* policy) {
+        ts_document* raw = nullptr;
+        ts_diagnostics* raw_report = nullptr;
+        const auto status = ts_document_parse_with_policy(
+            reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size(), options, policy,
+            &raw, &raw_report);
+        return parsed(status, raw, raw_report);
+    }
+    // ABI 1.1: how many slips of one kind the parse accepted.
+    Result<uint64_t> deviation_count(Deviation kind) const {
+        uint64_t count = 0;
+        const auto status = ts_document_deviation_count(handle_.get(),
+            static_cast<uint32_t>(kind), &count);
+        if (status != TS_OK) return detail::error(status);
+        return count;
+    }
+private:
+    static Result<Document> parsed(ts_status status, ts_document* raw, ts_diagnostics* raw_report) {
         Document document(raw);
         detail::Report report(raw_report); // Guard every allocation before C++ copies.
         if (status == TS_OK) return document;
@@ -191,6 +224,7 @@ public:
         }
         return error;
     }
+public:
     // Explicit root and source units. The owned result survives this document.
     Result<Mesh> tessellate_faceted(uint64_t entity_id, double metres_per_unit,
         const FacetedOptions* options = nullptr) const;

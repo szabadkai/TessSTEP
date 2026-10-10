@@ -9,12 +9,14 @@
 //! imported with its context units (chord 0.1 mm, model tolerance the declared
 //! uncertainty floored at 1e-7 m) and placed in a scene, and surface styles are
 //! adapted to its appearance. `mapped_placements` and the `tolerated` encoding
-//! counts are written only when nonzero; --strict rejects those encodings.
-//! Exit status 0 means accepted.
+//! counts are written only when nonzero; --strict rejects those encodings and the
+//! exporter slips the parser otherwise accepts (`Conformance::Strict`). Parse budgets
+//! are sized from the file length (`ParseLimits::for_input`), as the corpus runner's
+//! physical stage sizes them. Exit status 0 means accepted.
 #![forbid(unsafe_code)]
 use std::{collections::BTreeSet, fmt::Write, fs::File, io::BufReader};
 use tessstep_import::*;
-use tessstep_part21::ParseLimits;
+use tessstep_part21::{Conformance, ParseLimits};
 
 fn main() {
     match run() {
@@ -54,7 +56,14 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let [schema, path] = args.as_slice() else {
         return Err("usage: assembly [--meshes] [--strict] SCHEMA FILE".into());
     };
-    let doc = tessstep_model::parse(BufReader::new(File::open(path)?), ParseLimits::default())?;
+    let file = File::open(path)?;
+    let limits = ParseLimits::for_input(file.metadata()?.len());
+    let conformance = if strict {
+        Conformance::Strict
+    } else {
+        Conformance::Tolerant
+    };
+    let doc = tessstep_model::parse_with(BufReader::new(file), limits, conformance)?;
     let mut out = format!(
         "{{\"format_version\":1,\"scope\":\"product-structure\",\"declared\":\"{}\",\"entity_count\":{}",
         escape(schema),

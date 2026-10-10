@@ -5,6 +5,9 @@ pub mod decode;
 
 use std::{collections::BTreeMap, io::BufRead, ops::Range};
 use tessstep_part21::*;
+// The parse inputs and the deviation record, so that applications depending on this
+// crate alone (such as generated validators) can size and inspect a parse.
+pub use tessstep_part21::{Conformance, Deviation, Deviations, ParseLimits};
 
 /// Dense insertion-order records indexed by sparse physical IDs. Lookup is
 /// O(log n); large IDs never allocate a correspondingly large array.
@@ -60,6 +63,7 @@ pub struct Document {
     anchors: Vec<Anchor>,
     externals: BTreeMap<Occurrence, ExternalReference>,
     signatures: Vec<Signature>,
+    deviations: Deviations,
 }
 impl Document {
     pub fn headers(&self) -> &[Record] {
@@ -83,9 +87,20 @@ impl Document {
     pub fn signatures(&self) -> &[Signature] {
         &self.signatures
     }
+    /// The exporter slips the parse accepted; empty for a strict parse.
+    pub fn deviations(&self) -> Deviations {
+        self.deviations
+    }
     /// Separate, nonrecursive analysis. Cycles and forward references are valid
     /// here: this phase tests existence without interpreting schema constraints.
     pub fn references(&self) -> Vec<ReferenceUse> {
+        self.references_where(|_| true)
+    }
+    /// The [`Self::references`] whose target is missing, without holding every use.
+    pub fn missing_references(&self) -> Vec<ReferenceUse> {
+        self.references_where(|status| status == ReferenceStatus::Missing)
+    }
+    fn references_where(&self, keep: impl Fn(ReferenceStatus) -> bool) -> Vec<ReferenceUse> {
         let mut output = Vec::new();
         let mut collect = |owner, value: &StepValue| {
             let mut stack = vec![value];
@@ -112,12 +127,14 @@ impl Document {
                     } else {
                         ReferenceStatus::Missing
                     };
-                    output.push(ReferenceUse {
-                        owner,
-                        target,
-                        source: value.source,
-                        status,
-                    });
+                    if keep(status) {
+                        output.push(ReferenceUse {
+                            owner,
+                            target,
+                            source: value.source,
+                            status,
+                        });
+                    }
                 }
             }
         };
@@ -147,12 +164,12 @@ impl Document {
         output.sort_by_key(|usage| usage.source.start.offset);
         output
     }
-    /// No external resources are fetched and no signatures are trusted.
+    /// No external resources are fetched and no signatures are trusted. Each kind of
+    /// accepted slip ([`Self::deviations`]) is one warning at its first occurrence.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
         let mut output: Vec<_> = self
-            .references()
+            .missing_references()
             .into_iter()
-            .filter(|r| r.status == ReferenceStatus::Missing)
             .map(|r| Diagnostic {
                 entity: r.owner,
                 ..Diagnostic::error(
@@ -179,6 +196,31 @@ impl Document {
                 signature.source,
             )
         }));
+        let Deviations {
+            literal_backslashes,
+            null_header_strings,
+            ..
+        } = self.deviations;
+        for (deviation, code, text) in [
+            (
+                literal_backslashes,
+                DiagnosticCode::InvalidEscape,
+                "string backslash(es) that start no directive kept literally",
+            ),
+            (
+                null_header_strings,
+                DiagnosticCode::InvalidHeader,
+                "`$` accepted for FILE_DESCRIPTION or FILE_NAME strings",
+            ),
+        ] {
+            if let Some(first) = deviation.first {
+                output.push(Diagnostic::warning(
+                    code,
+                    format!("{} {text}; first here", deviation.count),
+                    first,
+                ));
+            }
+        }
         output.sort_by_key(|diagnostic| diagnostic.source_span.start.offset);
         output
     }
@@ -198,9 +240,20 @@ pub struct ReferenceUse {
 }
 
 /// Collect a syntactically complete physical file. Duplicate declarations are
-/// fatal; dangling references are available separately from `diagnostics()`.
+/// fatal; dangling references are available separately from `diagnostics()`. The
+/// parse is tolerant ([`Conformance::Tolerant`]); see [`parse_with`].
 pub fn parse(reader: impl BufRead, limits: ParseLimits) -> Result<Document, Diagnostic> {
-    let parser = Parser::new(reader, limits)?;
+    parse_with(reader, limits, Conformance::default())
+}
+/// [`parse`] with an explicit conformance: [`Conformance::Strict`] rejects the
+/// exporter slips that the tolerant default accepts and counts in
+/// [`Document::deviations`].
+pub fn parse_with(
+    reader: impl BufRead,
+    limits: ParseLimits,
+    conformance: Conformance,
+) -> Result<Document, Diagnostic> {
+    let mut parser = Parser::with_conformance(reader, limits, conformance)?;
     let mut document = Document {
         headers: Vec::new(),
         entities: EntityDatabase::default(),
@@ -208,14 +261,14 @@ pub fn parse(reader: impl BufRead, limits: ParseLimits) -> Result<Document, Diag
         anchors: Vec::new(),
         externals: BTreeMap::new(),
         signatures: Vec::new(),
+        deviations: Deviations::default(),
     };
-    let mut ids = BTreeMap::new();
     let mut anchors = BTreeMap::new();
-    for event in parser {
+    for event in parser.by_ref() {
         match event? {
             Event::Header(record) => document.headers.push(record),
             Event::Entity(entity) => {
-                unique_id(&mut ids, entity.id.get(), entity.source)?;
+                unique_id(&document, entity.id.get(), entity.source)?;
                 document
                     .entities
                     .by_id
@@ -233,7 +286,7 @@ pub fn parse(reader: impl BufRead, limits: ParseLimits) -> Result<Document, Diag
                 document.anchors.push(anchor);
             }
             Event::ExternalReference(reference) => {
-                unique_id(&mut ids, reference.id.number(), reference.source)?;
+                unique_id(&document, reference.id.number(), reference.source)?;
                 document.externals.insert(reference.id, reference);
             }
             Event::StartData { parameters, source } => {
@@ -254,14 +307,22 @@ pub fn parse(reader: impl BufRead, limits: ParseLimits) -> Result<Document, Diag
             Event::EndExchange(_) => (),
         }
     }
+    document.deviations = parser.deviations();
     Ok(document)
 }
-fn unique_id(
-    ids: &mut BTreeMap<u64, SourceSpan>,
-    id: u64,
-    source: SourceSpan,
-) -> Result<(), Diagnostic> {
-    if let Some(previous) = ids.insert(id, source) {
+/// Entity and value instance names share one number space. The check reads the
+/// stores the document keeps anyway, so a large file pays for no second index.
+fn unique_id(document: &Document, id: u64, source: SourceSpan) -> Result<(), Diagnostic> {
+    let entity = EntityId::new(id);
+    let previous = entity
+        .and_then(|entity| document.entities.get(entity).map(|e| e.source))
+        .or_else(|| {
+            let external = |occurrence| document.externals.get(&occurrence).map(|e| e.source);
+            entity
+                .and_then(|entity| external(Occurrence::Entity(entity)))
+                .or_else(|| ValueId::new(id).and_then(|value| external(Occurrence::Value(value))))
+        });
+    if let Some(previous) = previous {
         let mut diagnostic = Diagnostic::error(
             DiagnosticCode::DuplicateId,
             format!(
@@ -270,7 +331,7 @@ fn unique_id(
             ),
             source,
         );
-        diagnostic.entity = EntityId::new(id);
+        diagnostic.entity = entity;
         Err(diagnostic)
     } else {
         Ok(())

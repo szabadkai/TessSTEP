@@ -1,6 +1,6 @@
 use crate::{
-    BinaryValue, Diagnostic, DiagnosticCode as Code, EntityId, Occurrence, ParseLimits, Signature,
-    SourcePosition, SourceSpan, ValueId,
+    BinaryValue, Conformance, Deviation, Diagnostic, DiagnosticCode as Code, EntityId, Occurrence,
+    ParseLimits, Signature, SourcePosition, SourceSpan, ValueId,
 };
 use std::io::{self, BufRead};
 
@@ -44,9 +44,15 @@ pub struct Lexer<R> {
     previous_cr: bool,
     failed: bool,
     token_start: SourcePosition,
+    conformance: Conformance,
+    literal_backslashes: Deviation,
 }
 impl<R: BufRead> Lexer<R> {
+    /// A tolerant lexer ([`Conformance::Tolerant`]).
     pub fn new(reader: R, limits: ParseLimits) -> Self {
+        Self::with_conformance(reader, limits, Conformance::default())
+    }
+    pub fn with_conformance(reader: R, limits: ParseLimits, conformance: Conformance) -> Self {
         Self {
             reader,
             limits,
@@ -58,7 +64,13 @@ impl<R: BufRead> Lexer<R> {
             previous_cr: false,
             failed: false,
             token_start: SourcePosition::default(),
+            conformance,
+            literal_backslashes: Deviation::default(),
         }
+    }
+    /// String backslashes kept literally so far ([`crate::Deviations::literal_backslashes`]).
+    pub fn literal_backslashes(&self) -> Deviation {
+        self.literal_backslashes
     }
     pub fn position(&self) -> SourcePosition {
         self.position
@@ -251,56 +263,10 @@ impl<R: BufRead> Lexer<R> {
                     break;
                 }
             } else if byte == b'\\' {
-                raw.push(byte);
-                let next = self
-                    .bump()?
-                    .ok_or_else(|| self.error(Code::UnterminatedString, "unterminated escape"))?;
-                raw.push(next);
-                let tail = match next {
-                    b'\\' => 0,
-                    b'S' | b'P' => 2,
-                    b'N' | b'F' => 1,
-                    b'X' => {
-                        let mode = self
-                            .bump()?
-                            .ok_or_else(|| self.error(Code::InvalidEscape, "missing X mode"))?;
-                        raw.push(mode);
-                        match mode {
-                            b'\\' => 2,
-                            b'2' | b'4' => {
-                                self.expect_byte(b'\\', Code::InvalidEscape)?;
-                                raw.push(b'\\');
-                                loop {
-                                    let digit = self.bump()?.ok_or_else(|| {
-                                        self.error(
-                                            Code::InvalidEscape,
-                                            "unterminated Unicode escape",
-                                        )
-                                    })?;
-                                    raw.push(digit);
-                                    if digit == b'\\' {
-                                        break;
-                                    }
-                                    if hex(digit).is_none() {
-                                        return Err(self.error(
-                                            Code::InvalidEscape,
-                                            "expected Unicode hex digit",
-                                        ));
-                                    }
-                                }
-                                3
-                            }
-                            _ => return Err(self.error(Code::InvalidEscape, "invalid X directive")),
-                        }
-                    }
-                    _ => return Err(self.error(Code::InvalidEscape, "unknown string directive")),
-                };
-                for _ in 0..tail {
-                    raw.push(
-                        self.bump()?.ok_or_else(|| {
-                            self.error(Code::InvalidEscape, "incomplete directive")
-                        })?,
-                    );
+                if self.conformance == Conformance::Strict {
+                    self.strict_directive(&mut raw)?;
+                } else {
+                    self.tolerant_directive(&mut raw)?;
                 }
             } else {
                 raw.push(byte);
@@ -318,6 +284,154 @@ impl<R: BufRead> Lexer<R> {
                     self.error(code, message)
                 }
             })
+    }
+    /// Reads the directive after a string backslash into `raw`, rejecting any that is
+    /// not well formed.
+    fn strict_directive(&mut self, raw: &mut Vec<u8>) -> Result<(), Diagnostic> {
+        raw.push(b'\\');
+        let next = self
+            .bump()?
+            .ok_or_else(|| self.error(Code::UnterminatedString, "unterminated escape"))?;
+        raw.push(next);
+        let tail = match next {
+            b'\\' => 0,
+            b'S' | b'P' => 2,
+            b'N' | b'F' => 1,
+            b'X' => {
+                let mode = self
+                    .bump()?
+                    .ok_or_else(|| self.error(Code::InvalidEscape, "missing X mode"))?;
+                raw.push(mode);
+                match mode {
+                    b'\\' => 2,
+                    b'2' | b'4' => {
+                        self.expect_byte(b'\\', Code::InvalidEscape)?;
+                        raw.push(b'\\');
+                        return self.extended_run(raw);
+                    }
+                    _ => return Err(self.error(Code::InvalidEscape, "invalid X directive")),
+                }
+            }
+            _ => return Err(self.error(Code::InvalidEscape, "unknown string directive")),
+        };
+        self.directive_payload(raw, tail)
+    }
+    /// Reads the directive after a string backslash into `raw`. A backslash whose
+    /// following characters complete no directive opening (`\\`, `\N\`, `\F\`,
+    /// `\PA\` to `\PI\`, `\S\`, `\X\`, `\X2\`, `\X4\`) is a literal backslash,
+    /// written to `raw` as `\\` and counted. The character that broke the opening is
+    /// left unread, so an apostrophe after the backslash still ends the string. A
+    /// complete opening with a malformed payload is rejected as in strict mode.
+    fn tolerant_directive(&mut self, raw: &mut Vec<u8>) -> Result<(), Diagnostic> {
+        let end = self.position;
+        let start = SourcePosition {
+            offset: end.offset - 1,
+            column: end.column - 1,
+            ..end
+        };
+        let mut read = Vec::new();
+        let tail = match self.peek()? {
+            None => return Err(self.error(Code::UnterminatedString, "unterminated escape")),
+            Some(b'\\') => {
+                self.bump()?;
+                raw.extend_from_slice(b"\\\\");
+                return Ok(());
+            }
+            Some(letter @ (b'N' | b'F')) => {
+                self.bump()?;
+                read.push(letter);
+                self.opening_byte(b'\\', &mut read)?.then_some(0)
+            }
+            Some(b'P') => {
+                self.bump()?;
+                read.push(b'P');
+                match self.peek()? {
+                    Some(alphabet @ b'A'..=b'I') => {
+                        self.bump()?;
+                        read.push(alphabet);
+                        self.opening_byte(b'\\', &mut read)?.then_some(0)
+                    }
+                    _ => None,
+                }
+            }
+            Some(b'S') => {
+                self.bump()?;
+                read.push(b'S');
+                self.opening_byte(b'\\', &mut read)?.then_some(1)
+            }
+            Some(b'X') => {
+                self.bump()?;
+                read.push(b'X');
+                match self.peek()? {
+                    Some(b'\\') => {
+                        self.bump()?;
+                        read.push(b'\\');
+                        Some(2)
+                    }
+                    Some(mode @ (b'2' | b'4')) => {
+                        self.bump()?;
+                        read.push(mode);
+                        if self.opening_byte(b'\\', &mut read)? {
+                            raw.push(b'\\');
+                            raw.extend_from_slice(&read);
+                            return self.extended_run(raw);
+                        }
+                        None
+                    }
+                    _ => None,
+                }
+            }
+            Some(_) => None,
+        };
+        match tail {
+            Some(tail) => {
+                raw.push(b'\\');
+                raw.extend_from_slice(&read);
+                self.directive_payload(raw, tail)
+            }
+            None => {
+                self.literal_backslashes.record(SourceSpan { start, end });
+                raw.extend_from_slice(b"\\\\");
+                raw.extend_from_slice(&read);
+                Ok(())
+            }
+        }
+    }
+    /// Consumes the next byte when it is `expected`, the next byte of an opening.
+    fn opening_byte(&mut self, expected: u8, read: &mut Vec<u8>) -> Result<bool, Diagnostic> {
+        if self.peek()? == Some(expected) {
+            self.bump()?;
+            read.push(expected);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+    /// The hexadecimal groups of an X2 or X4 directive through their `\X0\`.
+    fn extended_run(&mut self, raw: &mut Vec<u8>) -> Result<(), Diagnostic> {
+        loop {
+            let digit = self
+                .bump()?
+                .ok_or_else(|| self.error(Code::InvalidEscape, "unterminated Unicode escape"))?;
+            raw.push(digit);
+            if digit == b'\\' {
+                break;
+            }
+            if hex(digit).is_none() {
+                return Err(self.error(Code::InvalidEscape, "expected Unicode hex digit"));
+            }
+        }
+        self.directive_payload(raw, 3)
+    }
+    /// The remaining `count` bytes of a directive, checked when decoded.
+    fn directive_payload(&mut self, raw: &mut Vec<u8>, count: usize) -> Result<(), Diagnostic> {
+        for _ in 0..count {
+            raw.push(
+                self.bump()?
+                    .ok_or_else(|| self.error(Code::InvalidEscape, "incomplete directive"))?,
+            );
+        }
+        Ok(())
     }
     fn binary(&mut self) -> Result<TokenKind, Diagnostic> {
         self.bump()?;

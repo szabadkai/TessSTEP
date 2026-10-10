@@ -9,7 +9,9 @@ schema population are retained; their semantic consistency is not checked yet.
 
 `Lexer<R: BufRead>` produces owned tokens. `Parser<R>` produces `Event` values. Callers
 can process and drop an event at a time. `tessstep_model::parse` drains every event,
-rejects duplicate IDs and builds an immutable-inspection `Document`.
+rejects duplicate IDs and builds an immutable-inspection `Document`. Duplicate IDs are
+found through the document's own entity index and external references, without a
+second index of every declaration.
 
 Simple records, complex partial records, typed values with exactly one argument, empty
 and nested aggregates, references, constants, enumerations, omitted/undefined parameters,
@@ -31,6 +33,32 @@ X2 UCS scalar groups, X4 scalar groups, and valid direct UTF-8. X2 surrogate cod
 are rejected; this implementation does not reinterpret UCS-2 groups as UTF-16 pairs.
 Page selection resets per string. Undefined page entries, truncated directives and
 invalid Unicode scalars fail. Unicode normalization is not performed.
+
+## Exporter slips
+
+A parse is tolerant by default (`Conformance::Tolerant`): it accepts two exporter slips
+that HOOPS Exchange also opens, counts each in `Document::deviations()` (`Deviations`,
+with the count and first location of each kind) and reports each kind as one warning
+of `Document::diagnostics()` at its first occurrence:
+
+- **Literal backslashes.** A backslash in a string whose following characters complete
+  no directive opening (`\\`, `\N\`, `\F\`, `\PA\` to `\PI\`, `\S\`, `\X\`, `\X2\`,
+  `\X4\`) is a literal backslash (`TS1006` warning), as in the Windows paths
+  `'C:\temp\part.stp'` and `'Alloys\Steel'`. The character that broke the opening is
+  read normally, so an apostrophe right after the backslash still ends the string,
+  and nothing after it is consumed as a directive operand. A complete opening with a
+  malformed payload (`\X\GG`, lowercase or short hexadecimal groups, a missing `\X0\`,
+  an undefined page character) is still rejected, as are backslashes outside strings.
+- **Null header strings.** `$` stands for a string of FILE_DESCRIPTION or FILE_NAME,
+  or for an element of their string lists (`TS1011` warning), as in an unset
+  authorisation. The value stays `$`. A string list must still be a list, and
+  FILE_SCHEMA, which names the schema, is never relaxed.
+
+`Conformance::Strict` (`tessstep_model::parse_with`, `Parser::with_conformance`,
+`stepdump --strict`) rejects both with the errors of Part 21 itself; a strict parse
+accepts exactly the inputs that 1.0 accepted, and its deviations are always empty. For
+inputs both modes accept, both produce the same document. No other recovery is
+attempted: every other syntax error still ends the parse.
 
 Binary storage is MSB-first bytes plus an exact bit count. Physical leading pad bits
 must be zero; internal unused trailing bits are zero. A one-bit value cannot be confused
@@ -77,9 +105,36 @@ through Rust's standard allocation APIs in this implementation. Every budget fai
 prints the defaults. The largest corpus input that parses cleanly (30.7 MB, 413,209
 entities) uses about a fifth of the default record and value budgets.
 
+`ParseLimits::for_input(input_bytes)` sizes the budgets from the input length, as
+`ImportOptions::for_document` sizes import budgets from the entity count: every
+default, with `max_input_bytes` raised to the input length and `max_entities`,
+`max_records`, `max_total_values` and `max_aggregate_elements` raised to the most of
+each that many bytes of syntax can hold (`BYTES_PER_ENTITY` 7 for `#1=A();`,
+`BYTES_PER_RECORD` 3, `BYTES_PER_VALUE` 2 for `$,`). No budget falls below its default,
+and no input within its length can exceed those four; the token, string, nesting,
+symbol and section budgets keep their defaults because they do not grow with the
+model. The budgets stay explicit fields, and failures still name the budget and its
+value. `stepdump` (for a file; standard input and `--default-budgets` keep the
+defaults, and `--max-<name>=N` applies after sizing), the survey and assembly
+examples, generated validators and therefore the corpus runner use it. The C ABI
+offers it as `ts_parse_options_for_input` (ABI 1.1); `ts_parse_options_init` keeps
+the defaults.
+
+Sizing trades the fixed memory ceiling for one proportional to the input. The densest
+corpus input holds a value per 5.45 bytes and the largest PreForm input (55.7 MB,
+951,613 entities, 4,582,879 values, over the default value budget) one per 12. A value
+takes 80 bytes (48 of them its source span), a record 88 and an entity 144 in the
+public 1.x types, so a parsed exporter file takes about ten times its bytes (569 MB
+peak for that file), and a hostile input made of `$,` up to forty times. List elements
+collect on one shared stack and move into exactly sized vectors when the list closes,
+which removed 2.53 million unused value slots (185 MB of peak RSS) from that file;
+reference diagnostics collect only missing references
+(`Document::missing_references`).
+
 Both lexer and parser stop after their first error. The parser is a fused iterator.
-Tolerant recovery is deliberately not provided yet; a fatal parse yields no complete
-Document. Earlier streaming events are provisional until the iterator reaches EOF.
+Apart from the counted exporter slips above, tolerant recovery is deliberately not
+provided; a fatal parse yields no complete Document. Earlier streaming events are
+provisional until the iterator reaches EOF.
 
 Reference used to resolve physical syntax details: [STEP Tools' published Part 21
 edition 3 text](https://www.steptools.com/stds/step/IS_final_p21e3.html). No ISO prose,

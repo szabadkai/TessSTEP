@@ -1,5 +1,6 @@
 //! Usage: cargo run -p tessstep-import --example survey -- [--max-work=N] [--max-records=N]
-//!     [--repair] [--deviation-factor=F] FILE METRES_PER_UNIT [MAX_ROOTS]
+//!     [--repair] [--deviation-factor=F] [--strict-syntax] [--max-roots=N] FILE
+//!     METRES_PER_UNIT [MAX_ROOTS]
 //! Imports every MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS and FACETED_BREP root with the
 //! matching selected-root profile, every shape tessellation root with the existing
 //! tessellation profile, and every tessellated annotation occurrence with the
@@ -9,8 +10,11 @@
 //! METRES_PER_UNIT, radians and 1e-7 m are the explicit fallback. Each root reports
 //! which applied, the declared uncertainty and the tolerance and chord it used, and
 //! whether representation selection (preferring exact B-reps) selected it or paired
-//! it as an alternative of another root. MAX_ROOTS bounds shape roots and, separately,
-//! annotation occurrences. Import budgets default to `ImportOptions::for_document`
+//! it as an alternative of another root. MAX_ROOTS (or `--max-roots`) bounds shape
+//! roots and, separately, annotation occurrences; by default every root is surveyed.
+//! Parse budgets are sized from the file length (`ParseLimits::for_input`) and the
+//! parse accepts the counted exporter slips of `Deviations`, reported as `deviations`;
+//! `--strict-syntax` rejects them. Import budgets default to `ImportOptions::for_document`
 //! (sized by the document's entity count); `--max-work` and `--max-records` set them
 //! explicitly, and the output records the budgets used. `--repair` enables the opt-in
 //! sewing and orientation repair (`RepairOptions::enabled`) and reports each solid
@@ -25,7 +29,10 @@ use std::{fmt::Write, fs::File, io::BufReader, time::Instant};
 use tessstep_import::*;
 use tessstep_math::{Angle, AngleUnit, Length, LengthUnit, ModelTolerance};
 use tessstep_model::Document;
-use tessstep_part21::{EntityId, ParseLimits};
+use tessstep_part21::{Conformance, EntityId, ParseLimits};
+
+/// Solid roots whose closures a session decodes together.
+const PREPARE_GROUP: usize = 64;
 
 fn main() {
     if let Err(e) = run() {
@@ -37,10 +44,15 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let (mut max_work, mut max_records, mut repair, mut deviation_factor) =
         (None, None, false, None);
+    let (mut conformance, mut max_roots) = (Conformance::Tolerant, None);
     let mut args = vec![String::new()];
     for arg in std::env::args().skip(1) {
         if arg == "--repair" {
             repair = true;
+        } else if arg == "--strict-syntax" {
+            conformance = Conformance::Strict;
+        } else if let Some(value) = arg.strip_prefix("--max-roots=") {
+            max_roots = Some(value.parse::<usize>()?);
         } else if let Some(value) = arg.strip_prefix("--max-work=") {
             max_work = Some(value.parse::<usize>()?);
         } else if let Some(value) = arg.strip_prefix("--max-records=") {
@@ -53,19 +65,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if !(3..=4).contains(&args.len()) {
         return Err(
-            "usage: survey [--max-work=N] [--max-records=N] [--repair] [--deviation-factor=F] FILE METRES_PER_UNIT [MAX_ROOTS]"
+            "usage: survey [--max-work=N] [--max-records=N] [--repair] [--deviation-factor=F] [--strict-syntax] [--max-roots=N] FILE METRES_PER_UNIT [MAX_ROOTS]"
                 .into(),
         );
     }
     let scale: f64 = args[2].parse()?;
     let unit = LengthUnit::metres_per_unit(scale)?;
-    let max_roots: usize = args.get(3).map_or(Ok(1000), |s| s.parse())?;
+    let max_roots = match args.get(3) {
+        Some(value) => value.parse()?,
+        None => max_roots.unwrap_or(usize::MAX),
+    };
     let mut out =
         format!("{{\"format_version\":2,\"scope\":\"shape-survey\",\"metres_per_unit\":{scale}");
-    let doc = match tessstep_model::parse(
-        BufReader::new(File::open(&args[1])?),
-        ParseLimits::default(),
-    ) {
+    let file = File::open(&args[1])?;
+    let limits = ParseLimits::for_input(file.metadata()?.len());
+    let doc = match tessstep_model::parse_with(BufReader::new(file), limits, conformance) {
         Ok(doc) => doc,
         Err(e) => {
             eprintln!("{e}");
@@ -95,6 +109,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         options.max_work,
         options.max_records,
         doc.entities().len()
+    )?;
+    let deviations = doc.deviations();
+    write!(
+        out,
+        ",\"deviations\":{{\"literal_backslashes\":{},\"null_header_strings\":{}}}",
+        deviations.literal_backslashes.count, deviations.null_header_strings.count
     )?;
     // One session shares discovery and each profile's decode across all roots; every
     // result equals the free functions'.
@@ -133,19 +153,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ",\"parse\":\"accepted\",\"root_count\":{total},\"truncated\":{},\"roots\":[",
         total > max_roots
     )?;
-    let surveyed = roots.iter().take(max_roots);
-    let (faceted, curved): (Vec<_>, Vec<_>) =
-        surveyed.partition(|r| r.kind == SolidKind::FacetedBrep);
-    let ids = |roots: Vec<&SolidRoot>| roots.iter().map(|r| r.entity).collect::<Vec<_>>();
-    session.prepare(ImportProfile::Faceted, &ids(faceted));
-    session.prepare(ImportProfile::Brep, &ids(curved));
+    let surveyed: Vec<&SolidRoot> = roots.iter().take(max_roots).collect();
+    let ids = |roots: Vec<&&SolidRoot>| roots.iter().map(|r| r.entity).collect::<Vec<_>>();
     let shells: Vec<EntityId> = tessellations
         .iter()
         .take(max_roots.saturating_sub(roots.len()))
         .map(|t| t.entity)
         .collect();
     session.prepare(ImportProfile::Tessellated, &shells);
-    for (index, root) in roots.iter().take(max_roots).enumerate() {
+    for (index, root) in surveyed.iter().enumerate() {
+        // Roots are prepared PREPARE_GROUP at a time, just before their imports, so
+        // the session holds one group's shared decode, not the whole document's.
+        if index % PREPARE_GROUP == 0 {
+            let group = &surveyed[index..surveyed.len().min(index + PREPARE_GROUP)];
+            let (faceted, curved): (Vec<_>, Vec<_>) =
+                group.iter().partition(|r| r.kind == SolidKind::FacetedBrep);
+            session.prepare(ImportProfile::Faceted, &ids(faceted));
+            session.prepare(ImportProfile::Brep, &ids(curved));
+        }
         let started = Instant::now();
         let (id, kind) = (root.entity, root.kind.step_name());
         let faceted = root.kind == SolidKind::FacetedBrep;

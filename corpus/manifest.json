@@ -162,6 +162,14 @@
       "references": "not-applicable-or-local/external"
     },
     {
+      "path": "part21/tolerated/exporter-slips.step",
+      "source": "Authored for TessSTEP parser tests; synthetic, no CAD exporter or standards example copied. Reproduces two exporter slips: string backslashes that start no directive and $ for the FILE_NAME authorisation.",
+      "license": "MIT",
+      "sha256": "a8a690c80c83e7302f00a2ecfb849a27cfc47cae30f53a060458b1e9e4df4db7",
+      "syntax": "tolerated",
+      "references": "not-applicable-or-local/external"
+    },
+    {
       "path": "express/invalid/semantic.exp",
       "source": "Authored for TessSTEP EXPRESS frontend tests; synthetic, no ISO/AP schema or standards example copied.",
       "license": "MIT",

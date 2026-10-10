@@ -10,7 +10,9 @@ schema selection, assembly import and imported appearance (Milestone 21), and
 extensible import options with the tolerance policy and opt-in repair, root and unit
 discovery, representation selection, single-root curved solid and surface-model
 import, import sessions, failure text and a static library target (Milestone 22.10).
-The export set of ABI 1.0 is frozen at 95 functions ([ABI 1 freeze](#abi-1-freeze)).
+The export set of ABI 1.0 is frozen at 95 functions ([ABI 1 freeze](#abi-1-freeze));
+ABI 1.1 adds three: input-sized parse budgets, the parse conformance policy and
+deviation counts ([ABI 1.1](#abi-11-parse-budgets-and-exporter-slips)).
 General schema decoding is not exposed.
 The additive faceted and edge-based planar import entry points are described in [STEP_IMPORT.md](STEP_IMPORT.md).
 The planar profile's conformance policy is a separate 16-byte `ts_import_policy`
@@ -649,11 +651,42 @@ discovered presentation, 32-byte choice, 48-byte surface shell, 40-byte tolerate
 encodings, 48-byte assembly adaptations, 56-byte root report and 72-byte session
 statistics.
 
+## ABI 1.1: parse budgets and exporter slips
+
+ABI 1.1 adds three functions, recorded as `1.1` in [abi/exports.txt](../abi/exports.txt)
+(98 exports), and no record:
+
+- `ts_parse_options_for_input(input_bytes, &options)` fills a `ts_parse_options` sized
+  from the input length as the Rust `ParseLimits::for_input` sizes it (see
+  [PART21.md](PART21.md#budgets)); `ts_parse_options_init` keeps its defaults. C++:
+  `tessstep::parse_options_for_input(size)`.
+- `ts_document_parse_with_policy(data, size, options, policy, &document, &report)`
+  takes the existing 16-byte `ts_import_policy`. A NULL policy or flags 0 selects the
+  tolerant default of the Rust parser: string backslashes that start no directive
+  are literal and `$` may stand for FILE_DESCRIPTION and FILE_NAME strings, each kind
+  counted and reported as one warning (`TS1006`, `TS1011`) by
+  `ts_document_diagnostics`. `TS_IMPORT_STRICT` rejects both. C++:
+  `Document::parse(bytes, options, policy)`.
+- `ts_document_deviation_count(document, kind, &count)` returns how many slips of
+  `TS_DEVIATION_LITERAL_BACKSLASH` (1) or `TS_DEVIATION_NULL_HEADER_STRING` (2) the
+  parse accepted; an unknown kind is `TS_NOT_FOUND`, so later kinds can be added
+  without a record. C++: `Document::deviation_count(tessstep::Deviation)`.
+
+`ts_document_parse` stays strict. Its ABI 1.0 contract rejects both slips, and an
+ABI 1.0 caller could observe a document where it was promised a parse error, so under
+the freeze policy only the new entry point and its flags word may accept them. The
+Rust `tessstep_model::parse` is tolerant by default (`parse_with` takes
+`Conformance::Strict`), so the C default differs from the Rust one until ABI 2. The
+warnings are existing codes with the existing warning severity, produced only for
+documents the new entry point accepted. The installed C and C++ consumers check the
+sized budgets, both policies, the counts and the warnings on an authored input.
+
 ## ABI 1 freeze
 
 The ABI 1.0 export set was frozen on 2026-10-10. The record is
 [abi/exports.txt](../abi/exports.txt): every exported C function, each with the ABI
-version that added it (all 95 are `1.0`). Three checks hold it:
+version that added it (95 are `1.0`; the three of
+[ABI 1.1](#abi-11-parse-budgets-and-exporter-slips) are `1.1`). Three checks hold it:
 
 - `cargo test -p tessstep-capi --test abi` requires the bridge's `#[unsafe(no_mangle)]`
   functions, the declarations in `tessstep.h` and the record to agree exactly, and

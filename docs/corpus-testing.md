@@ -230,9 +230,27 @@ python3 scripts/corpus.py --check --geometry-repair --output reports/corpus-repa
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
+Every stage sizes its parse budgets from the input length (`ParseLimits::for_input`,
+see [PART21.md](PART21.md#budgets)): `stepdump`, the survey, the product linker and
+generated validators read a file with every default budget, the entity, record, value
+and aggregate budgets raised to what its bytes can hold. The physical stage parses
+with the tolerant default: a file that needs one of the counted exporter slips (string
+backslashes that start no directive, `$` header strings, see
+[PART21.md](PART21.md#exporter-slips)) is `clean` with one `TS1006` or `TS1011`
+warning per kind, its counts are kept as the file's `deviations`, and `summary` totals
+them as `parse_deviations`. `stepdump --strict` and `--default-budgets` reproduce the
+1.0 physical stage. The schema stage parses inside the configured validator, so a
+validator generated before these rules rejects the tolerated files' physical syntax
+and reports `not_run`, a runner error; rebuild it with `scripts/build_ap_validator.py`.
+
 The geometry stage sizes its import budgets from each document's entity count
 (`ImportOptions::for_document`) and records them per file; `--geometry-max-work` and
 `--geometry-max-records` replace that rule with one explicit budget for every root.
+The survey surveys every root unless `MAX_ROOTS` or `--max-roots=N` bounds them (the
+bound was 1,000 before the PreForm parity work; no corpus file reaches it), prepares
+the shared decodes of 64 solid roots at a time just before importing them, so a
+session holds one group's decode rather than the whole document's, and reports the
+parse `deviations`; `--strict-syntax` parses strictly.
 `--geometry-repair` surveys every solid root with the opt-in sewing and orientation
 repair (`RepairOptions::enabled`, see [curved import](CURVED_IMPORT.md#opt-in-topology-repair)):
 each root reports its repair counts, each file their totals, and `summary.md` the repaired

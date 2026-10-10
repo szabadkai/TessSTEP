@@ -44,9 +44,24 @@ pub struct Parser<R> {
     headers: usize,
     phase: u8,
     current_entity: Option<EntityId>,
+    /// Elements of the lists currently open, innermost last. Each closed list
+    /// moves its elements into an exactly sized vector, so parsed values carry no
+    /// growth slack.
+    scratch: Vec<StepValue>,
+    conformance: Conformance,
+    null_header_strings: Deviation,
 }
 impl<R: BufRead> Parser<R> {
+    /// A tolerant parser ([`Conformance::Tolerant`]): it accepts the exporter slips of
+    /// [`Deviations`] and counts them.
     pub fn new(reader: R, limits: ParseLimits) -> Result<Self, Diagnostic> {
+        Self::with_conformance(reader, limits, Conformance::default())
+    }
+    pub fn with_conformance(
+        reader: R,
+        limits: ParseLimits,
+        conformance: Conformance,
+    ) -> Result<Self, Diagnostic> {
         // A configurable depth must not permit callers to disable stack protection.
         if limits.max_nesting_depth > 128 {
             return Err(Diagnostic::error(
@@ -56,7 +71,7 @@ impl<R: BufRead> Parser<R> {
             ));
         }
         Ok(Self {
-            lexer: Lexer::new(reader, limits),
+            lexer: Lexer::with_conformance(reader, limits, conformance),
             lookahead: None,
             limits,
             state: State::Start,
@@ -69,7 +84,17 @@ impl<R: BufRead> Parser<R> {
             headers: 0,
             phase: 0,
             current_entity: None,
+            scratch: Vec::new(),
+            conformance,
+            null_header_strings: Deviation::default(),
         })
+    }
+    /// The slips accepted so far; complete once the iterator has ended without error.
+    pub fn deviations(&self) -> Deviations {
+        Deviations {
+            literal_backslashes: self.lexer.literal_backslashes(),
+            null_header_strings: self.null_header_strings,
+        }
     }
     fn peek(&mut self) -> Result<&Token, Diagnostic> {
         if self.lookahead.is_none() {
@@ -194,21 +219,22 @@ impl<R: BufRead> Parser<R> {
     }
     /// Opening parenthesis has already been consumed.
     fn list(&mut self, depth: usize, anchor: bool) -> Result<Vec<StepValue>, Diagnostic> {
-        let mut values = Vec::new();
         if self.peek()?.kind == TokenKind::RightParen {
             self.take()?;
-            return Ok(values);
+            return Ok(Vec::new());
         }
+        let start = self.scratch.len();
         loop {
             self.limit(
-                values.len(),
+                self.scratch.len() - start,
                 self.limits.max_aggregate_elements,
                 "aggregate element",
             )?;
-            values.push(self.value(depth, anchor)?);
+            let value = self.value(depth, anchor)?;
+            self.scratch.push(value);
             let separator = self.take()?;
             match separator.kind {
-                TokenKind::RightParen => return Ok(values),
+                TokenKind::RightParen => return Ok(self.scratch.drain(start..).collect()),
                 TokenKind::Comma => (),
                 _ => return Err(self.unexpected(&separator, "comma or closing parenthesis")),
             }
@@ -369,7 +395,13 @@ impl<R: BufRead> Parser<R> {
                     }
                     let record = self.record()?;
                     self.expect(TokenKind::Semicolon)?;
-                    validate_header(&record, self.headers)?;
+                    let tolerant = self.conformance == Conformance::Tolerant;
+                    validate_header(
+                        &record,
+                        self.headers,
+                        tolerant,
+                        &mut self.null_header_strings,
+                    )?;
                     self.headers += 1;
                     return Ok(Some(Event::Header(record)));
                 }
@@ -482,6 +514,7 @@ impl<R: BufRead> Iterator for Parser<R> {
             Ok(None) => None,
             Err(mut diagnostic) => {
                 self.state = State::Done;
+                self.scratch = Vec::new();
                 diagnostic.entity = self.current_entity;
                 Some(Err(diagnostic))
             }
@@ -514,7 +547,15 @@ fn token_label(token: &TokenKind) -> &'static str {
         TokenKind::Eof => "EOF",
     }
 }
-fn validate_header(record: &Record, index: usize) -> Result<(), Diagnostic> {
+/// A tolerant parse accepts `$` for a string of the informational FILE_DESCRIPTION
+/// and FILE_NAME, including list elements, and counts each in `nulls`. FILE_SCHEMA
+/// names the schema, so it is never relaxed.
+fn validate_header(
+    record: &Record,
+    index: usize,
+    tolerant: bool,
+    nulls: &mut Deviation,
+) -> Result<(), Diagnostic> {
     let expected = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if index >= 3 {
         if expected.contains(&record.name.as_ref()) {
@@ -527,7 +568,10 @@ fn validate_header(record: &Record, index: usize) -> Result<(), Diagnostic> {
         return Ok(());
     }
     let params = &record.parameters;
-    let string = |value: &StepValue| matches!(value.kind, ValueKind::String(_));
+    let lenient = tolerant && index < 2;
+    let string = |value: &StepValue| {
+        matches!(value.kind, ValueKind::String(_)) || (lenient && value.kind == ValueKind::Null)
+    };
     let strings = |value: &StepValue| matches!(&value.kind, ValueKind::Aggregate(v) if !v.is_empty() && v.iter().all(string));
     let valid = record.name.as_ref() == expected[index]
         && match index {
@@ -543,6 +587,19 @@ fn validate_header(record: &Record, index: usize) -> Result<(), Diagnostic> {
             _ => params.len() == 1 && strings(&params[0]),
         };
     if valid {
+        if lenient {
+            fn elements(value: &StepValue) -> &[StepValue] {
+                match &value.kind {
+                    ValueKind::Aggregate(items) => items,
+                    _ => std::slice::from_ref(value),
+                }
+            }
+            for value in params.iter().flat_map(elements) {
+                if value.kind == ValueKind::Null {
+                    nulls.record(value.source);
+                }
+            }
+        }
         Ok(())
     } else {
         Err(Diagnostic::error(

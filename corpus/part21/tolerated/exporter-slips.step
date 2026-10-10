@@ -1,0 +1,12 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('TessSTEP authored fixture: tolerated exporter slips'),'2;1');
+FILE_NAME('D:\exports\bracket.stp','2026-10-10T00:00:00',('TessSTEP'),('TessSTEP'),
+'TessSTEP','',$);
+FILE_SCHEMA(('TESSSTEP_TEST'));
+ENDSEC;
+DATA;
+#1=MATERIAL_NOTE('Library\Metals\Steel',#2);
+#2=OTHER('kept \\ escaped','caf\X2\00E9\X0\');
+ENDSEC;
+END-ISO-10303-21;

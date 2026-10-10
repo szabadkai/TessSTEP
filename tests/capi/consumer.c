@@ -20,8 +20,77 @@ _Static_assert(offsetof(ts_diagnostic, message) == 64, "diagnostic message offse
 static const char input[] = HEADER "#9=ITEM(#42);#42=(A()B());" END;
 static const char missing[] = HEADER "#9=ITEM(#42);" END;
 static const char unsupported[] = HEADER "#1=&SCOPE #2=A(); ENDSCOPE A();" END;
+/* Two exporter slips: string backslashes that start no directive, and $ for the
+ * FILE_NAME authorisation. */
+static const char slips[] = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('slips'),'2;1');"
+    "FILE_NAME('C:\\parts\\bracket.stp','',('a'),('o'),'','',$);FILE_SCHEMA(('EXAMPLE'));"
+    "ENDSEC;DATA;#1=ITEM('Alloys\\Steel');" END;
 static int text_is(ts_string_view view, const char *expected) {
     return view.size == strlen(expected) && memcmp(view.data, expected, view.size) == 0;
+}
+/* ABI 1.1: input-sized budgets, the parse conformance policy and deviation counts. */
+static void parse_policy_contract(void) {
+    ts_parse_options defaults, sized;
+    assert(ts_parse_options_init(&defaults) == TS_OK);
+    assert(ts_parse_options_for_input(1, NULL) == TS_INVALID_ARGUMENT);
+    assert(ts_parse_options_for_input(0, &sized) == TS_OK);
+    assert(memcmp(&sized, &defaults, sizeof sized) == 0);
+    assert(ts_parse_options_for_input(700000000u, &sized) == TS_OK);
+    assert(sized.struct_size == sizeof sized && sized.abi_version == TS_ABI_VERSION);
+    assert(sized.max_input_bytes == 700000000u && sized.max_entities == 100000000u);
+    assert(sized.max_records == 233333333u && sized.max_total_values == 350000000u);
+    assert(sized.max_aggregate_elements == 350000000u && sized.max_symbols == defaults.max_symbols);
+    assert(sized.max_nesting_depth == defaults.max_nesting_depth && sized.max_sections == defaults.max_sections);
+    assert(sized.max_token_bytes == defaults.max_token_bytes && sized.max_string_bytes == defaults.max_string_bytes);
+
+    const uint8_t *bytes = (const uint8_t *)slips;
+    size_t size = strlen(slips);
+    ts_document *doc = NULL;
+    ts_diagnostics *report = NULL;
+    ts_diagnostic diagnostic;
+    size_t count = 0;
+    uint64_t deviations = 99;
+    /* The ABI 1.0 entry point stays strict. */
+    assert(ts_document_parse(bytes, size, NULL, &doc, &report) == TS_PARSE_ERROR && !doc && report);
+    assert(ts_diagnostics_get(report, 0, &diagnostic) == TS_OK && text_is(diagnostic.code, "TS1006"));
+    ts_diagnostics_release(report);
+    report = NULL;
+    ts_import_policy policy;
+    assert(ts_import_policy_init(&policy) == TS_OK);
+    policy.flags = TS_IMPORT_STRICT;
+    assert(ts_document_parse_with_policy(bytes, size, &sized, &policy, &doc, &report) == TS_PARSE_ERROR && !doc && report);
+    ts_diagnostics_release(report);
+    report = NULL;
+    policy.flags = 2u;
+    doc = (ts_document *)&policy;
+    report = (ts_diagnostics *)&policy;
+    assert(ts_document_parse_with_policy(bytes, size, NULL, &policy, &doc, &report) == TS_INVALID_ARGUMENT && !doc && !report);
+    policy.flags = 0;
+    assert(ts_document_parse_with_policy(bytes, size, &sized, &policy, &doc, &report) == TS_OK && doc && !report);
+    ts_document_release(doc);
+    doc = NULL;
+    assert(ts_document_parse_with_policy(bytes, size, NULL, NULL, &doc, &report) == TS_OK && doc && !report);
+    assert(ts_document_deviation_count(doc, TS_DEVIATION_LITERAL_BACKSLASH, &deviations) == TS_OK && deviations == 3);
+    assert(ts_document_deviation_count(doc, TS_DEVIATION_NULL_HEADER_STRING, &deviations) == TS_OK && deviations == 1);
+    assert(ts_document_deviation_count(doc, 99u, &deviations) == TS_NOT_FOUND && deviations == 0);
+    assert(ts_document_deviation_count(NULL, TS_DEVIATION_LITERAL_BACKSLASH, &deviations) == TS_INVALID_ARGUMENT);
+    assert(ts_document_deviation_count(doc, TS_DEVIATION_LITERAL_BACKSLASH, NULL) == TS_INVALID_ARGUMENT);
+    /* One warning per accepted kind, at its first occurrence. */
+    assert(ts_document_diagnostics(doc, &report) == TS_OK);
+    assert(ts_diagnostics_count(report, &count) == TS_OK && count == 2);
+    assert(ts_diagnostics_get(report, 0, &diagnostic) == TS_OK && text_is(diagnostic.code, "TS1006"));
+    assert(diagnostic.severity == TS_SEVERITY_WARNING && diagnostic.end_offset == diagnostic.start_offset + 1);
+    assert(bytes[diagnostic.start_offset] == '\\');
+    assert(ts_diagnostics_get(report, 1, &diagnostic) == TS_OK && text_is(diagnostic.code, "TS1011"));
+    assert(diagnostic.severity == TS_SEVERITY_WARNING && bytes[diagnostic.start_offset] == '$');
+    ts_diagnostics_release(report);
+    report = NULL;
+    ts_document_release(doc);
+    doc = NULL;
+    /* A strict parse has no deviations. */
+    assert(ts_document_parse((const uint8_t *)input, strlen(input), NULL, &doc, &report) == TS_OK);
+    assert(ts_document_deviation_count(doc, TS_DEVIATION_LITERAL_BACKSLASH, &deviations) == TS_OK && deviations == 0);
+    ts_document_release(doc);
 }
 static void mesh_contract(void) {
     _Static_assert(sizeof(ts_mesh_options) == 40, "mesh options layout");
@@ -819,6 +888,7 @@ static void diagnostics_contract(void) {
     ts_discovery_release(discovery);
 }
 int main(void) {
+    parse_policy_contract();
     diagnostics_contract();
     repair_and_deviation_contract();
     surface_model_contract();

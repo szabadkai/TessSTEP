@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use tessstep_model::{Document, ReferenceStatus};
+use tessstep_model::Document;
 use tessstep_part21::{Diagnostic, StepValue, ValueKind};
 
 pub fn text(
@@ -28,19 +28,9 @@ pub fn text(
         for (name, count) in doc.entities().counts_by_type() {
             writeln!(out, "  {name}: {count}")?;
         }
-        let references = doc.references();
-        writeln!(
-            out,
-            "Unresolved references: {}",
-            references
-                .iter()
-                .filter(|r| r.status == ReferenceStatus::Missing)
-                .count()
-        )?;
-        for usage in references
-            .iter()
-            .filter(|r| r.status == ReferenceStatus::Missing)
-        {
+        let missing = doc.missing_references();
+        writeln!(out, "Unresolved references: {}", missing.len())?;
+        for usage in &missing {
             writeln!(
                 out,
                 "  {} at {}:{}",
@@ -91,13 +81,14 @@ pub fn json(
             quoted(out, name)?;
             write!(out, ":{count}")?;
         }
-        write!(out, "}},\"unresolved_references\":[")?;
-        for (i, usage) in doc
-            .references()
-            .iter()
-            .filter(|r| r.status == ReferenceStatus::Missing)
-            .enumerate()
-        {
+        let deviations = doc.deviations();
+        write!(
+            out,
+            "}},\"deviations\":{{\"literal_backslashes\":{},\"null_header_strings\":{}}}",
+            deviations.literal_backslashes.count, deviations.null_header_strings.count
+        )?;
+        write!(out, ",\"unresolved_references\":[")?;
+        for (i, usage) in doc.missing_references().iter().enumerate() {
             if i != 0 {
                 write!(out, ",")?;
             }

@@ -27,7 +27,7 @@ pub use tessellated::*;
 
 use std::{panic::catch_unwind, ptr, sync::Arc};
 use tessstep_model::Document;
-use tessstep_part21::{Diagnostic, DiagnosticCode, EntityId, ParseLimits, Severity};
+use tessstep_part21::{Conformance, Diagnostic, DiagnosticCode, EntityId, ParseLimits, Severity};
 
 pub const TS_OK: u32 = 0;
 pub const TS_INVALID_ARGUMENT: u32 = 1;
@@ -67,7 +67,11 @@ pub struct TsParseOptions {
 }
 impl Default for TsParseOptions {
     fn default() -> Self {
-        let l = ParseLimits::default();
+        Self::from_limits(ParseLimits::default())
+    }
+}
+impl TsParseOptions {
+    fn from_limits(l: ParseLimits) -> Self {
         Self {
             struct_size: size_of::<Self>() as u32,
             abi_version: 1,
@@ -83,8 +87,6 @@ impl Default for TsParseOptions {
             max_sections: l.max_sections as u64,
         }
     }
-}
-impl TsParseOptions {
     fn limits(self) -> Result<ParseLimits, u32> {
         if self.struct_size != size_of::<Self>() as u32 || self.abi_version != 1 {
             return Err(TS_INVALID_ARGUMENT);
@@ -204,12 +206,82 @@ pub unsafe extern "C" fn ts_parse_options_init(out: *mut TsParseOptions) -> u32 
 }
 
 /// # Safety
+/// Follow the output storage contract in tessstep.h.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_parse_options_for_input(
+    input_bytes: u64,
+    out: *mut TsParseOptions,
+) -> u32 {
+    // SAFETY: caller promises valid writable output when non-NULL.
+    if !unsafe { clear(out) } {
+        return TS_INVALID_ARGUMENT;
+    }
+    boundary(|| {
+        let options = TsParseOptions::from_limits(ParseLimits::for_input(input_bytes));
+        // SAFETY: output is valid, cleared and disjoint from the inputs.
+        unsafe { out.write(options) };
+        TS_OK
+    })
+}
+
+/// # Safety
 /// Follow tessstep.h pointer/count, options, and disjoint output contracts.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ts_document_parse(
     data: *const u8,
     size: usize,
     options: *const TsParseOptions,
+    out: *mut *const TsDocument,
+    error_report: *mut *mut TsDiagnostics,
+) -> u32 {
+    // The ABI 1.0 entry point keeps its strict acceptance.
+    // SAFETY: this entry point forwards the same documented pointer contract.
+    unsafe { parse_document(data, size, options, Conformance::Strict, out, error_report) }
+}
+/// # Safety
+/// Follow tessstep.h pointer/count, options, policy, and disjoint output contracts.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_document_parse_with_policy(
+    data: *const u8,
+    size: usize,
+    options: *const TsParseOptions,
+    policy: *const TsImportPolicy,
+    out: *mut *const TsDocument,
+    error_report: *mut *mut TsDiagnostics,
+) -> u32 {
+    let p = if policy.is_null() {
+        TsImportPolicy::default()
+    } else {
+        // SAFETY: non-NULL policy is a complete readable record per the header.
+        unsafe { *policy }
+    };
+    if p.struct_size != size_of::<TsImportPolicy>() as u32
+        || p.abi_version != 1
+        || p.flags & !TS_IMPORT_STRICT != 0
+        || p.reserved != 0
+    {
+        // SAFETY: output slots follow the documented clearing contract.
+        unsafe {
+            initialize(out, ptr::null());
+            initialize(error_report, ptr::null_mut());
+        }
+        return TS_INVALID_ARGUMENT;
+    }
+    let conformance = if p.flags & TS_IMPORT_STRICT != 0 {
+        Conformance::Strict
+    } else {
+        Conformance::Tolerant
+    };
+    // SAFETY: this entry point forwards the same documented pointer contract.
+    unsafe { parse_document(data, size, options, conformance, out, error_report) }
+}
+/// # Safety
+/// The pointer/count, options, and disjoint output contracts of ts_document_parse.
+unsafe fn parse_document(
+    data: *const u8,
+    size: usize,
+    options: *const TsParseOptions,
+    conformance: Conformance,
     out: *mut *const TsDocument,
     error_report: *mut *mut TsDiagnostics,
 ) -> u32 {
@@ -240,7 +312,7 @@ pub unsafe extern "C" fn ts_document_parse(
         } else {
             unsafe { std::slice::from_raw_parts(data, size) }
         };
-        match tessstep_model::parse(input, limits) {
+        match tessstep_model::parse_with(input, limits, conformance) {
             Ok(document) => {
                 let entities = document
                     .entities()
@@ -369,6 +441,33 @@ pub unsafe extern "C" fn ts_document_record_name(
         };
         // SAFETY: output valid; text storage remains owned by the live document.
         unsafe { out.write(TsStringView::new(&record.name)) };
+        TS_OK
+    })
+}
+pub const TS_DEVIATION_LITERAL_BACKSLASH: u32 = 1;
+pub const TS_DEVIATION_NULL_HEADER_STRING: u32 = 2;
+/// # Safety
+/// Follow the live handle and output storage contracts in tessstep.h.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ts_document_deviation_count(
+    document: *const TsDocument,
+    kind: u32,
+    out: *mut u64,
+) -> u32 {
+    // SAFETY: caller provides valid output storage when non-NULL.
+    if !unsafe { clear(out) } || document.is_null() {
+        return TS_INVALID_ARGUMENT;
+    }
+    boundary(|| {
+        // SAFETY: immutable handle stays alive throughout the call.
+        let deviations = unsafe { &(*document).document }.deviations();
+        let count = match kind {
+            TS_DEVIATION_LITERAL_BACKSLASH => deviations.literal_backslashes.count,
+            TS_DEVIATION_NULL_HEADER_STRING => deviations.null_header_strings.count,
+            _ => return TS_NOT_FOUND,
+        };
+        // SAFETY: output is valid and disjoint from the input handle.
+        unsafe { out.write(count) };
         TS_OK
     })
 }

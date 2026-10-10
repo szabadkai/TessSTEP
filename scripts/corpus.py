@@ -96,6 +96,10 @@ def inspect(binary, path, timeout):
                     else:
                         result["schemas"] = [h["parameters"] for h in headers if h["name"] == "FILE_SCHEMA"]
                     result["missing_references"] = len(document["unresolved_references"])
+                    # Exporter slips the tolerant parse accepted (absent before they were counted).
+                    deviations = document.get("deviations", {})
+                    if any(deviations.values()):
+                        result["deviations"] = deviations
                     result["stages"]["physical_parse"] = "accepted"
                     result["stages"]["references"] = "missing" if result["missing_references"] else "resolved"
                     result["status"] = "reference_errors" if result["missing_references"] else "clean"
@@ -609,6 +613,11 @@ def main():
                "unique_statuses": dict(Counter(c["status"] for c in cases)),
                "file_statuses": dict(Counter(s for c in cases for s in [c["status"]] * len(c["paths"]))),
                "seconds": round(time.monotonic() - started, 3)}
+    # stepdump sizes each input's parse budgets from its length (ParseLimits::for_input)
+    # and accepts the counted exporter slips; these totals say how often it needed to.
+    deviated = [c["deviations"] for c in cases if c.get("deviations")]
+    summary["parse_deviations"] = {"unique_inputs": len(deviated),
+                                   **{kind: sum(d.get(kind, 0) for d in deviated) for kind in ("literal_backslashes", "null_header_strings")}}
     baseline_changes = compare(cases, baseline) if baseline else []
     changed = {c["sha256"]: c["kind"] for c in baseline_changes}
     for case in cases:

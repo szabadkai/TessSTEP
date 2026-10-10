@@ -82,3 +82,48 @@ fn stdin_and_help_work() {
             .success()
     );
 }
+#[test]
+fn slips_are_warnings_unless_strict_and_budgets_follow_the_file() {
+    let slips = fixture("tolerated/exporter-slips.step");
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_stepdump"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let tolerant = run(&["--json", &slips]);
+    assert_eq!(tolerant.status.code(), Some(0));
+    let text = String::from_utf8(tolerant.stdout).unwrap();
+    for expected in [
+        "\"deviations\":{\"literal_backslashes\":4,\"null_header_strings\":1}",
+        "\"code\":\"TS1006\",\"severity\":\"warning\"",
+        "\"code\":\"TS1011\",\"severity\":\"warning\"",
+        "D:\\\\exports\\\\bracket.stp",
+    ] {
+        assert!(text.contains(expected), "{expected}: {text}");
+    }
+    let strict = run(&["--json", "--strict", &slips]);
+    assert_eq!(strict.status.code(), Some(1));
+    let text = String::from_utf8(strict.stdout).unwrap();
+    assert!(
+        text.contains("\"document\":null") && text.contains("TS1006"),
+        "{text}"
+    );
+    // Budgets are sized from the file; an explicit budget still applies after sizing.
+    let valid = fixture("valid/complex.step");
+    for args in [
+        vec!["--max-total-values=1", valid.as_str()],
+        vec!["--default-budgets", "--max-total-values=1", valid.as_str()],
+    ] {
+        let output = run(&args);
+        assert_eq!(output.status.code(), Some(1), "{args:?}");
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(
+            text.contains("total value budget exceeded (limit 1)"),
+            "{text}"
+        );
+    }
+    assert_eq!(run(&["--default-budgets", &valid]).status.code(), Some(0));
+    let help = String::from_utf8(run(&["--help"]).stdout).unwrap();
+    assert!(help.contains("--strict") && help.contains("ParseLimits::for_input"));
+}

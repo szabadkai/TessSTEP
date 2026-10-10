@@ -147,6 +147,102 @@ fn corpus_regression_and_determinism() {
             path.display()
         );
     }
+    // Exporter slips: accepted and counted by default, rejected by a strict parse.
+    for entry in fs::read_dir(root.join("tolerated")).unwrap() {
+        let path = entry.unwrap().path();
+        let data = fs::read(&path).unwrap();
+        let first = parse(data.as_slice(), ParseLimits::default())
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let second = parse(
+            BufReader::with_capacity(1, data.as_slice()),
+            ParseLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(first, second);
+        assert!(!first.deviations().is_empty(), "{}", path.display());
+        assert!(
+            parse_with(data.as_slice(), ParseLimits::default(), Conformance::Strict).is_err(),
+            "{}",
+            path.display()
+        );
+    }
+}
+#[test]
+fn tolerated_slips_are_counted_and_reported_as_warnings() {
+    let text = include_str!("../../../corpus/part21/tolerated/exporter-slips.step");
+    let doc = parse(text.as_bytes(), ParseLimits::for_input(text.len() as u64)).unwrap();
+    let deviations = doc.deviations();
+    assert_eq!(deviations.literal_backslashes.count, 4);
+    assert_eq!(deviations.null_header_strings.count, 1);
+    let name = doc.header("FILE_NAME").unwrap();
+    assert_eq!(
+        name.parameters[0].kind,
+        ValueKind::String(r"D:\exports\bracket.stp".into())
+    );
+    assert_eq!(name.parameters[6].kind, ValueKind::Null);
+    let note = doc.entities().get(EntityId::new(1).unwrap()).unwrap();
+    assert_eq!(
+        note.kind.records()[0].parameters[0].kind,
+        ValueKind::String(r"Library\Metals\Steel".into())
+    );
+    let other = doc.entities().get(EntityId::new(2).unwrap()).unwrap();
+    let decoded: Vec<_> = other.kind.records()[0]
+        .parameters
+        .iter()
+        .map(|v| v.kind.clone())
+        .collect();
+    assert_eq!(
+        decoded,
+        [
+            ValueKind::String(r"kept \ escaped".into()),
+            ValueKind::String("café".into())
+        ]
+    );
+    let diagnostics = doc.diagnostics();
+    assert_eq!(diagnostics.len(), 2);
+    for (diagnostic, code, first) in [
+        (
+            &diagnostics[0],
+            DiagnosticCode::InvalidEscape,
+            deviations.literal_backslashes.first.unwrap(),
+        ),
+        (
+            &diagnostics[1],
+            DiagnosticCode::InvalidHeader,
+            deviations.null_header_strings.first.unwrap(),
+        ),
+    ] {
+        assert_eq!(diagnostic.severity, Severity::Warning);
+        assert_eq!(diagnostic.code, code);
+        assert_eq!(diagnostic.source_span, first);
+    }
+    assert!(diagnostics[0].message.starts_with("4 string backslash"));
+    assert_eq!(
+        &text[diagnostics[0].source_span.start.offset as usize..][..3],
+        r"\ex"
+    );
+    assert_eq!(
+        &text[diagnostics[1].source_span.start.offset as usize..][..1],
+        "$"
+    );
+    let error =
+        parse_with(text.as_bytes(), ParseLimits::default(), Conformance::Strict).unwrap_err();
+    assert_eq!(error.code, DiagnosticCode::InvalidEscape);
+    // Without the backslashes, the strict parse names the header instead.
+    let header_only = text.replace('\\', "/");
+    assert_eq!(
+        parse_with(
+            header_only.as_bytes(),
+            ParseLimits::default(),
+            Conformance::Strict
+        )
+        .unwrap_err()
+        .code,
+        DiagnosticCode::InvalidHeader
+    );
+    let doc = parse(header_only.as_bytes(), ParseLimits::default()).unwrap();
+    assert_eq!(doc.deviations().literal_backslashes.count, 0);
+    assert_eq!(doc.deviations().total(), 1);
 }
 #[test]
 fn huge_ids_remain_sparse() {

@@ -14,6 +14,31 @@ static_assert(std::is_nothrow_destructible_v<Document>);
 constexpr auto input = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');"
     "FILE_NAME('','',('a'),('o'),'','','');FILE_SCHEMA(('EXAMPLE'));ENDSEC;DATA;"
     "#9=ITEM(#42);ENDSEC;END-ISO-10303-21;";
+// ABI 1.1: input-sized budgets, the conformance policy and deviation counts.
+static void parse_policy_contract() {
+    const std::string slips = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('slips'),'2;1');"
+        "FILE_NAME('D:\\data\\fixture.stp','',('a'),('o'),'','',$);FILE_SCHEMA(('EXAMPLE'));"
+        "ENDSEC;DATA;#1=ITEM('x');ENDSEC;END-ISO-10303-21;";
+    const ParseOptions sized = parse_options_for_input(slips.size());
+    assert(sized.max_total_values == default_parse_options().max_total_values);
+    assert(parse_options_for_input(1u << 30).max_input_bytes == 1u << 30);
+    auto strict = Document::parse(slips);
+    assert(!strict && strict.error().code == ErrorCode::parse_error);
+    assert(!strict.error().diagnostics.empty() && strict.error().diagnostics[0].code == "TS1006");
+    ImportPolicy policy = default_import_policy();
+    policy.flags |= TS_IMPORT_STRICT;
+    assert(!Document::parse(slips, &sized, &policy));
+    auto parsed = Document::parse(slips, &sized, nullptr);
+    assert(parsed);
+    const Document& document = parsed.value();
+    assert(document.deviation_count(Deviation::literal_backslash).value() == 2);
+    assert(document.deviation_count(Deviation::null_header_string).value() == 1);
+    assert(document.deviation_count(static_cast<Deviation>(99u)).error().code == ErrorCode::not_found);
+    auto report = document.diagnostics();
+    assert(report && report.value().size() == 2);
+    assert(report.value()[0].severity == Severity::warning && report.value()[0].code == "TS1006");
+    assert(report.value()[1].severity == Severity::warning && report.value()[1].code == "TS1011");
+}
 static void mesh_contract() {
     static_assert(!std::is_copy_constructible_v<Mesh>);
     static_assert(std::is_nothrow_move_constructible_v<Mesh>);
@@ -470,6 +495,7 @@ static void diagnostics_contract() {
     }
 }
 int main(int argc, char** argv) {
+    parse_policy_contract();
     diagnostics_contract();
     second_pass_contract();
     discovery_contract();

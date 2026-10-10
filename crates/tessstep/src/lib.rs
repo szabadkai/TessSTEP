@@ -37,9 +37,9 @@ pub use tessstep_curves as curves;
 pub use tessstep_express as express;
 pub use tessstep_math as math;
 pub use tessstep_model as model;
-pub use tessstep_model::{Document, parse};
+pub use tessstep_model::{Document, parse, parse_with};
 pub use tessstep_part21 as part21;
-pub use tessstep_part21::{Diagnostic, ParseLimits};
+pub use tessstep_part21::{Conformance, Deviations, Diagnostic, ParseLimits};
 pub use tessstep_product as product;
 pub use tessstep_schema as schema;
 

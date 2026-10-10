@@ -9,6 +9,33 @@ fn file(body: &str) -> String {
 fn events(text: &str) -> Result<Vec<Event>, Diagnostic> {
     Parser::new(text.as_bytes(), ParseLimits::default())?.collect()
 }
+fn strict(text: &str) -> Result<Vec<Event>, Diagnostic> {
+    Parser::with_conformance(text.as_bytes(), ParseLimits::default(), Conformance::Strict)?
+        .collect()
+}
+/// The events and deviations of a tolerant parse.
+fn tolerant(text: &str) -> Result<(Vec<Event>, Deviations), Diagnostic> {
+    let mut parser = Parser::new(text.as_bytes(), ParseLimits::default())?;
+    let events = parser.by_ref().collect::<Result<Vec<_>, _>>()?;
+    Ok((events, parser.deviations()))
+}
+fn strings(events: &[Event]) -> Vec<String> {
+    let mut found = Vec::new();
+    for event in events {
+        if let Event::Entity(EntityInstance {
+            kind: EntityKind::Simple(record),
+            ..
+        }) = event
+        {
+            for value in &record.parameters {
+                if let ValueKind::String(text) = &value.kind {
+                    found.push(text.clone());
+                }
+            }
+        }
+    }
+    found
+}
 fn values(text: &str) -> Vec<StepValue> {
     events(&file(&format!("#1=A({text});")))
         .unwrap()
@@ -93,7 +120,7 @@ fn strings_and_page_reset() {
     }
 }
 #[test]
-fn rejects_malformed_string_directives() {
+fn strict_parses_reject_malformed_string_directives() {
     for text in [
         r"'\Q\'",
         r"'\X2\\X0\'",
@@ -108,7 +135,8 @@ fn rejects_malformed_string_directives() {
         r"'\N!'",
         r"'\X2\0041\Y0\'",
     ] {
-        assert!(events(&file(&format!("#1=A({text});"))).is_err(), "{text}");
+        let error = strict(&file(&format!("#1=A({text});"))).unwrap_err();
+        assert_eq!(error.code, DiagnosticCode::InvalidEscape, "{text}: {error}");
     }
     let input = file("#1=A('x');").replace("'x'", "'\u{fffd}'").into_bytes();
     let mut invalid = input;
@@ -120,6 +148,174 @@ fn rejects_malformed_string_directives() {
             .collect::<Result<Vec<_>, _>>()
             .is_err()
     );
+}
+#[test]
+fn tolerant_strings_keep_backslashes_that_start_no_directive() {
+    // Each backslash whose following characters complete no directive opening is a
+    // literal backslash; the character that broke the opening is read normally, so
+    // a trailing backslash still lets the apostrophe end the string.
+    let cases = [
+        (r"'C:\temp\x.stp'", r"C:\temp\x.stp", 2),
+        (r"'Alloys\Bronze'", r"Alloys\Bronze", 1),
+        (r"'end\'", r"end\", 1),
+        (r"'\Q\'", r"\Q\", 2),
+        (r"'\N!'", r"\N!", 1),
+        (r"'\PB!'", r"\PB!", 1),
+        (r"'\PJ\\S\A'", r"\PJ\S\A", 2),
+        (r"'\X0\'", r"\X0\", 2),
+        (r"'\X2Z'", r"\X2Z", 1),
+        (r"'\S'", r"\S", 1),
+        (r"'a\\b'", r"a\b", 0),
+        (r"'\X\E9\tat'", r"é\tat", 1),
+        (r"'\PB\\S\!\c'", r"Ą\c", 1),
+        (r"'\X2\00E9\X0\\d'", r"é\d", 1),
+    ];
+    for (text, decoded, literal) in cases {
+        let (events, deviations) =
+            tolerant(&file(&format!("#1=A({text});"))).unwrap_or_else(|e| panic!("{text}: {e}"));
+        assert_eq!(strings(&events), [decoded], "{text}");
+        assert_eq!(deviations.literal_backslashes.count, literal, "{text}");
+        assert_eq!(deviations.null_header_strings.count, 0);
+        assert_eq!(deviations.total(), literal);
+        if literal > 0 {
+            assert!(strict(&file(&format!("#1=A({text});"))).is_err(), "{text}");
+        } else {
+            assert!(deviations.is_empty());
+        }
+    }
+    // The first literal backslash is located at itself.
+    let text = file("#1=A('ab\\cd','\\e');");
+    let (_, deviations) = tolerant(&text).unwrap();
+    let first = deviations.literal_backslashes.first.unwrap();
+    assert_eq!(
+        &text[first.start.offset as usize..first.end.offset as usize],
+        "\\"
+    );
+    assert_eq!(first.start.offset, text.find("\\cd").unwrap() as u64);
+    assert_eq!(first.end.column, first.start.column + 1);
+    // A complete directive opening with a malformed payload is still rejected.
+    for text in [
+        r"'\X2\\X0\'",
+        r"'\X2\123\X0\'",
+        r"'\X2\D800\X0\'",
+        r"'\X4\00110000\X0\'",
+        r"'\X\GG'",
+        r"'\PF\\S\!'",
+        r"'\X2\0041'",
+        r"'\X2\0041\Y0\'",
+    ] {
+        let error = events(&file(&format!("#1=A({text});"))).unwrap_err();
+        assert_eq!(error.code, DiagnosticCode::InvalidEscape, "{text}: {error}");
+    }
+    // Backslashes outside strings are not tolerated.
+    assert!(events(&file("#1=A(\\Q\\);")).is_err());
+}
+#[test]
+fn tolerant_headers_accept_null_strings_in_file_description_and_file_name() {
+    let source = file("");
+    for (bad, nulls) in [
+        (source.replace("'2;1'", "$"), 1),
+        (source.replace("(('test')", "(('test',$)"), 1),
+        (source.replace("FILE_NAME('',''", "FILE_NAME($,$"), 2),
+        (
+            source.replace("('a'),('o'),'','',''", "($),('o'),$,'',$"),
+            3,
+        ),
+    ] {
+        let (_, deviations) = tolerant(&bad).unwrap_or_else(|e| panic!("{bad}: {e}"));
+        assert_eq!(deviations.null_header_strings.count, nulls, "{bad}");
+        assert_eq!(deviations.literal_backslashes.count, 0);
+        let first = deviations.null_header_strings.first.unwrap();
+        assert_eq!(
+            &bad[first.start.offset as usize..first.end.offset as usize],
+            "$"
+        );
+        assert_eq!(
+            strict(&bad).unwrap_err().code,
+            DiagnosticCode::InvalidHeader,
+            "{bad}"
+        );
+    }
+    // FILE_SCHEMA names the schema; list slots need lists; other headers are free.
+    for bad in [
+        source.replace("FILE_SCHEMA(('TEST'))", "FILE_SCHEMA(($))"),
+        source.replace("('a'),('o')", "$,('o')"),
+        source.replace("(('test'),", "($,"),
+    ] {
+        assert_eq!(
+            events(&bad).unwrap_err().code,
+            DiagnosticCode::InvalidHeader,
+            "{bad}"
+        );
+    }
+    let extra = source.replace("ENDSEC;DATA;", "SECTION_NOTE($);ENDSEC;DATA;");
+    assert!(tolerant(&extra).unwrap().1.is_empty());
+}
+#[test]
+fn input_sized_budgets_cover_what_the_input_can_hold() {
+    let defaults = ParseLimits::default();
+    assert_eq!(
+        format!("{:?}", ParseLimits::for_input(0)),
+        format!("{defaults:?}")
+    );
+    assert_eq!(
+        format!("{:?}", ParseLimits::for_input(1024)),
+        format!("{defaults:?}")
+    );
+    let sized = ParseLimits::for_input(700_000_000);
+    assert_eq!(sized.max_input_bytes, 700_000_000);
+    assert_eq!(sized.max_entities, 100_000_000);
+    assert_eq!(sized.max_records, 233_333_333);
+    assert_eq!(sized.max_total_values, 350_000_000);
+    assert_eq!(sized.max_aggregate_elements, 350_000_000);
+    assert_eq!(
+        (
+            sized.max_token_bytes,
+            sized.max_string_bytes,
+            sized.max_nesting_depth,
+            sized.max_symbols,
+            sized.max_sections
+        ),
+        (
+            defaults.max_token_bytes,
+            defaults.max_string_bytes,
+            defaults.max_nesting_depth,
+            defaults.max_symbols,
+            defaults.max_sections
+        )
+    );
+    // The densest syntax stays within budgets sized from its own length: every
+    // value, record and entity at its fewest bytes.
+    let body: String = (1..=2000).map(|i| format!("#{i}=A();")).collect();
+    let values = format!("#9999=A({});", ["$"; 3000].join(","));
+    for text in [file(&body), file(&values)] {
+        let small = ParseLimits {
+            max_entities: 10,
+            max_records: 10,
+            max_total_values: 10,
+            max_aggregate_elements: 10,
+            ..ParseLimits::default()
+        };
+        assert!(
+            Parser::new(text.as_bytes(), small)
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .is_err()
+        );
+        let sized = ParseLimits {
+            max_entities: text.len() / ParseLimits::BYTES_PER_ENTITY as usize,
+            max_records: text.len() / ParseLimits::BYTES_PER_RECORD as usize,
+            max_total_values: text.len() / ParseLimits::BYTES_PER_VALUE as usize,
+            max_aggregate_elements: text.len() / ParseLimits::BYTES_PER_VALUE as usize,
+            ..ParseLimits::default()
+        };
+        assert!(
+            Parser::new(text.as_bytes(), sized)
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .is_ok()
+        );
+    }
 }
 #[test]
 fn binaries_preserve_exact_bits() {

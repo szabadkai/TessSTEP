@@ -29,6 +29,14 @@ Parity work against HOOPS Exchange on the PreForm CAD collection.
   between half and all of the model tolerance off its surface now has its peak
   refined, so an excursion between samples is counted. The NIST STC 06 and STC 07
   parts now mesh within 0.03% of the closed HOOPS meshes.
+- Parsing is tolerant by default: string backslashes that start no directive are kept
+  literally and `$` may stand for FILE_DESCRIPTION/FILE_NAME strings, each counted in
+  `Document::deviations` and reported as one warning; `Conformance::Strict`
+  (`parse_with`, `stepdump --strict`) rejects them. `ParseLimits::for_input` sizes
+  the entity, record, value and aggregate budgets from the input length (stepdump,
+  survey, assembly, generated validators). Parsed documents take a third less memory.
+  C ABI 1.1 adds `ts_parse_options_for_input`, `ts_document_parse_with_policy` and
+  `ts_document_deviation_count`; `ts_document_parse` stays strict.
 
 ## 1.0.0 — 2026-10-10
 
