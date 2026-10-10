@@ -123,7 +123,9 @@ pub struct ImportOptions {
     /// Reject common exporter deviations that the default accepts without changing
     /// geometry: `$` instead of `*` in derived ORIENTED_EDGE endpoint slots, and the
     /// unit, measure and complex-instance encodings counted by [`ToleratedEncodings`].
-    /// Strict import also accepts no tolerance deviation, whatever `deviation_factor` says.
+    /// Strict import also accepts no tolerance deviation, whatever `deviation_factor` says,
+    /// and keeps a `FACE_OUTER_BOUND` written on a hole loop
+    /// ([`Adaptations::relabelled_outer_bounds`]), which tessellation then rejects.
     pub strict: bool,
     /// Opt-in topology repair of solid B-reps (sewing and orientation); off by
     /// default, so topology defects are rejected. See [`RepairOptions`].

@@ -125,6 +125,13 @@ BREP_EXPECTED = {
     "brep-unknown-closure-cylinder.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * 2000e-9, 0.01)),
     "brep-cut-sphere.step": (("accepted",) * 3, (0, 1, 0, 1, 1), (3584 / 3 * math.pi * 1e-9, 0.01)),
     "brep-pinched-pocket.step": (("accepted", "accepted", "rejected"), None, None),
+    # Loop healing for exporter parity: a FACE_OUTER_BOUND written on a hole loop
+    # bounds a hole (relabelled; strict import keeps the label, BREP_STRICT_EXPECTED);
+    # a cone generator written with its origin 5 km away keeps its exact image at the
+    # apex; an edge off its side between the pcurve samples is measured at its peak.
+    "brep-hole-outer-bound.step": (("accepted",) * 3, (0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), (math.pi * 1500e-9, 0.01)),
+    "brep-far-generator.step": (("accepted",) * 3, (0, 0, 0, 0, 2), (math.pi / 3 * 1e-6, 0.01)),
+    "brep-sampled-peak.step": (("accepted",) * 3, (0, 1, 0, 0, 0, 0, 0, 0, 1), (math.pi * 2000e-9, 0.01)),
 
     # Topology repair fixtures (corpus/geometry/repair_fixtures.py): strict import
     # rejects each defect; REPAIR_EXPECTED checks the opt-in repair of the same files.
@@ -163,10 +170,15 @@ BREP_CHORD = 1e-5
 # Mesh components of accepted solids with BREP_WITH_VOIDS cavities (others have one).
 BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2, "brep-inverted-cavity.step": 2}
 ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges", "collapsed_faces",
-               "supplied_pcurves", "rejected_pcurves", "off_surface_edges", "off_curve_vertices", "uncollapsed_sides")
+               "supplied_pcurves", "rejected_pcurves", "off_surface_edges", "off_curve_vertices", "uncollapsed_sides",
+               "relabelled_outer_bounds")
 # Model tolerances of fixtures with a context uncertainty other than the default 1e-8 m.
 BREP_MODEL_TOLERANCE = {"brep-near-surface.step": 1e-6, "brep-far-surface.step": 1e-6,
-                        "brep-vertex-off-curve.step": 1e-6, "brep-short-side.step": 5e-5}
+                        "brep-vertex-off-curve.step": 1e-6, "brep-short-side.step": 5e-5,
+                        "brep-far-generator.step": 1e-6, "brep-sampled-peak.step": 2.7e-6}
+# Strict import (`brep --strict`) of fixtures whose default import tolerates an
+# exporter deviation: expected stages.
+BREP_STRICT_EXPECTED = {"brep-hole-outer-bound.step": ("accepted", "accepted", "rejected")}
 
 
 # Product structure linked with the bundled product profile and placed in a scene:
@@ -340,6 +352,12 @@ def main():
             bound = 1e-12 if math.isinf(radius) else 2 * BREP_CHORD / radius
             case["passed"] &= r.get("boundary_edges") == 0 and r.get("components") == BREP_COMPONENTS.get(name, 1)
             case["passed"] &= abs(r.get("volume_m3", 0) - exact) <= bound * exact
+        cases.append(case)
+    for name, expected in BREP_STRICT_EXPECTED.items():
+        case = inspect(brep_binary, ROOT / "corpus/geometry" / name, scope="brep-solid", strict=True,
+                       extra=["--chord", str(BREP_CHORD)])
+        case["expected"] = {"strict": expected}
+        case["passed"] = tuple(case["result"][k] for k in ("profile", "geometry", "tessellation")) == expected
         cases.append(case)
     for name, (strict, expected, counts, volume, diagnostic) in REPAIR_EXPECTED.items():
         plain = inspect(brep_binary, ROOT / "corpus/geometry" / name, scope="brep-solid", extra=["--chord", str(BREP_CHORD)])

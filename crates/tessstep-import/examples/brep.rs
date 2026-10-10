@@ -81,7 +81,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let result =
         imported.and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
     let adapted = format!(
-        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{},\"supplied_pcurves\":{},\"rejected_pcurves\":{},\"off_surface_edges\":{},\"off_curve_vertices\":{},\"uncollapsed_sides\":{},\"largest_deviation_m\":{deviation:e},\"working_tolerance_m\":{working:e}",
+        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{},\"supplied_pcurves\":{},\"rejected_pcurves\":{},\"off_surface_edges\":{},\"off_curve_vertices\":{},\"uncollapsed_sides\":{},\"relabelled_outer_bounds\":{},\"largest_deviation_m\":{deviation:e},\"working_tolerance_m\":{working:e}",
         adaptations.inferred_outer_bounds,
         adaptations.inserted_seams,
         adaptations.split_edges,
@@ -92,7 +92,8 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         adaptations.rejected_pcurves,
         adaptations.off_surface_edges,
         adaptations.off_curve_vertices,
-        adaptations.uncollapsed_sides
+        adaptations.uncollapsed_sides,
+        adaptations.relabelled_outer_bounds
     ) + &format!(
         ",\"merged_vertices\":{},\"merged_edges\":{},\"max_merge_distance_m\":{:e},\"disconnected_shells\":{},\"flipped_faces\":{},\"reversed_loops\":{},\"reoriented_shells\":{},\"undecided_shells\":{}",
         repairs.merged_vertices,

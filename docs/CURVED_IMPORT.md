@@ -121,7 +121,13 @@ with any missing or rejected supplied pcurve is computed entirely.
   affinely), generators of cylinders and cones, coaxial circles of revolved surfaces
   and meridian arcs of spheres (great circles through the poles, including arcs that
   end at a pole) map to UV lines or conics. Each exact image is verified at five
-  parameters against half the model tolerance and otherwise falls back.
+  parameters against half the model tolerance and otherwise falls back. A cone
+  generator that ends at the apex can evaluate a rounding error below it (`v < 0`,
+  outside the cone's domain) when its `LINE` origin lies far away: an exporter wrote
+  one 5 km from a drill point, where the apex end cancels kilometre-sized terms to
+  -9e-13 m. When an end lies below the domain by no more than the model tolerance, the
+  image is the segment between its end points with that end on the apex, the same
+  curve on the edge range; images inside the domain are unchanged.
 * **Fitted images.** All other pairs (for example ellipses on cylinders,
   intersection curves and every curve on a B-spline surface) receive a piecewise
   cubic Hermite image built from closed-form elementary inversion or Gauss-Newton
@@ -130,7 +136,15 @@ with any missing or rejected supplied pcurve is computed entirely.
   tolerance at three probes. Control points are clamped to closed surface domains,
   so the image stays inside them. A 3D curve farther from its surface than the
   [tolerance policy](#tolerance-policy) accepts, a crossing of a singular point
-  (pole, apex) and an unresolved span are typed errors.
+  (pole, apex) and an unresolved span are typed errors. The fit measures the curve's
+  distance from the surface where it samples: span seeds and the three probes of
+  each span. When the largest sample lies within the model tolerance but beyond half
+  of it, the peak of each span sampled beyond half the tolerance is refined by
+  golden-section search between its neighbouring probes, so an excursion past the
+  tolerance between samples is measured and counted here (an exporter's 0.12 in
+  cylinder edge sampled at 0.986 of the tolerance peaks at 1.038 of it); the later
+  trimming and tessellation checks sample more densely and would otherwise meet it
+  against the unwidened tolerance.
 
 ## Face charts
 
@@ -141,6 +155,23 @@ Each loop is classified by its winding in the periodic surface axes.
   its unique counterclockwise loop in the surface chart; otherwise it fails with
   "ambiguous outer bound". Holes on periodic surfaces are placed in the outer loop's
   chart by whole periods ([trimming](TRIMMING.md)).
+* **Relabelled outer bounds.** Loops are planned with the face on their left, so an
+  outer bound runs counterclockwise in the chart and a hole clockwise. When the
+  `FACE_OUTER_BOUND` of a face whose loops do not wind around a periodic axis runs
+  clockwise while exactly one other loop runs counterclockwise and that loop
+  encloses every other loop's sampled chart polygon, the label sits on a hole: the
+  senses and the nesting agree on the other loop as the outer bound, which the
+  default import uses (counted as `Adaptations::relabelled_outer_bounds`, which the
+  C `ts_solid_info` and `ts_surface_model_info` records do not carry). No loop, sense,
+  orientation or coordinate changes, only which loop bounds the face from outside, so
+  this is a representation choice like an inferred outer bound and not a topology
+  repair; the [opt-in repair](#opt-in-topology-repair) reverses loops and faces, which
+  would not help here. `ImportOptions::strict` keeps the declared bound, which
+  trimming then rejects (`the outer bound winds the wrong way`). A loop written
+  against its face (one reversed bound, or every bound reversed) is not relabelled:
+  then no loop runs counterclockwise, or the counterclockwise ones do not enclose the
+  others, and the face stays rejected. An exporter wrote `FACE_OUTER_BOUND` on a
+  10.3 mm bore circle of a planar face whose 11-edge rim is its `FACE_BOUND`.
 * **Annular faces.** A face whose two loops wind once in opposite directions around
   one periodic axis (a cylinder, cone, sphere zone or torus band bounded by two
   circles and no seam edge) is cut by an **inserted seam**. This isoparametric edge
@@ -217,11 +248,11 @@ Each loop is classified by its winding in the periodic surface axes.
   the tolerance is a regular side when an edge runs along it
   ([tolerance policy](#tolerance-policy)).
 
-`ImportedSolid::adaptations()` counts inferred outer bounds, inserted seams (annulus
-and pole seams), split edges, re-charted spheres, collapsed edges and the tolerance
-adaptations below. All are representation choices, not repairs: no coordinate, curve
-or surface is modified and no topology is merged; the only inserted vertices are
-split points and poles that no `VERTEX_LOOP` names.
+`ImportedSolid::adaptations()` counts inferred and relabelled outer bounds, inserted
+seams (annulus and pole seams), split edges, re-charted spheres, collapsed edges and
+the tolerance adaptations below. All are representation choices, not repairs: no
+coordinate, curve or surface is modified and no topology is merged; the only inserted
+vertices are split points and poles that no `VERTEX_LOOP` names.
 
 ## Tolerance policy
 
@@ -489,7 +520,8 @@ inside other curves are unsupported; topology repair is opt-in (above). `OFFSET_
 `OFFSET_CURVE_3D` and `PCURVE` or `DEGENERATE_PCURVE` used directly as edge geometry
 are rejected by name at the profile stage (`brep_rare_geometry_is_a_named_rejection`). Profile rejection is not an AP
 validity verdict. `ImportOptions::strict` rejects `$` in derived `ORIENTED_EDGE`
-endpoint slots and every tolerance deviation; `max_work` separately bounds decoding,
+endpoint slots and every tolerance deviation, and keeps contradicted
+`FACE_OUTER_BOUND` labels; `max_work` separately bounds decoding,
 adapter and pcurve work.
 
 Authored fixtures are generated by
@@ -518,14 +550,21 @@ cap cut away whose STEP axis misses the cap (re-charted through the rim: a pole 
 and a collapsed edge). Negative fixtures cover an off-surface edge, a
 `VERTEX_LOOP` away from the apex, an ambiguous outer bound and a box whose pocket
 opening touches the top face's boundary at a vertex (a self-touching loop, rejected
-at tessellation). Tolerance-policy
+at tessellation). Loop-healing fixtures (`tests/loop_healing.rs`) are a washer whose
+top face labels its bore `FACE_OUTER_BOUND` (one relabelled outer bound; strict
+import and reversed variants stay rejected) and a cone in two half faces whose
+generator `LINE` has its origin 5 km away and passes 10 nm from the apex (exact images
+at the apex; before, a fitted image took its apex coordinate on the wrong side and
+the loop wound a full turn). Tolerance-policy
 fixtures under a 1 µm uncertainty are a cylinder whose top circle edge lies 3 µm off
 its side surface (accepted, one off-surface edge, a frustum volume), one 50 µm off
 (rejected with the distance and bound) and one whose top vertex lies 3 µm off its
-circle (accepted, one off-curve vertex); a tetrahedron whose B-spline base has a
-20 µm side along an edge under a 50 µm uncertainty is charted with a regular side
-(`tests/tolerance.rs`, which also covers strict import, narrower factors, invalid
-factors, the chord check and an exactly collapsed side's typed rejection). Cavity fixtures cover a cube
+circle (accepted, one off-curve vertex); a cylinder whose top edge is four Bézier
+quarter arcs peaking 2.7253 µm off its side between the fit's samples (at most
+2.668 µm) under a 2.7 µm uncertainty is counted at its peak (`tests/loop_healing.rs`);
+a tetrahedron whose B-spline base has a 20 µm side along an edge under a 50 µm
+uncertainty is charted with a regular side (`tests/tolerance.rs`, which also covers
+strict import, narrower factors, invalid factors, the chord check and an exactly collapsed side's typed rejection). Cavity fixtures cover a cube
 with a cubical void and a cylinder with a spherical void bounded by a `VERTEX_LOOP`
 (each void an outward shell reversed by `ORIENTED_CLOSED_SHELL(.F.)`), and a cube whose
 void faces out of its cavity (rejected at tessellation). `tests/brep.rs` checks volumes against the

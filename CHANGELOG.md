@@ -21,6 +21,14 @@ Parity work against HOOPS Exchange on the PreForm CAD collection.
   tangent at their common vertex, instead of failing the resolution check. Meshes
   that already passed are unchanged; the NIST FTC 06, FTC 11, CTC 04 (AP242) and,
   at a 0.1 mm chord, CTC 02 parts now mesh within 0.06% of the closed HOOPS meshes.
+- Curved import heals three face loop defects. A `FACE_OUTER_BOUND` written on a
+  clockwise hole loop, beside one counterclockwise loop that encloses the others, now
+  bounds a hole: this is counted in the new `Adaptations::relabelled_outer_bounds`,
+  and strict import keeps the label. A cone generator whose far `LINE` origin rounds
+  its apex end below the cone now keeps its exact image. A fitted edge sampled
+  between half and all of the model tolerance off its surface now has its peak
+  refined, so an excursion between samples is counted. The NIST STC 06 and STC 07
+  parts now mesh within 0.03% of the closed HOOPS meshes.
 
 ## 1.0.0 — 2026-10-10
 

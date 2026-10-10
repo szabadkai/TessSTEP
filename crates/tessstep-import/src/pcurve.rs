@@ -518,6 +518,37 @@ fn line2(origin: [f64; 2], tangent: [f64; 2]) -> Option<CurveGeometry<ParameterS
         Curve::line(Point::new(origin).ok()?, Vector::new(tangent).ok()?).ok()?,
     ))
 }
+/// A cone generator image whose apex end the line evaluation leaves below the cone's
+/// `v >= 0` domain by no more than `tolerance` (past the rounding the surface
+/// absorbs), replaced by the segment between its end points with that end on the apex
+/// (`v = 0`). A generator written with its origin far from the apex loses the last
+/// digits of `v` there to cancellation; the segment is the same curve on `range`,
+/// evaluated without cancellation. Every other image is returned unchanged.
+fn apex_clamped(
+    line: CurveGeometry<ParameterSpace, 2>,
+    range: [f64; 2],
+    tolerance: f64,
+) -> Option<CurveGeometry<ParameterSpace, 2>> {
+    let domain = tessstep_surfaces::AxisDomain::LowerBounded { min: 0. };
+    let mut ends = [[0.; 2]; 2];
+    for (end, t) in ends.iter_mut().zip(range) {
+        *end = line.evaluate(t).ok()?.position.coordinates();
+    }
+    if ends.iter().all(|e| domain.snap(e[1]).is_some())
+        || ends.iter().any(|e| e[1] < -tolerance)
+        || range[0] >= range[1]
+    {
+        return Some(line);
+    }
+    let points: Option<Vec<Point<ParameterSpace, 2>>> = ends
+        .iter()
+        .map(|e| Point::new([e[0], e[1].max(0.)]).ok())
+        .collect();
+    let knots = [range[0], range[0], range[1], range[1]];
+    Some(CurveGeometry::Nurbs(
+        NurbsCurve::new(1, &knots, &points?, &[1., 1.], SplineLimits::default()).ok()?,
+    ))
+}
 fn parallel(a: V3, b: V3, angle: f64) -> bool {
     norm(cross(a, b)) <= angle * norm(a) * norm(b)
 }
@@ -621,7 +652,8 @@ fn exact(
             if !parallel(t, g, ANGLE) {
                 return None;
             }
-            line2([u, dot(o, g)], [0., sign * norm(t)])
+            let line = line2([u, dot(o, g)], [0., sign * norm(t)])?;
+            apex_clamped(line, range, tolerance)
         }
         // Coaxial circles map to constant-v lines.
         (
@@ -813,6 +845,29 @@ fn controls(s: &Segment, domain: [tessstep_surfaces::AxisDomain; 2]) -> [[f64; 2
     }
     c
 }
+/// The largest value of `g` on the open interval `(a, b)` and where it is taken, by
+/// golden-section search (a unimodal `g` is assumed; ends are never evaluated).
+fn golden_max(
+    g: &mut impl FnMut(f64) -> Result<f64, PcurveError>,
+    mut a: f64,
+    mut b: f64,
+) -> Result<(f64, f64), PcurveError> {
+    const PHI: f64 = 0.618_033_988_749_894_9;
+    let (mut x, mut y) = (b - PHI * (b - a), a + PHI * (b - a));
+    let (mut gx, mut gy) = (g(x)?, g(y)?);
+    for _ in 0..30 {
+        if gx >= gy {
+            (b, y, gy) = (y, x, gx);
+            x = b - PHI * (b - a);
+            gx = g(x)?;
+        } else {
+            (a, x, gx) = (x, y, gy);
+            y = a + PHI * (b - a);
+            gy = g(y)?;
+        }
+    }
+    Ok(if gx >= gy { (x, gx) } else { (y, gy) })
+}
 fn bezier(c: &[[f64; 2]; 4], f: f64) -> [f64; 2] {
     let g = 1. - f;
     let b = [g * g * g, 3. * g * g * f, 3. * g * f * f, f * f * f];
@@ -919,7 +974,8 @@ fn fitted(
         while let Some((segment, depth)) = stack.pop() {
             let mut good = true;
             let c = controls(&segment, domain);
-            for f in [0.25, 0.5, 0.75] {
+            let mut offs = [0.; 3];
+            for (f, sampled) in [0.25, 0.5, 0.75].into_iter().zip(&mut offs) {
                 let t = segment.t[0] + (segment.t[1] - segment.t[0]) * f;
                 let h = bezier(&c, f);
                 let (p, _) = curve_jet(curve, t, KnotSide::Right, work)?;
@@ -933,6 +989,7 @@ fn fitted(
                     });
                 }
                 track(off);
+                *sampled = off;
                 let approximated = match surface_jet(inverter.surface, h, work) {
                     Ok(j) => j.p,
                     Err(PcurveError::Limit) => return Err(PcurveError::Limit),
@@ -950,7 +1007,7 @@ fn fitted(
                 if segments.len() >= MAX_SEGMENTS {
                     return Err(PcurveError::Limit);
                 }
-                segments.push(segment);
+                segments.push((segment, offs));
                 continue;
             }
             if depth >= MAX_DEPTH {
@@ -982,6 +1039,46 @@ fn fitted(
         }
         previous = uvb;
     }
+    // Samples bound the curve's distance from the surface only where it varies
+    // slowly between them. A curve sampled within the model tolerance but more than
+    // half of it off the surface has each segment's sampled peak refined, so that an
+    // excursion past the tolerance between samples is measured and counted here
+    // rather than met by a denser later check against the unwidened tolerance.
+    for (segment, offs) in &segments {
+        if deviation.get() <= 0.5 * tolerance || deviation.get() > tolerance {
+            break;
+        }
+        let (i, &peak) = offs
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .expect("three samples");
+        if peak <= 0.5 * tolerance {
+            continue;
+        }
+        let c = controls(segment, domain);
+        let parameter = |f: f64| segment.t[0] + (segment.t[1] - segment.t[0]) * f;
+        let mut off_at = |f: f64| -> Result<f64, PcurveError> {
+            let (p, _) = curve_jet(curve, parameter(f), KnotSide::Right, work)?;
+            let uv = invert(p, Some(bezier(&c, f)), work)?;
+            Ok(distance(surface_jet(inverter.surface, uv, work)?.p, p))
+        };
+        // A probe that cannot be inverted (the samples could) leaves the sampled
+        // measure, as before the refinement; only budgets fail the fit.
+        let (f, off) = match golden_max(&mut off_at, 0.25 * i as f64, 0.25 * (i + 2) as f64) {
+            Ok(peak) => peak,
+            Err(PcurveError::Limit) => return Err(PcurveError::Limit),
+            Err(_) => continue,
+        };
+        if off > allowance {
+            return Err(PcurveError::OffSurface {
+                parameter: parameter(f),
+                distance: off,
+            });
+        }
+        track(off);
+    }
+    let segments: Vec<Segment> = segments.into_iter().map(|(s, _)| s).collect();
     let mut knots = vec![segments[0].t[0]; 4];
     let mut points = Vec::with_capacity(3 * segments.len() + 1);
     for (i, s) in segments.iter().enumerate() {
@@ -1008,4 +1105,42 @@ fn fitted(
     )
     .map_err(|_| PcurveError::Geometry)?;
     Ok((image, deviation.get()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(c: &CurveGeometry<ParameterSpace, 2>, t: f64) -> [f64; 2] {
+        c.evaluate(t).unwrap().position.coordinates()
+    }
+
+    #[test]
+    fn generator_images_a_rounding_error_below_the_apex_end_on_it() {
+        // v = t - 1 - 1e-12: the end at t = 1 lies 1e-12 below the apex (v = 0).
+        let line = line2([0.5, -1. - 1e-12], [0., 1.]).unwrap();
+        let clamped = apex_clamped(line.clone(), [1., 3.], 1e-9).unwrap();
+        assert!(matches!(clamped, CurveGeometry::Nurbs(_)));
+        assert_eq!(at(&clamped, 1.), [0.5, 0.]);
+        assert_eq!(at(&clamped, 3.), at(&line, 3.));
+        let mid = at(&clamped, 2.);
+        assert!(mid[0] == 0.5 && (mid[1] - 1.).abs() < 1e-12, "{mid:?}");
+        // Images in the domain (or within the rounding it absorbs) are unchanged.
+        let inside = line2([0.5, -1.], [0., 1.]).unwrap();
+        assert_eq!(apex_clamped(inside.clone(), [1., 3.], 1e-9), Some(inside));
+        // An end farther below than the tolerance is not rounding: unchanged, so the
+        // image fails verification.
+        let below = line2([0.5, -1. - 1e-6], [0., 1.]).unwrap();
+        assert_eq!(apex_clamped(below.clone(), [1., 3.], 1e-9), Some(below));
+    }
+
+    #[test]
+    fn golden_section_finds_an_interior_peak() {
+        let mut g = |x: f64| -> Result<f64, PcurveError> { Ok(1. - (x - 0.3) * (x - 0.3)) };
+        let (x, value) = golden_max(&mut g, 0., 0.5).unwrap();
+        assert!(
+            (x - 0.3).abs() < 1e-5 && (value - 1.).abs() < 1e-10,
+            "{x} {value}"
+        );
+    }
 }

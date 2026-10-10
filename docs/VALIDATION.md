@@ -1,3 +1,118 @@
+# Loop healing for HOOPS parity on the PreForm collection — 2026-10-10
+
+Two NIST PMI bodies in the PreForm CAD collection are meshed closed by HOOPS Exchange
+(SUMMARY lines, `simplifyMm=-1`). TessSTEP did not mesh them, even with the opt-in
+repair. Each defect was located in its STEP file (face, loop and edge) and then
+reproduced with an original authored fixture. No collection file was copied.
+
+| File | Where | STEP says | Geometry implies | Cause | Handling |
+| --- | --- | --- | --- | --- | --- |
+| `nist_stc_06_asme1_ap242-e3` | planar face #412 (x = 31.75 mm) | `FACE_OUTER_BOUND` #333 is one 10.32 mm circle (#330); `FACE_BOUND` #406 is an 11-edge rim | the circle runs clockwise in the chart (-3.3e-4 m², a hole); the rim runs counterclockwise (+7.5e-3 m²) and encloses it | exporter label on the wrong loop | the default import uses the rim as the outer bound (counted); strict import keeps the label |
+| `nist_stc_07_asme1_ap242-e3` | half drill-point cone #2277 (`CONICAL_SURFACE` #2250), generator `LINE` #2271 | origin 196,850 in (5.0 km) from the apex; the line passes 7.3e-9 m from it | the exact image ends at v = -9.09e-13 m at the apex | ours: see below | an end within the model tolerance below the apex is placed on it |
+| same | cylinder face #8915 (r = 0.12 in), B-spline `EDGE_CURVE` #2204 | — | peaks 5.19 µm off the cylinder at 41% of its span (1.038 × the 5 µm tolerance); 4.93 µm at the fit's mid sample | ours: see below | the peak between samples is refined and counted as an off-surface edge (working tolerance 1.54e-5 m) |
+
+Causes of the two `nist_stc_07` defects, both ours:
+* **Generator `LINE` #2271.** The cone's `v >= 0` domain rejected the exact image.
+  The fitted fallback then took its apex coordinate from a point 3.7e-10 m along the
+  line, where the 7.3e-9 m miss dominates. So its apex u was off by π, and the apex
+  join became a full turn.
+* **`EDGE_CURVE` #2204.** The fit measured the edge within the tolerance, so the
+  working tolerance was not widened. Trimming then sampled the edge more densely and
+  rejected it (`CurveSurfaceMismatch`).
+
+**Why the tolerant default, not the repair stage.** The `FACE_OUTER_BOUND` rule
+changes no loop, sense, orientation, vertex or coordinate. It only chooses which loop
+bounds the face from outside, the same kind of choice as the existing inferred outer
+bound. That inferred bound is also a counted default adaptation
+([curved import](CURVED_IMPORT.md#face-charts)). The opt-in repair stage edits
+topology: it merges, flips and reverses ([topology](TOPOLOGY.md#opt-in-repair)). Its
+loop reversal would not help here: reversing face #412 makes the circle the
+counterclockwise loop, with the rim outside it.
+
+The rule applies only when the geometry admits one reading:
+* the declared loop runs clockwise;
+* exactly one other loop runs counterclockwise;
+* that loop encloses every other loop's sampled chart polygon.
+
+`ImportOptions::strict` keeps the label, as for other exporter deviations that the
+default accepts without changing geometry, and trimming rejects it as before. Loops
+written against their face are not relabelled and stay rejected:
+* with one bound reversed, no loop runs counterclockwise;
+* with every bound reversed, the counterclockwise loop encloses nothing.
+
+The two pcurve changes are importer fixes, not adaptations, and also apply under
+strict import. There, the refined peak of #2204 is now a geometry-stage rejection that
+names the distance, where trimming used to reject the edge.
+
+**Outcomes against HOOPS** (release survey and `bench_preform.py`, on 572a847 with and
+without this change):
+
+| File | 572a847 | With this change | HOOPS |
+| --- | --- | --- | --- |
+| `nist_stc_06_asme1_ap242-e3` | tessellation: outer bound of #412 | closed, 32,864 triangles, 3,322,664.55 mm³, 0.16 s | 3,323,476.49 mm³ (-0.024%); TessSTEP's `ftc_06_asme1_rd`, 3,322,666.29 mm³ (-0.00005%) |
+| `nist_stc_07_asme1_ap242-e3` | geometry unsupported (#2277) | closed, 39,972 triangles, 1,726,334.27 mm³, 8 off-surface edge uses, 0.20 s | 1,726,232.53 mm³ (+0.0059%); TessSTEP's `ftc_07` variants, 1,726,297.95 and 1,726,372.41 mm³ |
+
+On 90c06b6, `stc_06` got past its loops and then stopped at toroidal face #2952 on the
+`max_rounds` refinement budget, like both `ftc_06` variants. That face is the same
+fillet (R = 14.605, r = 3.175 mm) between the inner equator and the 140° parallel. Its
+chart was dumped, and it is the expected 40° band. The refinement fix in 572a847
+resolves it. Across the collection, 51 of 54 files now mesh every root (49 on
+572a847). The two files above are the only outcomes that differ.
+
+**Fixtures** ([`brep_fixtures.py`](../corpus/geometry/brep_fixtures.py),
+`tests/loop_healing.rs`) each fail at 90c06b6 with the PreForm file's message, and now
+mesh:
+
+| Fixture | What it is | Failure at 90c06b6 |
+| --- | --- | --- |
+| `brep-hole-outer-bound.step` | a washer whose top face labels its bore `FACE_OUTER_BOUND` | `the outer bound winds the wrong way` |
+| `brep-far-generator.step` | a cone in two half faces; one generator `LINE` has its origin 5 km away and passes 10 nm from the apex, under a 1 µm tolerance | `a face loop winds around a periodic surface direction ...` |
+| `brep-sampled-peak.step` | a cylinder whose top edge is four Bézier quarter arcs, peaking 2.7253 µm off the side and at most 2.668 µm at the fit's samples, under 2.7 µm | `Boundary(CurveSurfaceMismatch)` |
+
+The tests also cover strict import of each fixture and both reversed variants of the
+washer. `outer::tests` and `pcurve::tests` cover the rule, the clamp and the
+golden-section search. `check_geometry.py` adds:
+* the three fixtures;
+* a `relabelled_outer_bounds` column;
+* a strict check.
+
+That brings it to 129 reviewed outcomes. `Adaptations::relabelled_outer_bounds` is a new
+Rust field. The C ABI is unchanged: `ts_solid_info` and `ts_surface_model_info` keep
+their eleven counters.
+
+**Nothing that meshed changes.** Survey builds of 572a847 and of this change were run
+on these inputs:
+* the 704 files with a meshed shape or surface-model root;
+* the 2,740 dodgy-step-files, including their reversed-loop cases;
+* the 54 PreForm files.
+
+No root that meshed before changed its vertices, triangles or volume. No
+dodgy-step-files root changed at all. Every difference is a rejected root that now
+meshes.
+
+| Check | Result |
+| --- | --- |
+| fmt, Clippy (`-D warnings`, all targets and features), rustdoc (`-D warnings`), release and debug builds | passed |
+| `check_kernel.py` (`cargo test --workspace --locked --no-fail-fast`) | passed |
+| `check_architecture.py`, `check_corpus.py`, script unit tests, `check_cli.py`, `check_express.py`, `check_schema.py`, `check_product.py` | passed |
+| `check_geometry.py` (129 outcomes), `check_metamorphic.py`, `conformance.py --check`, `check_capi.py --library-dir target/release` | passed |
+| `corpus.py --check --repeat 2` with the AP validator and schema map, against the saved 1.0.0 baseline | 3,227 compatible, no regressions, 342 s. 18 inputs changed: the 11 of 572a847 and e23c9ed, and the 7 below |
+
+Reviewed movements, isolated against the same corpus run on a 572a847 build. All 7
+inputs that differ come from this change:
+* **Five shape roots now mesh** (771 → 776 against the 1.0.0 baseline's 762):
+  * `nist_stc_06_asme1_ap242-e3` and `nist_stc_07_asme1_ap242-e3`;
+  * `sp7_04-dx-242` and `bug32049_sp7_04dx_242`, at 0.017520 m³. Their face #325 had
+    the same mislabelled bound. The meshing sibling `sp7_04-do-242` is also
+    0.017520 m³ (+0.0028%);
+  * `bug22680_C5-390.410-…`, at 1.942e-4 m³. Its planar annulus #881 labels its
+    r = 24 circle `FACE_OUTER_BOUND` inside its r = 31.5 `FACE_BOUND`.
+* **Two surface-model shells now mesh** (1,128 → 1,130), one each in
+  `trj4_k1_top-tc-214` and `trj5_k1-tc-203`. They were `CurveSurfaceMismatch`
+  rejections on a surface of revolution, resolved by the peak refinement.
+
+The baseline was not saved.
+
 # HOOPS parity: refinement walks on fillet bands and tangent boundary chords — 2026-10-10
 
 Eight PreForm CAD collection files failed tessellation where HOOPS Exchange meshes a

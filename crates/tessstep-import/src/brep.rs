@@ -1,4 +1,5 @@
 //! Edge-based B-rep solids with elementary, B-spline and swept geometry.
+mod outer;
 mod scan;
 mod sewing;
 mod sphere;
@@ -67,6 +68,12 @@ pub struct Adaptations {
     /// edge of the face runs along: the face is charted with that side as a regular
     /// boundary instead of a pole.
     pub uncollapsed_sides: usize,
+    /// Faces whose FACE_OUTER_BOUND names a loop that winds clockwise in the surface
+    /// chart (a hole's sense) while exactly one other loop winds counterclockwise and
+    /// encloses every other loop; that loop bounds the face from outside and the
+    /// declared one is a hole. No loop, sense or coordinate changes. Strict import
+    /// keeps the declared bound, which tessellation then rejects.
+    pub relabelled_outer_bounds: usize,
 }
 
 /// Import one selected MANIFOLD_SOLID_BREP (or BREP_WITH_VOIDS) whose faces lie on
@@ -78,9 +85,10 @@ pub struct Adaptations {
 ///
 /// Supplied PCURVEs are used where they lie on the face surface and agree with the 3D
 /// curve within the model tolerance; every other pcurve is computed from the 3D
-/// curve. Representation adaptations (inferred outer bounds, inserted seams, split
-/// edges, re-charted spheres, collapsed edges and faces, supplied and rejected
-/// pcurves) are counted in [`ImportedSolid::adaptations`]; none changes geometry.
+/// curve. Representation adaptations (inferred and relabelled outer bounds, inserted
+/// seams, split edges, re-charted spheres, collapsed edges and faces, supplied and
+/// rejected pcurves) are counted in [`ImportedSolid::adaptations`]; none changes
+/// geometry.
 ///
 /// Edges farther than the model tolerance from their face surfaces and vertices
 /// farther than it from their edge curves are accepted up to
@@ -227,6 +235,7 @@ pub(crate) fn adapt(
         unreadable_pcurves: 0,
         policy,
         deviation: 0.,
+        strict: options.strict,
     };
     // Supplied pcurves are retained as links on surface curves and decoded apart,
     // so a pcurve outside the profile never rejects the solid.
@@ -392,6 +401,8 @@ struct Builder {
     policy: tolerance::Policy,
     /// The largest accepted distance beyond the model tolerance, in metres.
     deviation: f64,
+    /// [`ImportOptions::strict`]: contradicted FACE_OUTER_BOUND labels are kept.
+    strict: bool,
 }
 
 impl<'d, 'a> Context<'d, 'a> {
@@ -2359,7 +2370,13 @@ impl Builder {
                 .filter(|&i| loops[i].outer)
                 .collect();
             let outer = match explicit.len() {
-                1 => explicit[0],
+                1 => match outer::contradicted(explicit[0], &edge_loops, &charts) {
+                    Some(geometric) if !self.strict => {
+                        self.adaptations.relabelled_outer_bounds += 1;
+                        geometric
+                    }
+                    _ => explicit[0],
+                },
                 0 if edge_loops.len() == 1 => edge_loops[0],
                 0 => {
                     let ccw: Vec<usize> = edge_loops

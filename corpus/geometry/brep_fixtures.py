@@ -21,7 +21,10 @@ def num(x):
     if abs(x) < 5e-16:
         x = 0.0
     text = repr(float(f"{float(x):.15g}")).replace("e", "E")
-    return text if ("." in text or "E" in text) else text + "."
+    if "." in text:
+        return text
+    # STEP reals need the decimal point, also before an exponent.
+    return text.replace("E", ".E") if "E" in text else text + "."
 
 
 class Step:
@@ -874,6 +877,84 @@ def fixtures():
             n = [-x for x in n]
         faces.append(polygon([a, b, fb, fa], n))
     s.write("brep-pinched-pocket.step", faces)
+
+    # Loop healing for exporter parity (Milestone 22.4 follow-up).
+    # Washer R=20 r=10 t=5 whose top face writes FACE_OUTER_BOUND on the bore circle
+    # and FACE_BOUND on the rim. Both loops keep their geometric senses (rim
+    # counterclockwise, bore clockwise about the face normal), so only the label is
+    # on the wrong loop: the default import bounds the face by the rim (a counted
+    # relabelled outer bound); strict import keeps the label and tessellation rejects
+    # the clockwise outer bound.
+    s = Step("Original washer R=20 r=10 t=5 mm whose top face labels the bore circle FACE_OUTER_BOUND")
+    vo0, vo1 = s.vertex((20, 0, 0)), s.vertex((20, 0, 5))
+    vi0, vi1 = s.vertex((10, 0, 0)), s.vertex((10, 0, 5))
+    ob = s.edge(vo0, vo0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 20))
+    ot = s.edge(vo1, vo1, s.circle((0, 0, 5), (0, 0, 1), (1, 0, 0), 20))
+    ib = s.edge(vi0, vi0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    it = s.edge(vi1, vi1, s.circle((0, 0, 5), (0, 0, 1), (1, 0, 0), 10))
+    outer = s.add(f"CYLINDRICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},20.)")
+    inner = s.add(f"CYLINDRICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    faces = [
+        s.face([s.bound([(ob, True)]), s.bound([(ot, False)])], outer),
+        s.face([s.bound([(ib, False)]), s.bound([(it, True)])], inner, same=False),
+        s.face([s.bound([(ob, False)], outer=True), s.bound([(ib, True)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(it, False)], outer=True), s.bound([(ot, True)])], s.plane((0, 0, 5), (0, 0, 1))),
+    ]
+    s.write("brep-hole-outer-bound.step", faces)
+
+    # Cone R=10 h=10 (apex (0, 0, 10)) split into two half faces by its generators
+    # through A = (10, 0, 0) and B = (-10, 0, 0), under a 1 um uncertainty. A's
+    # generator LINE is written with its origin 5 km down the line beyond the base and
+    # passes 10 nm from the apex on the axis side (B's runs from B through the apex).
+    # Evaluating A's line at the apex cancels kilometre-sized terms, so its exact chart
+    # image ends a rounding error below the apex (v < 0), outside the cone's domain;
+    # a fitted image instead takes its apex coordinate from a point 1.4 nm along the
+    # line, nearer the 10 nm miss than the generator, and joins B's generator there
+    # with a full turn.
+    s = Step("Original cone R=10 h=10 mm in two half faces; one generator line has its origin 5 km away and misses the apex by 10 nm")
+    apex = s.vertex((0, 0, 10))
+    va, vb = s.vertex((10, 0, 0)), s.vertex((-10, 0, 0))
+    front = s.edge(va, vb, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    back = s.edge(vb, va, s.circle((0, 0, 0), (0, 0, 1), (-1, 0, 0), 10))
+    far, miss = 5e6, 1e-5
+    root = 1 / math.sqrt(2)
+    # A's generator runs from the apex outward (against the edge); B's inward.
+    ga = s.edge(va, apex, s.line((10 + (far - miss) * root, 0, -(far + miss) * root), (root, 0, -root)), same=False)
+    gb = s.edge(vb, apex, s.line((-10, 0, 0), (root, 0, root)))
+    cone = s.add(f"CONICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, -1), (1, 0, 0))},10.,{num(math.pi / 4)})")
+    faces = [
+        s.face([s.bound([(front, True), (gb, True), (ga, False)], outer=True)], cone),
+        s.face([s.bound([(back, True), (ga, True), (gb, False)], outer=True)], cone),
+        s.face([s.bound([(front, False), (back, False)], outer=True)], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-far-generator.step", faces, context=context(uncertainty="1.E-3"))
+
+    # Cylinder r=10 h=20 under a 2.7 um uncertainty whose top edge is one closed
+    # cubic B-spline of four standard quarter-circle Bezier arcs (kappa = 4/3 (sqrt 2
+    # - 1)). Each arc bulges outward by up to 2.725 um, at 21% and 79% of its span,
+    # but by at most 2.668 um at the sixteenths of its span where the pcurve fit
+    # samples it. The importer must find the peak between those samples to count the
+    # edge as off its side surface; tessellation would otherwise meet it against the
+    # unwidened tolerance.
+    s = Step("Original cylinder r=10 h=20 mm whose top edge is four Bezier quarter arcs, 2.7 um off the side at their peaks")
+    v0, v1 = s.vertex((10, 0, 0)), s.vertex((10, 0, 20))
+    bottom = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    k = 10 * 4 / 3 * (math.sqrt(2) - 1)
+    controls = []
+    arc = [(10, 0), (10, k), (k, 10), (0, 10)]
+    for quarter in range(4):
+        controls.extend((x, y, 20) for x, y in (arc if quarter == 0 else arc[1:]))
+        arc = [(-y, x) for x, y in arc]  # a quarter turn, exactly
+    curve = s.add(f"B_SPLINE_CURVE_WITH_KNOTS('',3,({','.join(f'#{s.point(p)}' for p in controls)}),"
+                  ".UNSPECIFIED.,.T.,.F.,(4,3,3,3,4),(0.,1.,2.,3.,4.),.UNSPECIFIED.)")
+    top = s.edge(v1, v1, curve)
+    side = s.add(f"CYLINDRICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], side),
+        s.face([s.bound([(bottom, False)], outer=True)], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(top, True)], outer=True)], s.plane((0, 0, 20), (0, 0, 1))),
+    ]
+    s.write("brep-sampled-peak.step", faces, context=context(uncertainty="2.7E-3"))
 
 
 if __name__ == "__main__":
