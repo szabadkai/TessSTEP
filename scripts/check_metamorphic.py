@@ -41,7 +41,7 @@ def fixtures():
         'integer-overflow': ('#1=NODE(9223372036854775808);','TS1008'),
         'real-overflow': ('#1=NODE(1.E9999);','TS1008'),
         'real-underflow': ('#1=NODE(1.E-9999);','TS1008'),
-        'bad-escape': (r"#1=NODE('\Q\');",'TS1006'),
+        'bad-escape': (r"#1=NODE('\X\GG');",'TS1006'),
         'surrogate': (r"#1=NODE('\X2\D800\X0\');",'TS1006'),
         'invalid-scalar': (r"#1=NODE('\X4\00110000\X0\');",'TS1006'),
         'binary-padding': ('#1=NODE("3F");','TS1009'),
@@ -55,6 +55,12 @@ def fixtures():
             text = HEADER+body+FOOTER
             if style=='crlf': text=text.replace('\n','\r\n')
             result[f'rejection/{name}-{style}.step'] = (text.encode(),{'status':'rejected','diagnostic_codes':[code]})
+    # A backslash that opens no directive is a tolerated exporter slip: the default parse
+    # keeps it literally with a TS1006 warning (strict parsing rejects it).
+    for style in ('lf','crlf'):
+        text = HEADER+r"#1=NODE('\Q\');"+FOOTER
+        if style=='crlf': text=text.replace('\n','\r\n')
+        result[f'tolerated/unknown-escape-{style}.step'] = (text.encode(),{'status':'clean','entity_count':1,'diagnostic_codes':['TS1006']})
     # Byte-level corruption and trailing data are separate cases.
     for name,text in [('invalid-utf8', (HEADER+"#1=NODE('x');"+FOOTER).encode().replace(b"'x'",b"'\xff'")),
                       ('trailing-data',(HEADER+'#1=NODE();'+FOOTER+'GARBAGE').encode()),

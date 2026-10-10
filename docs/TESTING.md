@@ -57,7 +57,7 @@ changes without refreshing the baseline to hide regressions. See
 
 `check_kernel.py` wraps workspace tests, continues across failed test executables,
 and writes per-test HTML/JSON/JUnit plus the complete log under `reports/kernel/`.
-`check_metamorphic.py` generates 74 unique authored positive/adversarial STEP inputs
+`check_metamorphic.py` generates 78 unique authored positive/adversarial STEP inputs
 with reviewed expectations and repeated JSON checks under `reports/generated/`.
 Schema/product scripts also export their expectations and stage results through
 the same format-2 report. CI retains these four suites on every stable OS job,
