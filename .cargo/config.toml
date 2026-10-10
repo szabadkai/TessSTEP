@@ -1,0 +1,6 @@
+[env]
+# The iPad port of PreForm targets iPadOS 17; an explicit environment value still wins.
+IPHONEOS_DEPLOYMENT_TARGET = "17.0"
+
+[target.aarch64-apple-ios-sim]
+runner = "scripts/ios_sim_run.py"

@@ -545,6 +545,33 @@ statically in Release, against a copy of the package without the shared library,
 on Linux and macOS checks that the archive defines exactly the ABI's C symbols.
 Debug static consumers and sanitizers on static consumers are not tested.
 
+### iOS
+
+The static library builds for `aarch64-apple-ios` (devices) and `aarch64-apple-ios-sim`
+(the simulator on Apple silicon) with no source changes. `.cargo/config.toml` sets
+`IPHONEOS_DEPLOYMENT_TARGET` to 17.0 unless the environment already sets it. iOS
+consumers link the archive directly; the CMake package is not built for iOS.
+
+```sh
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+cargo build --release -p tessstep-capi --target aarch64-apple-ios-sim
+cargo build --release -p tessstep-capi --target aarch64-apple-ios
+```
+
+The archives are `target/<target>/release/libtessstep_capi.a`; rustc reports the same
+native dependencies as on macOS (`-lSystem -lc -lm`). For the simulator target, Cargo runs
+test, bench and example binaries through `scripts/ios_sim_run.py`, which starts them in the
+simulator named by `TESSSTEP_IOS_SIMULATOR` (a UDID or device name) with `simctl spawn`:
+
+```sh
+TESSSTEP_IOS_SIMULATOR="iPad Pro 13-inch (M4)" cargo test --release -p tessstep-capi --target aarch64-apple-ios-sim
+```
+
+Spawned binaries have no working directory and no shell, but they can read host paths, so
+`tests/abi.rs`, which reads the header and sources through `CARGO_MANIFEST_DIR`, passes
+there as well; the other tests embed their fixtures at compile time. Device binaries need
+signing and are not run.
+
 ## Surface models, sessions, assembly options and failure text (Milestone 22.10)
 
 **Surface models (22.6).** `ts_document_import_surface_model` / C++

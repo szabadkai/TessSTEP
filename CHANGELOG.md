@@ -84,6 +84,10 @@ import meshes 617 of its roots instead of 545.
   survey, assembly, generated validators). Parsed documents take a third less memory.
   C ABI 1.1 adds `ts_parse_options_for_input`, `ts_document_parse_with_policy` and
   `ts_document_deviation_count`; `ts_document_parse` stays strict.
+- The static C library builds for `aarch64-apple-ios` and `aarch64-apple-ios-sim` with
+  an iOS 17 deployment target (`.cargo/config.toml`), and `scripts/ios_sim_run.py` runs
+  simulator test binaries through `simctl spawn`; the `tessstep-capi` tests pass in an
+  iPad simulator. See [docs/C_API.md](docs/C_API.md#ios).
 
 ## 1.0.0 — 2026-10-10
 
