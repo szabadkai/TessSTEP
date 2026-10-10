@@ -95,6 +95,19 @@ const ROLES: &[&str] = &[
     "dimensional_exponents",
 ];
 
+/// Exporter deviations that [`adapt_with_policy`] may accept; [`adapt`] accepts none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Policy {
+    /// Read an item defined transformation whose transform_item_1 belongs to rep_2 and
+    /// transform_item_2 to rep_1 with its items exchanged, when that is the only
+    /// assignment in which each item belongs to its representation's context. HOOPS
+    /// Exchange and the CATIA V4 interface write the parent's placement first; the
+    /// schema (WR2 of representation_relationship_with_transformation in AP242)
+    /// requires the order of the representations. Without this policy such a
+    /// relationship is a located graph error.
+    pub accept_reversed_transform_items: bool,
+}
+
 /// Adapt by resolved declaration identity and named attributes, never physical
 /// parameter offsets or an ADVANCED_FACE scan. No schema rules are suppressed.
 /// All semantic output is owned; failure publishes no partial model.
@@ -103,10 +116,24 @@ pub fn adapt(
     schema_name: &str,
     limits: Limits,
 ) -> Result<Model, Error> {
+    adapt_with_policy(decoded, schema_name, limits, Policy::default())
+}
+
+/// [`adapt`] that accepts the exporter deviations a [`Policy`] names. Accepted
+/// deviations are normalized in the published model (for example, item transform
+/// pairs always list rep_1's item first); callers compare with the decoded records
+/// to count them.
+pub fn adapt_with_policy(
+    decoded: &DecodedDocument<'_>,
+    schema_name: &str,
+    limits: Limits,
+    policy: Policy,
+) -> Result<Model, Error> {
     let mut cx = Context {
         decoded,
         roles: BTreeMap::new(),
         limits,
+        policy,
         work: 0,
         text_bytes: 0,
         entity: None,
@@ -322,6 +349,7 @@ struct Context<'d, 'a> {
     decoded: &'d DecodedDocument<'a>,
     roles: BTreeMap<&'static str, DeclarationId>,
     limits: Limits,
+    policy: Policy,
     work: usize,
     text_bytes: usize,
     entity: Option<EntityId>,

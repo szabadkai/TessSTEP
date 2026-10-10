@@ -20,6 +20,11 @@ pub struct ToleratedEncodings {
     pub untyped_measures: usize,
     /// Complex instances whose components are not in canonical (alphabetical) order.
     pub unordered_complex: usize,
+    /// Item defined transformations (product records only) whose transform_item_1
+    /// belongs to rep_2 and transform_item_2 to rep_1, as HOOPS Exchange and the CATIA V4
+    /// interface write them; the items are exchanged so that each belongs to its
+    /// representation. Not part of the frozen C record `ts_tolerated_encodings`.
+    pub reversed_transform_items: usize,
 }
 impl ToleratedEncodings {
     pub fn total(&self) -> usize {
@@ -28,6 +33,7 @@ impl ToleratedEncodings {
             + self.omitted_conversion_dimensions
             + self.untyped_measures
             + self.unordered_complex
+            + self.reversed_transform_items
     }
     /// Count the encodings in a closure decoded under [`policy`]. The measure value
     /// is the only SELECT of these profiles with defined-type alternatives, so every

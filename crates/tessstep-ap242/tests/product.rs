@@ -100,7 +100,34 @@ fn product_adapter_rejects_cycles_and_misbound_placements() {
         "ITEM_DEFINED_TRANSFORMATION(#32,#30)",
         "ITEM_DEFINED_TRANSFORMATION(#30,#32)",
     );
-    assert_eq!(error(&bad).graph_error, Some(Error::MissingLink));
+    let e = error(&bad);
+    assert_eq!(e.graph_error, Some(Error::MissingLink));
+    assert_eq!(e.entity.map(|e| e.get()), Some(42));
+    assert!(e.message.contains("reverse order"));
+    // The policy reads the exchanged items by membership, as HOOPS Exchange means them.
+    let doc = parse(bad.as_bytes(), ParseLimits::default()).unwrap();
+    let decoded = decode::decode(
+        &doc,
+        &schema::SCHEMA_SET,
+        "product_test",
+        decode::Limits::default(),
+    )
+    .unwrap();
+    let policy = tessstep_ap242::Policy {
+        accept_reversed_transform_items: true,
+    };
+    let tolerant =
+        tessstep_ap242::adapt_with_policy(&decoded, "product_test", Limits::default(), policy)
+            .unwrap();
+    let written = run(ASSEMBLY, Limits::default()).unwrap();
+    assert_eq!(
+        tolerant.parts().relationships,
+        written.parts().relationships
+    );
+    assert_eq!(
+        tolerant.parts().relationship_transforms,
+        written.parts().relationship_transforms
+    );
     let bad = ASSEMBLY.replace(
         "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#35,#34,#40)",
         "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#35,#35,#40)",

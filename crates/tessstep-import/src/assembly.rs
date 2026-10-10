@@ -210,24 +210,30 @@ pub(crate) fn link(
         })
         .collect();
     let (decoded, excluded) = decode_product(document, &groups, options.import)?;
-    let tolerated = decoded
+    let mut tolerated = decoded
         .as_ref()
         .map(ToleratedEncodings::of)
         .unwrap_or_default();
     let model = match &decoded {
         Some(decoded) => Some(
-            tessstep_ap242::adapt(
+            tessstep_ap242::adapt_with_policy(
                 decoded,
                 "tessstep_product",
                 tessstep_ap242::Limits {
                     max_work: options.import.max_work,
                     ..tessstep_ap242::Limits::default()
                 },
+                tessstep_ap242::Policy {
+                    accept_reversed_transform_items: !options.import.strict,
+                },
             )
             .map_err(|e| adapter_error(document, e))?,
         ),
         None => None,
     };
+    if let (Some(decoded), Some(model)) = (&decoded, &model) {
+        tolerated.reversed_transform_items = reversed_transform_items(decoded, model, &mut charge)?;
+    }
     let entity = |id: u64| EntityId::new(id).expect("adapter identities are STEP instance IDs");
     let mut nodes = Vec::new();
     let mut instances = Vec::new();
@@ -389,6 +395,40 @@ pub(crate) fn link(
         tolerated,
         held: held.clone(),
     })
+}
+
+/// Item transform pairs the adapter exchanged: the model lists rep_1's item first,
+/// so a decoded transformation whose first item differs was written reversed.
+fn reversed_transform_items(
+    decoded: &DecodedDocument<'_>,
+    model: &Model,
+    charge: &mut impl FnMut(usize) -> Result<(), Error>,
+) -> Result<usize, Error> {
+    let reference = |view: &EntityView<'_>, name: &str| {
+        view.attributes
+            .iter()
+            .find(|a| a.declaration.name == name)
+            .and_then(|a| match a.value.kind {
+                ValueKind::Reference(id) => Some(id),
+                _ => None,
+            })
+    };
+    let mut reversed = 0;
+    for r in &model.parts().relationships {
+        charge(1)?;
+        let Some(t) = r.transform else {
+            continue;
+        };
+        let first = EntityId::new(r.id.0)
+            .and_then(|id| decoded.get(id))
+            .and_then(|view| reference(view, "TRANSFORMATION_OPERATOR"))
+            .and_then(|id| decoded.get(id))
+            .and_then(|view| reference(view, "TRANSFORM_ITEM_1"));
+        if first.is_some_and(|id| id.get() != t.item_1.0) {
+            reversed += 1;
+        }
+    }
+    Ok(reversed)
 }
 
 /// Representations sharing a frame: those related by an untransformed shape

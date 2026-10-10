@@ -1,3 +1,64 @@
+# HOOPS parity: the Shapr3D keycaps assembly — 2026-10-10
+
+`samples/keycaps.step` of the PreForm CAD collection (a Shapr3D AP242 export written by
+HOOPS Exchange 2024.8; 236,704 entities, 265 `MANIFOLD_SOLID_BREP`s) meshed every root
+in the survey (42,326 mm³), while the HOOPS probe reports 84,761 mm³, and the assembly
+path rejected it with `invalid product graph: MissingLink`.
+
+**The 2× is HOOPS double counting.** The product structure is 14 product definitions and
+13 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`s, each with a different child definition (`root` →
+`SYMB`, `MAIN`, `FUN`, `DRAFT`; each of the first three → letter, body and stem parts), so
+no body is instanced twice; all 13 placements are identity. The 14 `MAPPED_ITEM`s each
+sit in a `DRAUGHTING_MODEL` mapping one product's shape representation (presentation, not
+an occurrence). Per body (curved import, 0.01 mm chord): all 265 are closed, single
+components with positive volume, and no two coincide. Of the 62 keycap shells the 1u
+keys measure 18.53 × 18.53 × 5.40 mm at about 552 mm³ (2V/A ≈ 0.97 mm walls), up to a
+117 mm spacebar of 3,100.5 mm³; 141 legends are 0.16 mm inlays in the key tops (141.2 mm³), and 62 stems are
+16.18 mm³ each. Legends and stems overlap the shells; both readers count overlaps alike.
+The bodies total 42,377.1 mm³ at that chord. HOOPS's 84,760.65 mm³ is 2.0001 times this
+(half of it, 42,380.3 mm³, is 0.008 % above ours), and its 768,360 triangles are 2 ×
+384,180. The probe (`hoops_probe.cpp`) sums untransformed part tessellations while
+visiting each occurrence's prototype and its child occurrences, so parts reached both
+ways are counted twice; TessSTEP's single count is the instanced volume.
+
+**The MissingLink was ours to accept.** HOOPS Exchange writes every
+`ITEM_DEFINED_TRANSFORMATION` with the parent's placement first and the child's frame
+(here one identity frame shared by every shape representation in 14 contexts) second,
+while the relationship's rep_1 is the child: the reverse of AP242 WR2. The adapter now
+reads such a pair by membership when only the exchanged order fits
+(`Policy::accept_reversed_transform_items`, enabled by the linker unless strict, counted
+as `reversed_transform_items`); strict mode and the default `adapt` report a located
+error naming the relationship. The authored `assembly-reversed-items.step` reproduces the
+layout (per-product contexts, shared identity frame, B-rep representation behind each
+shape representation, draughting-model mapped items) with non-identity placements: its
+world boxes equal the conformant nested fixture's, where the literal reading would move a
+block by 40 mm. Keycaps now links 14 products and 13 occurrences and imports 265 asset
+instances, all placed, at 42,325.7 mm³ (0.1 mm chord) in 1.7 s; the scene's instanced
+volume equals the survey's sum, half the HOOPS figure.
+
+Siblings through the assembly path: `Core__2_.step` (Onshape) 5,849.8 mm³ against HOOPS
+5,848.7 and `G_pro_side_V2.step` (Autodesk) 1,025.2 against 1,025.4, each one part. Over
+the whole collection the assembly path matches HOOPS within 1.1 % wherever it places
+instances; the three `nist_ctc_02` files place nothing because their root fails the fixed
+0.1 mm assembly chord with an exhausted refinement round budget on one face (the survey's
+relative chord meshes them), seven NIST files fail import as in the survey, and three
+files are rejected by the parser in both.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace` (351), fmt, Clippy (`-D warnings`, all targets), rustdoc | passed |
+| `check_geometry.py` (125 outcomes, with the new fixture), `check_product.py` (11), `check_architecture.py`, `check_corpus.py`, `conformance.py --check`, script unit tests | passed |
+| `corpus.py --check` with the shared AP validator against the saved 1.0.0 baseline | 3,227 compatible, 3 changed, no regressions |
+
+Reviewed movements: three product stages move from `invalid product graph: MissingLink`
+to accepted, all through reversed item transformations: `bug33410.step` (HOOPS Exchange
+2020.1; 3 definition nodes, 1 placed root) and `trj3_s1-ct-203.stp` / `trj3_s1-ct-214.stp`
+(CATIA V4; 17 nodes and 8 placed roots each). Their placements are not identity; read by
+membership the CAx-IF S1 spaceship is arranged as in the NX and Pro/ENGINEER exports of
+the same model (feet below the body, heads forward, turbines mirrored in y). Accepted
+structures now hold 1,454 products, 1,185 occurrences in 103 assemblies and 705 placed
+shape roots. The baseline was not saved.
+
 # Milestone 22.11: CI and the 1.0.0 release workflow — 2026-10-10
 
 `main` at 86f2536 was pushed with the maintainer's approval. CI run 38025959160

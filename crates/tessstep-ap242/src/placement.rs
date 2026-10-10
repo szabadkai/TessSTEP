@@ -237,6 +237,7 @@ impl<'d, 'a> Context<'d, 'a> {
             self.tick()?;
             rep_units.insert(rep.id, units[&rep.context]);
         }
+        self.reversed_transform_items(parts, &dependencies)?;
         for r in &parts.relationships {
             self.tick()?;
             self.set_entity(EntityId::new(r.id.0).expect("adapter source IDs are nonzero"));
@@ -322,6 +323,66 @@ impl<'d, 'a> Context<'d, 'a> {
                     });
                 }
             }
+        }
+        Ok(())
+    }
+    /// Item transform pairs whose items belong to the opposite representations: each
+    /// item is outside its own representation's context and inside the other one's.
+    /// The policy exchanges them; otherwise the relationship is a located graph error.
+    fn reversed_transform_items(
+        &mut self,
+        parts: &mut Parts,
+        dependencies: &BTreeMap<ItemId, Vec<ItemId>>,
+    ) -> Result<(), Error> {
+        if !parts.relationships.iter().any(|r| r.transform.is_some()) {
+            return Ok(());
+        }
+        let mut members: BTreeMap<ContextId, BTreeSet<ItemId>> = BTreeMap::new();
+        let mut context_of = BTreeMap::new();
+        for rep in &parts.representations {
+            self.tick()?;
+            context_of.insert(rep.id, rep.context);
+            let found = members.entry(rep.context).or_default();
+            let mut stack = rep.items.clone();
+            while let Some(item) = stack.pop() {
+                self.tick()?;
+                if found.insert(item) {
+                    for &next in dependencies.get(&item).map_or(&[][..], Vec::as_slice) {
+                        self.tick()?;
+                        stack.push(next);
+                    }
+                }
+            }
+        }
+        let holds = |rep: RepresentationId, item: ItemId| {
+            context_of
+                .get(&rep)
+                .and_then(|c| members.get(c))
+                .is_some_and(|items| items.contains(&item))
+        };
+        for r in &mut parts.relationships {
+            self.tick()?;
+            let Some(t) = r.transform else {
+                continue;
+            };
+            let written = holds(r.rep_1, t.item_1) && holds(r.rep_2, t.item_2);
+            if written || !(holds(r.rep_1, t.item_2) && holds(r.rep_2, t.item_1)) {
+                continue;
+            }
+            if !self.policy.accept_reversed_transform_items {
+                self.set_entity(EntityId::new(r.id.0).expect("adapter source IDs are nonzero"));
+                return Err(Error {
+                    graph_error: Some(tessstep_product::Error::MissingLink),
+                    ..self.error(
+                        ErrorKind::Graph,
+                        "item defined transformation items are in the reverse order of the relationship's representations",
+                    )
+                });
+            }
+            r.transform = Some(ItemTransform {
+                item_1: t.item_2,
+                item_2: t.item_1,
+            });
         }
         Ok(())
     }

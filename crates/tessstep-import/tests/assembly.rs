@@ -454,3 +454,47 @@ fn untyped_measure_values_are_counted_and_keep_their_unit() {
         "{e}"
     );
 }
+
+const REVERSED: &str = include_str!("../../../corpus/geometry/assembly-reversed-items.step");
+
+#[test]
+fn reversed_item_transformations_are_read_by_membership_and_counted() {
+    let doc = parse(REVERSED);
+    let imported = import_assembly(&doc, AssemblyImportOptions::default()).unwrap();
+    assert!(imported.roots.iter().all(|r| r.result.is_ok()));
+    let assembly = &imported.assembly;
+    assert!(assembly.is_complete());
+    assert_eq!(
+        (assembly.occurrence_count(), assembly.mapped_placements()),
+        (4, 0)
+    );
+    // The draughting models' mapped items are presentation, not placements.
+    assert_eq!(
+        assembly.tolerated(),
+        ToleratedEncodings {
+            reversed_transform_items: 4,
+            ..ToleratedEncodings::default()
+        }
+    );
+    // Read by membership, each placement maps the child onto the parent's frame, so
+    // the world boxes are those of the conformant nested fixture; read as written,
+    // the second block would sit 40 mm below the first.
+    let nested = import_assembly(&parse(NESTED), AssemblyImportOptions::default()).unwrap();
+    assert_eq!(boxes(assembly), boxes(&nested.assembly));
+    let mut strict = AssemblyOptions::default();
+    strict.import.strict = true;
+    let e = link_assembly(&doc, &[], strict).unwrap_err();
+    assert_eq!(
+        (e.stage, e.kind),
+        (Stage::Product, ErrorKind::InvalidGeometry)
+    );
+    assert!(e.message.contains("reverse order"), "{e}");
+    let relationship = doc.entities().get(e.entity.unwrap()).unwrap();
+    assert!(
+        relationship
+            .kind
+            .records()
+            .iter()
+            .any(|r| r.name.as_ref() == "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+    );
+}

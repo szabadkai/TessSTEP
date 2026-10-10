@@ -132,13 +132,22 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
             if t.total() > 0 {
                 write!(
                     out,
-                    ",\"tolerated\":{{\"explicit_si_dimensions\":{},\"unset_si_dimensions\":{},\"omitted_conversion_dimensions\":{},\"untyped_measures\":{},\"unordered_complex\":{}}}",
+                    ",\"tolerated\":{{\"explicit_si_dimensions\":{},\"unset_si_dimensions\":{},\"omitted_conversion_dimensions\":{},\"untyped_measures\":{},\"unordered_complex\":{}",
                     t.explicit_si_dimensions,
                     t.unset_si_dimensions,
                     t.omitted_conversion_dimensions,
                     t.untyped_measures,
                     t.unordered_complex
                 )?;
+                // Written only when nonzero, so earlier product results stay unchanged.
+                if t.reversed_transform_items > 0 {
+                    write!(
+                        out,
+                        ",\"reversed_transform_items\":{}",
+                        t.reversed_transform_items
+                    )?;
+                }
+                out.push('}');
             }
             if let Some(roots) = roots {
                 // World bounds and volume of every placed asset instance, in metres.

@@ -587,7 +587,11 @@ uncertainty), budgets and expansion limits, and the representation preference.
 `ts_assembly_get_adaptations` (any assembly, also from the frozen-options entry point)
 reports the 22.7 mapped-item placements and the tolerated exporter encodings of the
 product closure; `ts_assembly_root_report_at` adds each root's tolerated context
-encodings and failure text.
+encodings and failure text. The frozen `ts_tolerated_encodings` record keeps its five
+22.7 counts: the reversed item defined transformations accepted since 1.0 (HOOPS
+Exchange and CATIA V4 layouts) are counted in Rust only
+(`ToleratedEncodings::reversed_transform_items`), and `TS_IMPORT_STRICT` rejects them
+like the others.
 
 ### Diagnostic text
 

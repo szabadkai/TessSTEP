@@ -67,7 +67,12 @@ and store row-major linear matrices. The adapter evaluates:
 - `axis2_placement_3d`, with normalized directions, projected x reference, default +Z
   axis, and default +X reference (or +Y when Z is exactly parallel to X).
 - Item-defined relationships: `rep_1_to_rep_2 = frame_2 * inverse(frame_1)`. Each frame
-  origin uses its own representation context's length unit.
+  origin uses its own representation context's length unit. Frame 1 must belong to
+  rep_1's context and frame 2 to rep_2's (AP242 WR2). A pair written the other way
+  round, with transform_item_1 only in rep_2's context and transform_item_2 in rep_1's,
+  is a located graph error naming its relationship; `adapt_with_policy` with
+  `Policy::accept_reversed_transform_items` exchanges the two items instead (see
+  [reversed item transformations](#reversed-item-transformations-hoops-exchange)).
 - 3D Cartesian operators: projected orthogonal axes, default scale 1, positive scale,
   destination-unit origin and dimensionless scale. The second axis preserves handedness;
   zero/degenerate projections fail. No silent axis repair is performed.
@@ -206,6 +211,36 @@ the product records (`LinkedAssembly::tolerated`), each discovered context
 excluded with their typed decode error and the roots of an affected context get a unit
 error. Synthetic five-parameter `PRODUCT_DEFINITION`s (the `AttributeCount` rejections
 of the generated `dodgy-step-files` inputs) stay rejected in both modes.
+
+## Reversed item transformations (HOOPS Exchange)
+
+HOOPS Exchange's STEP writer (2020.1 and 2024.8 seen, including Shapr3D exports) and the
+CATIA V4 STEP interface (CATIA Solutions V4 2.2) place every occurrence with a
+`REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION` whose rep_1 is the child and rep_2 the
+parent, but whose `ITEM_DEFINED_TRANSFORMATION` lists the parent's placement as
+transform_item_1 and the child's frame as transform_item_2. In the Shapr3D layout every product also has its own geometric context, one identity
+`AXIS2_PLACEMENT_3D` is an item of every shape representation, the solids sit in a B-rep
+representation related to the product's shape representation, and a
+`DRAUGHTING_MODEL` maps each shape representation (14 such mapped items in a 13-occurrence
+file; they are presentation, never placements).
+
+The written order breaks AP242 WR2 of representation_relationship_with_transformation,
+and read literally the frames would belong to the wrong representations. The adapter
+assigns the items by membership instead: when transform_item_1 is outside rep_1's
+context (item closure) and inside rep_2's, and transform_item_2 is inside rep_1's, that is
+the only consistent reading and the pair is exchanged, so the child is mapped onto the
+parent's placement (`rep_1_to_rep_2 = parent_frame * inverse(child_frame)`). The linker
+enables this unless strict and counts each exchanged pair as
+`ToleratedEncodings::reversed_transform_items` (Rust only; the frozen C record
+`ts_tolerated_encodings` keeps its five counts). Strict mode, and `adapt` without the
+policy, reject the relationship with a located graph error. A pair whose items fit
+neither order is still a graph error. Evidence: `assembly-reversed-items.step`
+(`reversed_item_transformations_are_read_by_membership_and_counted`: the world boxes
+equal the conformant nested fixture's, and the literal reading would move the second
+block 40 mm), the adapter test `product_adapter_rejects_cycles_and_misbound_placements`,
+and the corpus files `bug33410.step` (HOOPS Exchange 2020.1) and `trj3_s1-ct-203/214.stp`
+(CATIA V4, non-identity placements whose membership reading arranges the CAx-IF S1 model
+as the NX and Pro/ENGINEER exports of the same model do).
 
 ## Evidence and references
 

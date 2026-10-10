@@ -792,7 +792,7 @@
       "feature": "STEP product structure linking",
       "status": "bounded subset implemented",
       "test": "mapped_items_place_occurrences_by_target_times_inverse_origin",
-      "limitations": "bundled original product profile over AP203/AP214/AP242 physical layouts; next assembly usage occurrences placed by context dependent shape representations with item defined transformations or 3D Cartesian operators (reflection and uniform scale), or by MAPPED_ITEMs of occurrence shape representations; tolerated unit and measure encodings are counted and rejected when strict; missing or ambiguous placements fail; external document references are not linked"
+      "limitations": "bundled original product profile over AP203/AP214/AP242 physical layouts; next assembly usage occurrences placed by context dependent shape representations with item defined transformations or 3D Cartesian operators (reflection and uniform scale), or by MAPPED_ITEMs of occurrence shape representations; tolerated unit and measure encodings and reversed item defined transformations (HOOPS Exchange, CATIA V4) are counted and rejected when strict; missing or ambiguous placements fail; external document references are not linked"
     },
     {
       "feature": "Assembly import as a scene",

@@ -182,6 +182,8 @@ ASSEMBLY_EXPECTED = {
     "assembly-operator.step": ("accepted", 4, 3, [0, -20, 0, 120, 110, 60], 6e-6 * (1 + 8 + 0.125)),
     "assembly-si-dimensions.step": ("accepted", 3, 2, [0, 0, 0, 10, 60, 30], 1.2e-5),
     "assembly-untyped-measure.step": ("accepted", 3, 2, [0, 0, 0, 254, 1524, 762], 12000 * 0.0254 ** 3),
+    # HOOPS Exchange layout: placements read by membership give the nested fixture's boxes.
+    "assembly-reversed-items.step": ("accepted", 7, 4, [0, 0, 0, 100, 60, 30], 2.4e-5),
 }
 # Surface styles adapted to the scene appearance: asset and face styles, materials, bindings.
 STYLE_EXPECTED = {"assembly-styled.step": {"asset_styles": 1, "face_styles": 1, "materials": 2, "bindings": 2,

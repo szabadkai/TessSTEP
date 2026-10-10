@@ -36,6 +36,13 @@ out of canonical order (an XStep-style encoding the tolerant default accepts).
 
 assembly-untyped-measure.step: `pair` in inches whose conversion factor and length
 uncertainty are bare numbers where a typed LENGTH_MEASURE is required.
+
+assembly-reversed-items.step: the nested structure in the layout HOOPS Exchange writes
+(seen in Shapr3D exports): every product has its own geometric context, a shape
+representation holding one identity frame shared by all representations, its solid in
+a related B-rep representation and a draughting model mapping it; each occurrence's
+item defined transformation lists the parent's placement first and the shared frame
+second, the reverse of its relationship's representations. World boxes as nested.
 """
 import argparse
 from pathlib import Path
@@ -287,6 +294,60 @@ def operators():
     return w
 
 
+def unit_context(w, name):
+    """A millimetre geometric context of its own, as HOOPS Exchange writes one per product."""
+    length = w.add("(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.))")
+    angle = w.add("(NAMED_UNIT(*)PLANE_ANGLE_UNIT()SI_UNIT($,.RADIAN.))")
+    solid = w.add("(NAMED_UNIT(*)SI_UNIT($,.STERADIAN.)SOLID_ANGLE_UNIT())")
+    uncertainty = w.add(f"UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(1.E-03),#{length},'DISTANCE_ACCURACY_VALUE','')")
+    return w.add(f"(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty}))"
+                 f"GLOBAL_UNIT_ASSIGNED_CONTEXT((#{length},#{angle},#{solid}))REPRESENTATION_CONTEXT('','{name}'))")
+
+
+def presented(w, rep, geometric):
+    """The draughting model holding a mapped item of a shape representation."""
+    origin = w.frame((0, 0, 0))
+    w.add(f"DRAUGHTING_MODEL('',(#{mapped_item(w, rep, origin, origin)}),#{geometric})")
+
+
+def reversed_occurrence(w, ident, parent, child, child_rep, parent_rep, parent_frame, shared):
+    """An occurrence placed as HOOPS Exchange writes it: rep_1 is the child, but the item
+    defined transformation lists the parent's placement first and the shared frame second."""
+    nauo = w.add(f"NEXT_ASSEMBLY_USAGE_OCCURRENCE('{ident}','{ident}','',#{parent},#{child},$)")
+    shape = w.add(f"PRODUCT_DEFINITION_SHAPE('','',#{nauo})")
+    idt = w.add(f"ITEM_DEFINED_TRANSFORMATION('','',#{parent_frame},#{shared})")
+    rel = w.add(f"(REPRESENTATION_RELATIONSHIP('','',#{child_rep},#{parent_rep})"
+                f"REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#{idt})SHAPE_REPRESENTATION_RELATIONSHIP())")
+    w.add(f"CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#{rel},#{shape})")
+
+
+def reversed_items():
+    w = Writer()
+    product_context, definition_context, rig_context = context(w)
+    # One identity frame is an item of every shape representation, in every context.
+    shared = w.frame((0, 0, 0))
+    block_context = unit_context(w, "block")
+    brep_rep, _, _ = block(w, block_context)
+    block_rep = w.add(f"SHAPE_REPRESENTATION('block',(#{shared}),#{block_context})")
+    w.add(f"SHAPE_REPRESENTATION_RELATIONSHIP('','',#{block_rep},#{brep_rep})")
+    presented(w, block_rep, block_context)
+    block_definition = product(w, "block", product_context, definition_context, block_rep)
+    pair_context = unit_context(w, "pair")
+    first, second = w.frame((0, 0, 0)), w.frame((0, 40, 0))
+    pair_rep = w.add(f"SHAPE_REPRESENTATION('pair',(#{shared},#{first},#{second}),#{pair_context})")
+    presented(w, pair_rep, pair_context)
+    pair_definition = product(w, "pair", product_context, definition_context, pair_rep)
+    for ident, frame in (("block-1", first), ("block-2", second)):
+        reversed_occurrence(w, ident, pair_definition, block_definition, block_rep, pair_rep, frame, shared)
+    first, turned = w.frame((0, 0, 0)), w.frame((100, 0, 0), z=(0, 0, 1), x=(0, 1, 0))
+    rig_rep = w.add(f"SHAPE_REPRESENTATION('rig',(#{shared},#{first},#{turned}),#{rig_context})")
+    presented(w, rig_rep, rig_context)
+    rig = product(w, "rig", product_context, definition_context, rig_rep)
+    for ident, frame in (("pair-1", first), ("pair-2", turned)):
+        reversed_occurrence(w, ident, rig, pair_definition, pair_rep, rig_rep, frame, shared)
+    return w
+
+
 def encoded(encoding):
     w = Writer()
     product_context, definition_context, geometric = context(w, inch=encoding == "untyped", encoding=encoding)
@@ -305,6 +366,8 @@ FIXTURES = {
     "assembly-si-dimensions.step": ("Original assembly with explicit SI unit dimensions and unordered unit components",
                                     lambda: encoded("explicit")),
     "assembly-untyped-measure.step": ("Original assembly in inches with untyped measure values", lambda: encoded("untyped")),
+    "assembly-reversed-items.step": ("Original nested assembly whose item defined transformations list the parent placement first",
+                                     reversed_items),
 }
 
 

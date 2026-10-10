@@ -9,6 +9,13 @@ corpus compatibility record is `corpus/baseline.json` at its tag; see
 
 Parity work against HOOPS Exchange on the PreForm CAD collection.
 
+- Assemblies written by HOOPS Exchange (Shapr3D exports among them) and the CATIA V4
+  STEP interface link: an item defined transformation that lists the parent's placement
+  before the child's frame is read by membership, counted as
+  `ToleratedEncodings::reversed_transform_items` and rejected when strict
+  (`tessstep_ap242::adapt_with_policy`, `Policy`). The Shapr3D keycaps sample imports
+  as a 265-instance scene; its HOOPS reference volume counts every body twice.
+
 ## 1.0.0 — 2026-10-10
 
 Milestone 22, industrial hardening; see [docs/ROADMAP.md](docs/ROADMAP.md) and the
