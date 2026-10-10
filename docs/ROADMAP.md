@@ -359,9 +359,9 @@ stage. The curved adapters above are necessary but not sufficient for it; it als
 relies on implicit outer bounds (94 multi-bound faces, no `FACE_OUTER_BOUND`). Each
 item needs authored fixtures, typed outcomes and corpus-stage evidence. Add a
 redistributable Onshape export with these features as a hash-pinned exporter file.
-Open: the export used here is not cleared for redistribution, so it stays outside the
-repository and its evidence is recorded in [VALIDATION.md](VALIDATION.md); a cleared
-Onshape export is still needed for the pinned file.
+Moved to post-1.0 (decided 2026-10-10): the export used here is not cleared for
+redistribution, so it stays outside the repository and its evidence is recorded in
+[VALIDATION.md](VALIDATION.md); a cleared Onshape export will be pinned when available.
 
 - **Toroidal surfaces, ring and degenerate — delivered 2026-09-27.** Ring
   `TOROIDAL_SURFACE`s import through the curved profile, and
@@ -953,8 +953,8 @@ names its budget; the C ABI covers discovery, curved import and import options a
 export set is frozen with the installed-package consumer tests passing. The 27 roots
 whose triangulation ended in an unlocated `Polygon(UnresolvedGeometry)` were resolved
 by the 22.4 follow-up: 20 mesh, 7 fail later with named errors, and no root fails on
-an unclassified polygon error. Open: CI on every target (requires pushing `main`), and
-the pinned Onshape exporter file (requires a cleared export).
+an unclassified polygon error. The pinned Onshape exporter file moved to post-1.0
+(decided 2026-10-10). Open until `main` is pushed: CI on every target.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
