@@ -542,7 +542,8 @@ TS_API ts_status TS_CALL ts_document_get_schema(const ts_document *document, ts_
  * context dependent shape representations, and adapts surface colours of styled
  * solids, outer shells, faces and shape representations. Each B-rep root's model
  * tolerance is its context's length uncertainty, never below
- * minimum_model_tolerance_m; chord_m and angle_rad bound tessellation. A missing
+ * minimum_model_tolerance_m, and edge and vertex deviations up to 16 times it or up
+ * to chord_m are accepted and counted; chord_m and angle_rad bound tessellation. A missing
  * or ambiguous occurrence placement fails with TS_INVALID_GEOMETRY at stage
  * TS_IMPORT_STAGE_PRODUCT; placement is never defaulted. Failed roots and product
  * or style records outside the bundled profiles are reported, not placed; complete
@@ -675,8 +676,9 @@ typedef struct ts_import_options {
  * defaults; every entry point validates every field of the record.
  * Curved-profile tolerance policy: an edge farther than the model distance from its
  * face surface, or a vertex from its edge curve, is accepted and counted up to
- * deviation_factor times it and rejected beyond (TS_INVALID_GEOMETRY at the
- * geometry stage); TS_IMPORT_STRICT forces a factor of 1. Repair runs only when its
+ * deviation_factor times it or up to chord_m, whichever is larger (a mesh cannot
+ * show a smaller inconsistency), and rejected beyond (TS_INVALID_GEOMETRY at the
+ * geometry stage); a factor of 1 or TS_IMPORT_STRICT accepts none. Repair runs only when its
  * flags ask, on solids (never on surface models); strict and repair combine. */
 TS_API ts_status TS_CALL ts_import_options_init(ts_import_options *out, size_t struct_size);
 /* ts_import_options_init with max_work and max_records sized for this document as

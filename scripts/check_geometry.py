@@ -132,6 +132,18 @@ BREP_EXPECTED = {
     "brep-hole-outer-bound.step": (("accepted",) * 3, (0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), (math.pi * 1500e-9, 0.01)),
     "brep-far-generator.step": (("accepted",) * 3, (0, 0, 0, 0, 2), (math.pi / 3 * 1e-6, 0.01)),
     "brep-sampled-peak.step": (("accepted",) * 3, (0, 1, 0, 0, 0, 0, 0, 0, 1), (math.pi * 2000e-9, 0.01)),
+    # Mesh loop healing: a planar flap of no thickness under the box's top face is
+    # merged into it (one collapsed face); a 3 um crescent sliver on a cylinder cap
+    # beside a vertex 3 um off its arcs is collapsed at the working tolerance.
+    "brep-lens-flap.step": (("accepted",) * 3, (0, 0, 0, 0, 0, 1), (1e-6, math.inf)),
+    "brep-crescent-sliver.step": (("accepted",) * 3, (0, 1, 0, 0, 0, 1, 0, 0, 0, 3), (math.pi * 2000e-9, 0.01)),
+    # Loop spurs: the slab top runs out and back along its wall edge at two flush fins;
+    # the wall edge is split at both fin corners and the spurs are dropped (strict
+    # import keeps them, BREP_STRICT_EXPECTED).
+    "brep-loop-spurs.step": (("accepted",) * 3, (0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2), (536e-9, 1.)),  # a fin corner 5 nm off
+    # A plate face whose first hole no face corner can see past two L-shaped holes
+    # listed after it: the triangulator bridges the enclosing holes first.
+    "brep-enclosed-hole.step": (("accepted",) * 3, (1,), (140e-9, math.inf)),
 
     # Topology repair fixtures (corpus/geometry/repair_fixtures.py): strict import
     # rejects each defect; REPAIR_EXPECTED checks the opt-in repair of the same files.
@@ -171,14 +183,16 @@ BREP_CHORD = 1e-5
 BREP_COMPONENTS = {"brep-box-cavity.step": 2, "brep-sphere-cavity.step": 2, "brep-inverted-cavity.step": 2}
 ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "recharted_spheres", "collapsed_edges", "collapsed_faces",
                "supplied_pcurves", "rejected_pcurves", "off_surface_edges", "off_curve_vertices", "uncollapsed_sides",
-               "relabelled_outer_bounds")
+               "relabelled_outer_bounds", "reversed_senses", "collapsed_spurs")
 # Model tolerances of fixtures with a context uncertainty other than the default 1e-8 m.
 BREP_MODEL_TOLERANCE = {"brep-near-surface.step": 1e-6, "brep-far-surface.step": 1e-6,
                         "brep-vertex-off-curve.step": 1e-6, "brep-short-side.step": 5e-5,
-                        "brep-far-generator.step": 1e-6, "brep-sampled-peak.step": 2.7e-6}
+                        "brep-far-generator.step": 1e-6, "brep-sampled-peak.step": 2.7e-6,
+                        "brep-crescent-sliver.step": 1e-6}
 # Strict import (`brep --strict`) of fixtures whose default import tolerates an
 # exporter deviation: expected stages.
-BREP_STRICT_EXPECTED = {"brep-hole-outer-bound.step": ("accepted", "accepted", "rejected")}
+BREP_STRICT_EXPECTED = {"brep-hole-outer-bound.step": ("accepted", "accepted", "rejected"),
+                        "brep-loop-spurs.step": ("accepted", "accepted", "rejected")}
 
 
 # Product structure linked with the bundled product profile and placed in a scene:

@@ -28,7 +28,14 @@ onto the vertex, so an end segment deviates from the curve by that offset in add
 to the chord. A larger offset fails sampling. Seed parameters within numerical noise
 of each other or of the range ends (a range starting at -5e-17 beside the period
 break at 0) are dropped, since a span of no length can never satisfy the chord
-direction. At internal knots, adjacent spans retain the same stored position; a
+direction. A curve break (knot) whose point lies within the model tolerance of a
+range end's is such a span too: the end sample moves onto the vertex, which may sit
+that far off the curve, so the span's chord would follow the vertex offset instead of
+the curve. An exporter wrote a B-spline edge whose triple knot sits 3 pm before its
+vertex, which the neighbouring line's image places 0.27 nm further along the chart,
+so the knot sample made the face boundary double back on itself at that join at
+floating-point resolution; the knot is no longer sampled. Requested (refinement)
+parameters are kept, since a dropped request would only be made again. At internal knots, adjacent spans retain the same stored position; a
 permitted small discrepancy is included in chord checks. Raw model geometry is never
 changed. A full closed circle retains both parameter endpoints with the same
 canonical vertex position.
@@ -107,8 +114,18 @@ moves a hole outside the outer polygon fails explicitly, even when the separatel
 reconstructed smooth trim passed. Callers may resample edges more finely and retry.
 
 Deterministic visible bridges join holes to the current polygon; bounded ear clipping
-then produces triangles without Steiner vertices. Each hole takes the shortest visible
-bridge to the current polygon (ties by the lowest hole, then polygon position).
+then produces triangles without Steiner vertices. Each hole, in face order, takes the
+shortest visible bridge to the current polygon (ties by the lowest hole, then polygon
+position). A bridge may not cross a hole not yet bridged, so a hole that later holes
+enclose (a square pad between two notched pockets, say, with no corner of the face in
+sight past them) has no bridge in face order. The remaining holes are then bridged
+leftmost first (by the lowest u, then v, of their vertices; ties keep face order): a
+leftward ray from the leftmost vertex of the leftmost remaining hole reaches the
+polygon, and the polygon vertex it finds there (the hit edge's endpoint, or the vertex
+inside that sight triangle at the smallest angle to the ray) is visible from it, since
+the whole triangle lies at or left of that vertex, where no unbridged hole reaches.
+Faces whose holes bridge in face order keep that order and their triangles; the
+reordering only ever runs on a face that failed with `unresolved triangulation`.
 Candidates are tested for visibility in that order, in batches of the 32 shortest
 untested ones, so the search ends at the first visible bridge; it used to test every
 candidate shorter than the best so far in index order, each test linear in the

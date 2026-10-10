@@ -397,6 +397,15 @@ static void second_pass_contract() {
         auto far = parsed.value().import_solid(1000, 0.001, 1.0, &options);
         assert(!far && far.error().code == ErrorCode::invalid_geometry);
         assert(far.error().import_failure.stage == ImportStage::geometry);
+        // The chord floors the accepted deviation: a factor of 2 (2 um) rejects the
+        // 3 um edge under a 1 um chord and accepts it under the default 0.1 mm chord.
+        options.deviation_factor = 2;
+        options.chord_m = 1e-6;
+        auto tight = parsed.value().import_solid(1000, 0.001, 1.0, &options);
+        assert(!tight && tight.error().import_failure.stage == ImportStage::geometry);
+        options.chord_m = 1e-4;
+        auto floored = parsed.value().import_solid(1000, 0.001, 1.0, &options); assert(floored);
+        assert(floored.value().info.off_surface_edges == 1);
     }
     auto [model, shell_mesh] = [] {
         auto parsed = Document::parse(read_file("surface-open.step")); assert(parsed);

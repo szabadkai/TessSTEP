@@ -181,6 +181,29 @@ def box(s, lo, hi):
     return faces
 
 
+def polyhedron(s, points, rings):
+    """Planar faces of a polyhedron: corner coordinates and, per face, a ring of corner
+    indices counterclockwise seen from outside with the plane's normal and reference
+    direction. Edges are shared by corner pair, so a ring may run out and back along
+    two edges of one line."""
+    vertices = [s.vertex(p) for p in points]
+    edges = {}
+
+    def edge(a, b):
+        if (b, a) in edges:
+            return edges[(b, a)], False
+        if (a, b) not in edges:
+            pa, pb = points[a], points[b]
+            edges[(a, b)] = s.edge(vertices[a], vertices[b], s.line(pa, [pb[k] - pa[k] for k in range(3)]))
+        return edges[(a, b)], True
+
+    faces = []
+    for ring, normal, ref in rings:
+        uses = [edge(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring))]
+        faces.append(s.face([s.bound(uses, outer=True)], s.plane(points[ring[1]], normal, ref)))
+    return faces
+
+
 def fixtures():
     s = Step("Original solid cylinder r=10 h=20 mm; annular side face without a seam edge")
     s.write("brep-cylinder.step", cylinder(s, 10, 0, 20), context=context())
@@ -955,6 +978,172 @@ def fixtures():
         s.face([s.bound([(top, True)], outer=True)], s.plane((0, 0, 20), (0, 0, 1))),
     ]
     s.write("brep-sampled-peak.step", faces, context=context(uncertainty="2.7E-3"))
+
+    # A 10 x 10 x 2 mm plate with three prismatic through holes: a 2 x 2 square in
+    # the middle, listed first on both plate faces, between an L along the left and
+    # bottom sides and an L along the right and top sides. No corner of a plate face
+    # is visible from the square past the Ls, so bridged in face order it has no
+    # bridge into the face polygon; the triangulator must bridge the Ls first. The
+    # top face writes every loop as FACE_BOUND (its outer bound is inferred), as the
+    # exporter of the customer file this reproduces does.
+    s = Step("Original 10 x 10 x 2 mm plate with a square through hole enclosed by two L-shaped through holes listed after it")
+    rings = {
+        "o": [(0, 0), (10, 0), (10, 10), (0, 10)],
+        "s": [(4, 4), (6, 4), (6, 6), (4, 6)],
+        "l": [(1, 1), (9, 1), (9, 2), (2, 2), (2, 7), (1, 7)],
+        "u": [(9, 9), (1, 9), (1, 8), (8, 8), (8, 3), (9, 3)],
+    }
+    points = {f"{name}{i}{z}": (x, y, 2 if z == "t" else 0)
+              for name, ring in rings.items() for i, (x, y) in enumerate(ring) for z in "bt"}
+    vertices = {name: s.vertex(p) for name, p in points.items()}
+    edges = {}
+
+    def use(a, b):
+        if (b, a) in edges:
+            return edges[(b, a)], False
+        if (a, b) not in edges:
+            pa, pb = points[a], points[b]
+            edges[(a, b)] = s.edge(vertices[a], vertices[b], s.line(pa, [pb[k] - pa[k] for k in range(3)]))
+        return edges[(a, b)], True
+
+    def loop(names, normal, hole=False):
+        """Edge uses around the point names, counterclockwise about `normal` (clockwise
+        for a hole); the names are reversed when their Newell normal disagrees."""
+        p = [points[n] for n in names]
+        newell = [sum((p[i][(k + 1) % 3] - p[(i + 1) % len(p)][(k + 1) % 3]) *
+                      (p[i][(k + 2) % 3] + p[(i + 1) % len(p)][(k + 2) % 3]) for i in range(len(p)))
+                  for k in range(3)]
+        if (sum(newell[k] * normal[k] for k in range(3)) < 0) != hole:
+            names = names[::-1]
+        return [use(names[i], names[(i + 1) % len(names)]) for i in range(len(names))]
+
+    def face(loops, normal, labelled=True):
+        """Planar face bounded by the first loop with the others as holes; `labelled`
+        writes FACE_OUTER_BOUND on the first, else every loop is a FACE_BOUND."""
+        p0, p1 = points[loops[0][0]], points[loops[0][1]]
+        d = [p1[k] - p0[k] for k in range(3)]
+        length = math.sqrt(sum(x * x for x in d))
+        bounds = [s.bound(loop(loops[0], normal), outer=labelled)]
+        bounds += [s.bound(loop(names, normal, hole=True)) for names in loops[1:]]
+        return s.face(bounds, s.plane(p0, normal, [x / length for x in d]))
+
+    faces = [
+        face([[f"{name}{i}t" for i in range(len(ring))] for name, ring in rings.items()], (0, 0, 1), labelled=False),
+        face([[f"{name}{i}b" for i in range(len(ring))] for name, ring in rings.items()], (0, 0, -1)),
+    ]
+    # Walls face away from the material: out of the plate, into each hole.
+    for name, ring in rings.items():
+        for i in range(len(ring)):
+            (x0, y0), (x1, y1) = ring[i], ring[(i + 1) % len(ring)]
+            d = (x1 - x0, y1 - y0)
+            length = math.hypot(*d)
+            normal = (d[1] / length, -d[0] / length, 0) if name == "o" else (-d[1] / length, d[0] / length, 0)
+            j = (i + 1) % len(ring)
+            faces.append(face([[f"{name}{i}b", f"{name}{j}b", f"{name}{j}t", f"{name}{i}t"]], normal))
+    s.write("brep-enclosed-hole.step", faces)
+
+    # Slab 10 x 10 x 5 mm with two fins 2 x 3 x 3 mm standing flush with its wall
+    # x = 0, over y in [7, 10] and over y in [0, 3]. The wall's top edge A-B spans the
+    # whole wall while each fin's base edge spans only its part, so the slab top
+    # between the fins runs out to B along the wall edge and back along the first
+    # fin's base edge, and in along the second fin's base edge and out along the wall
+    # edge at A: two loop spurs of no area. The first fin's base corner C sits 5 nm
+    # off the wall edge, within the 10 nm uncertainty; the second's is exactly on it.
+    # Volume 500 + 18 + 18 mm^3.
+    s = Step("Original slab 10x10x5 mm with two 2x3x3 fins flush with one wall; the slab top runs out and back along the wall edge at both fins")
+    points = [(0, 0, 0), (0, 10, 0), (-5e-6, 7, 0), (-2, 7, 0), (-10, 7, 0), (-10, 3, 0), (-2, 3, 0), (0, 3, 0),
+              (-10, 0, 0), (-10, 10, 0), (-2, 10, 0), (-2, 0, 0),
+              (0, 7, 3), (0, 10, 3), (-2, 10, 3), (-2, 7, 3),
+              (0, 0, 3), (0, 3, 3), (-2, 3, 3), (-2, 0, 3),
+              (0, 0, -5), (0, 10, -5), (-10, 10, -5), (-10, 0, -5)]
+    faces = polyhedron(s, points, [
+        ((7, 0, 1, 2, 3, 4, 5, 6), (0, 0, 1), (1, 0, 0)),  # slab top between the fins, with both spurs
+        ((3, 10, 9, 4), (0, 0, 1), (1, 0, 0)),  # slab top beside the first fin
+        ((6, 5, 8, 11), (0, 0, 1), (1, 0, 0)),  # slab top beside the second fin
+        ((20, 21, 1, 0), (1, 0, 0), (0, 1, 0)),  # wall x = 0: its top edge A-B spans both fins
+        ((2, 1, 13, 12), (1, 0, 0), (0, 1, 0)),  # first fin front, on the base edge B-C
+        ((0, 7, 17, 16), (1, 0, 0), (0, 1, 0)),  # second fin front, on the base edge A-C''
+        ((20, 23, 22, 21), (0, 0, -1), (0, 1, 0)),  # slab bottom
+        ((8, 5, 4, 9, 22, 23), (-1, 0, 0), (0, 0, 1)),  # wall x = -10
+        ((0, 11, 8, 23, 20), (0, -1, 0), (1, 0, 0)),  # wall y = 0
+        ((21, 22, 9, 10, 1), (0, 1, 0), (0, 0, 1)),  # wall y = 10
+        ((3, 15, 14, 10), (-1, 0, 0), (0, 0, 1)),  # first fin back
+        ((2, 12, 15, 3), (0, -1, 0), (1, 0, 0)),  # first fin side y = 7
+        ((1, 10, 14, 13), (0, 1, 0), (0, 0, 1)),  # first fin side y = 10
+        ((12, 13, 14, 15), (0, 0, 1), (1, 0, 0)),  # first fin top
+        ((11, 19, 18, 6), (-1, 0, 0), (0, 0, 1)),  # second fin back
+        ((0, 16, 19, 11), (0, -1, 0), (1, 0, 0)),  # second fin side y = 0
+        ((7, 6, 18, 17), (0, 1, 0), (0, 0, 1)),  # second fin side y = 3
+        ((16, 17, 18, 19), (0, 0, 1), (1, 0, 0)),  # second fin top
+    ])
+    s.write("brep-loop-spurs.step", faces)
+
+    # Mesh loop healing: a 10 mm box whose top face also covers a 1 mm strip beyond
+    # the front edge (its loop detours around the strip), with a second planar face
+    # under the strip facing down: a flap of no thickness, as an exporter wrote a
+    # plane face over the strip of a fillet cylinder it cuts 0.03 um below its
+    # tangent line. The strip face lies on the top face's plane facing away from it,
+    # so it is merged into the top face (one collapsed face); the box stays 1000 mm3.
+    s = Step("Original 10 mm box with a zero-thickness planar flap folded under its top face beyond the front edge")
+    corners = {}
+    for i in range(8):
+        p = tuple(10 if (i >> k) & 1 else 0 for k in range(3))
+        corners[i] = (p, s.vertex(p))
+    edges = {}
+
+    def use(a, b):
+        if (b, a) in edges:
+            return edges[(b, a)], False
+        if (a, b) not in edges:
+            pa, pb = corners[a][0], corners[b][0]
+            edges[(a, b)] = s.edge(corners[a][1], corners[b][1], s.line(pa, [pb[k] - pa[k] for k in range(3)]))
+        return edges[(a, b)], True
+
+    faces = []
+    for ring, normal, ref in [
+        ((0, 2, 3, 1), (0, 0, -1), (0, 1, 0)), ((0, 1, 5, 4), (0, -1, 0), (1, 0, 0)),
+        ((2, 6, 7, 3), (0, 1, 0), (0, 0, 1)), ((0, 4, 6, 2), (-1, 0, 0), (0, 0, 1)),
+        ((1, 3, 7, 5), (1, 0, 0), (0, 1, 0)),
+    ]:
+        uses = [use(ring[i], ring[(i + 1) % 4]) for i in range(4)]
+        faces.append(s.face([s.bound(uses, outer=True)], s.plane(corners[ring[0]][0], normal, ref)))
+    # The top face (4, 5, 7, 6) with the front edge 4 -> 5 replaced by the detour
+    # 4 -> 4' -> 5' -> 5 around the strip y in [-1, 0]; the strip face runs 4 -> 5
+    # along the front face's top edge and back along the detour.
+    a2, b2 = (0, -1, 10), (10, -1, 10)
+    va2, vb2 = s.vertex(a2), s.vertex(b2)
+    e1 = s.edge(corners[4][1], va2, s.line(corners[4][0], (0, -1, 0)))
+    e2 = s.edge(va2, vb2, s.line(a2, (1, 0, 0)))
+    e3 = s.edge(vb2, corners[5][1], s.line(b2, (0, 1, 0)))
+    top = [(e1, True), (e2, True), (e3, True), use(5, 7), use(7, 6), use(6, 4)]
+    faces.append(s.face([s.bound(top, outer=True)], s.plane(corners[4][0], (0, 0, 1), (1, 0, 0))))
+    strip = [use(4, 5), (e3, False), (e2, False), (e1, False)]
+    faces.append(s.face([s.bound(strip, outer=True)], s.plane(corners[4][0], (0, 0, -1), (1, 0, 0))))
+    s.write("brep-lens-flap.step", faces, context=context())
+
+    # A cylinder r=10 h=20 under a 1 um uncertainty whose top circle is two half
+    # arcs between V1 = (10.003, 0, 20), 3 um outside the circle, and V2 = (-10, 0,
+    # 20); the cap is bounded by a second arc 3 um inside the first at its apex
+    # (centre (0, -0.003, 20)), and a crescent face fills the gap between the arcs.
+    # The crescent's arcs coincide only within the working tolerance the vertex
+    # implies (7 um), so it is a sliver face only there: collapsed, the cap uses the
+    # outer arc and the mesh is the full cylinder.
+    s = Step("Original cylinder r=10 h=20 mm under a 1 um uncertainty with a 3 um crescent sliver on its cap beside a vertex 3 um off its arcs")
+    v0 = s.vertex((10, 0, 0))
+    v1, v2 = s.vertex((10.003, 0, 20)), s.vertex((-10, 0, 20))
+    bottom = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    outer = s.circle((0, 0, 20), (0, 0, 1), (1, 0, 0), 10)
+    arc1 = s.edge(v1, v2, outer)
+    arc2 = s.edge(v2, v1, outer)
+    inner = s.edge(v1, v2, s.circle((0, -0.003, 20), (0, 0, 1), (1, 0, 0), math.sqrt(100 + 0.003 ** 2)))
+    surface = s.add(f"CYLINDRICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(arc2, False), (arc1, False)])], surface),
+        s.face([s.bound([(bottom, False)], outer=True)], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(inner, True), (arc2, True)], outer=True)], s.plane((0, 0, 20), (0, 0, 1))),
+        s.face([s.bound([(arc1, True), (inner, False)], outer=True)], s.plane((0, 0, 20), (0, 0, 1))),
+    ]
+    s.write("brep-crescent-sliver.step", faces, context=context(uncertainty="1.E-3"))
 
 
 if __name__ == "__main__":

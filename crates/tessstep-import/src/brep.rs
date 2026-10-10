@@ -1,8 +1,10 @@
 //! Edge-based B-rep solids with elementary, B-spline and swept geometry.
+mod coincident;
 mod outer;
 mod scan;
 mod sewing;
 mod sphere;
+mod spur;
 mod supplied;
 mod surface_model;
 mod swept;
@@ -74,6 +76,26 @@ pub struct Adaptations {
     /// declared one is a hole. No loop, sense or coordinate changes. Strict import
     /// keeps the declared bound, which tessellation then rejects.
     pub relabelled_outer_bounds: usize,
+    /// Open edges whose SAME_SENSE runs against the order of their vertices along the
+    /// curve: the start vertex lies at the larger curve parameter when SAME_SENSE is
+    /// true, or the smaller when false. The edge follows its vertices, as the loops
+    /// that use it do, and the sense is read as the opposite. Strict import rejects
+    /// the contradiction.
+    pub reversed_senses: usize,
+    /// Loop spurs removed: two consecutive edges of a loop whose curves run back
+    /// along each other within the working tolerance from their shared vertex, out
+    /// to a vertex of one that lies on the other's curve or to a point where they
+    /// cross again. The loop encloses no area between them. The edges are split where
+    /// they part (counted in `split_edges`; the vertex already there is reused,
+    /// otherwise one is inserted at the crossing), the coincident halves are merged
+    /// as sliver-face edges are, and the loop's out-and-back run is dropped, so the
+    /// neighbouring faces share one edge and the shell stays closed. A tangent cusp
+    /// is not a spur, nor is a lobe wider than a tenth of its run or shorter than four
+    /// tolerances (a corner of a body whose edges are a few tolerances long), nor one
+    /// whose loop would keep fewer than three uses (a sliver face) or whose two edges
+    /// no other loop uses (free edges of an open shell). Strict import keeps the
+    /// loop, which tessellation then rejects.
+    pub collapsed_spurs: usize,
 }
 
 /// Import one selected MANIFOLD_SOLID_BREP (or BREP_WITH_VOIDS) whose faces lie on
@@ -941,12 +963,51 @@ impl Builder {
                 let CurveGeometry::Nurbs(n) = curve else {
                     unreachable!("NURBS shape");
                 };
-                nurbs_parameter(c, n, p, at_end)?
+                let t = nurbs_parameter(c, n, p, at_end)?;
+                // A vertex at the seam of a closed curve written without its closed
+                // flag lies at both domain ends; the sampled tie falls to rounding, so
+                // take the end the edge direction asks for.
+                let [lo, hi] = n.knot_vector().domain();
+                let ends = [lo, hi].map(|t| c.checked(curve.evaluate(t)));
+                match ends {
+                    [Ok(a), Ok(b)]
+                        if norm(sub(a.position.coordinates(), p)) <= self.policy.tolerance
+                            && norm(sub(b.position.coordinates(), p)) <= self.policy.tolerance =>
+                    {
+                        if at_end {
+                            hi
+                        } else {
+                            lo
+                        }
+                    }
+                    _ => t,
+                }
             }
         };
         let q = c.checked(curve.evaluate(t))?.position.coordinates();
         self.vertex_deviation(c, vertex, norm(sub(q, p)))?;
         Ok(t)
+    }
+
+    /// Whether `curve` is open: its domain ends lie apart by more than the model
+    /// tolerance. A closed curve's two arcs between the same vertices are
+    /// indistinguishable by vertex order, so only an open curve's edge sense can be
+    /// read from its vertices.
+    fn open_curve(
+        &self,
+        c: &Context<'_, '_>,
+        curve: &CurveGeometry<ModelSpace, 3>,
+        shape: &CurveShape,
+    ) -> Result<bool, Error> {
+        match (curve, shape) {
+            (CurveGeometry::Nurbs(n), CurveShape::Nurbs) => {
+                let [lo, hi] = n.knot_vector().domain();
+                let a = c.checked(curve.evaluate(lo))?.position;
+                let b = c.checked(curve.evaluate(hi))?.position;
+                Ok(c.checked(a.distance(b))? > self.policy.tolerance)
+            }
+            _ => Ok(true),
+        }
     }
 
     /// Accept, count or reject the distance between an edge end on its curve and the
@@ -990,7 +1051,7 @@ impl Builder {
         let same = c.boolean(edge, "SAME_SENSE")?;
         let (geometry, sense) = swept::trimmed_basis(c, c.reference(edge, "EDGE_GEOMETRY")?)?;
         // SAME_SENSE is relative to a trimmed curve; its basis may run the other way.
-        let same = same == sense;
+        let mut same = same == sense;
         let supplied = self.edge_pcurves(c, geometry)?;
         c.current = edge.id;
         let (curve, shape) = self.curve(c, geometry)?;
@@ -1051,9 +1112,25 @@ impl Builder {
                         "an open curve cannot bound a closed edge",
                     ));
                 }
-                let ts = self.parameter(c, &curve, &shape, start, !same)?;
-                let te = self.parameter(c, &curve, &shape, end, same)?;
-                if (same && ts >= te) || (!same && ts <= te) {
+                let mut ts = self.parameter(c, &curve, &shape, start, !same)?;
+                let mut te = self.parameter(c, &curve, &shape, end, same)?;
+                let contradicted =
+                    |same: bool, ts: f64, te: f64| (same && ts >= te) || (!same && ts <= te);
+                if contradicted(same, ts, te)
+                    && !self.strict
+                    && ts != te
+                    && self.open_curve(c, &curve, &shape)?
+                {
+                    // The vertices sit in the other order along the open curve: the
+                    // edge follows them, as its loops do, with the opposite sense.
+                    same = !same;
+                    ts = self.parameter(c, &curve, &shape, start, !same)?;
+                    te = self.parameter(c, &curve, &shape, end, same)?;
+                    if !contradicted(same, ts, te) {
+                        self.adaptations.reversed_senses += 1;
+                    }
+                }
+                if contradicted(same, ts, te) {
                     return Err(c.error(
                         ErrorKind::InvalidGeometry,
                         "EDGE_CURVE same_sense contradicts curve parameter direction",
@@ -1408,40 +1485,57 @@ impl Builder {
         // Opt-in sewing first: it may grow the working tolerance by its merge distance.
         let repairs = self.sew(c, &mut faces, root, options)?;
         let tolerance = c.tolerance.distance().as_metres();
-        self.collapse_slivers(c, &mut faces, tolerance)?;
+        // Vertices accepted off their curves widen the sliver test to the working
+        // tolerance they imply, as every later check: a sliver whose second edge ends
+        // at such a vertex runs that far from the first.
+        let reach = self.policy.working(self.deviation).max(tolerance);
+        self.collapse_slivers(c, &mut faces, reach)?;
+        self.merge_coincident(c, &mut faces, tolerance)?;
         // Plan every face; annular faces without aligned seam vertices request edge
         // splits, which are applied to all faces before planning again.
         let mut plans = Vec::new();
-        for pass in 0.. {
-            // Each pass replans every face from scratch, so it gets the full budget;
-            // the pass cap bounds the total.
-            self.work.remaining = self.pass_work;
-            let saved = self.snapshot(c);
-            plans.clear();
-            let mut splits = BTreeMap::new();
-            for face in &faces {
-                c.current = face.entity;
-                match self.plan(c, face, tolerance)? {
-                    Planned::Face(plan) => plans.push(plan),
-                    Planned::Split { edge, parameter } => {
-                        splits.entry(edge).or_insert(parameter);
+        for cycle in 0.. {
+            let mut saved = self.snapshot(c);
+            for pass in 0.. {
+                // Each pass replans every face from scratch, so it gets the full budget;
+                // the pass cap bounds the total.
+                self.work.remaining = self.pass_work;
+                saved = self.snapshot(c);
+                plans.clear();
+                let mut splits = BTreeMap::new();
+                for face in &faces {
+                    c.current = face.entity;
+                    match self.plan(c, face, tolerance)? {
+                        Planned::Face(plan) => plans.push(plan),
+                        Planned::Split { edge, parameter } => {
+                            splits.entry(edge).or_insert(parameter);
+                        }
                     }
                 }
+                if splits.is_empty() {
+                    break;
+                }
+                if pass >= 8 {
+                    return Err(c.error(
+                        ErrorKind::Unsupported,
+                        "annular faces still lack aligned seam vertices after edge splitting",
+                    ));
+                }
+                // Planning state is discarded; the splits below persist into the next pass.
+                self.restore(c, saved);
+                for (edge, parameter) in splits {
+                    self.split(c, &mut faces, edge, parameter, None)?;
+                }
             }
-            if splits.is_empty() {
+            // Loop spurs are measured at the working tolerance, which planning establishes
+            // (off-surface edges widen it). Healing one changes the topology, so planning
+            // state is discarded and every face is planned again, at most a few times.
+            let working = self.policy.working(self.deviation);
+            if cycle >= 4 || !self.has_spur(c, &faces, working)? {
                 break;
             }
-            if pass >= 8 {
-                return Err(c.error(
-                    ErrorKind::Unsupported,
-                    "annular faces still lack aligned seam vertices after edge splitting",
-                ));
-            }
-            // Planning state is discarded; the splits below persist into the next pass.
             self.restore(c, saved);
-            for (edge, parameter) in splits {
-                self.split(c, &mut faces, edge, parameter)?;
-            }
+            self.collapse_spurs(c, &mut faces, working)?;
         }
         for e in &self.edges {
             c.raw.edges.push(Edge {
@@ -1906,7 +2000,17 @@ impl Builder {
             keep += 1;
             retained
         });
-        // Retarget uses and entity links, then compact the edge table.
+        self.retarget(faces, &merged);
+        Ok(())
+    }
+    /// Retarget every use and entity link of each `merged` edge onto its survivor
+    /// (flipping the use when the survivor runs the other way), then compact the edge
+    /// table.
+    pub(super) fn retarget(
+        &mut self,
+        faces: &mut [FaceRecord],
+        merged: &BTreeMap<usize, (usize, bool)>,
+    ) {
         let mut remap: Vec<Option<usize>> = Vec::with_capacity(self.edges.len());
         let mut compact = Vec::new();
         for (index, edge) in self.edges.drain(..).enumerate() {
@@ -1936,7 +2040,6 @@ impl Builder {
             *edge = index;
             *forward ^= flip;
         }
-        Ok(())
     }
     fn snapshot(&self, c: &Context<'_, '_>) -> (usize, usize, Adaptations, f64) {
         (
@@ -2970,13 +3073,17 @@ impl Builder {
         ))
     }
     /// Split an edge at an interior curve parameter. Both halves keep the curve; every
-    /// use in every face is replaced by the two halves in traversal order.
+    /// use in every face is replaced by the two halves in traversal order. The split
+    /// vertex is inserted at the curve point, or is `vertex` when given (an existing
+    /// vertex within the model tolerance of that point). The first half keeps the
+    /// edge's index and the second is appended to the edge table.
     fn split(
         &mut self,
         c: &mut Context<'_, '_>,
         faces: &mut [FaceRecord],
         edge: usize,
         parameter: f64,
+        vertex: Option<VertexId>,
     ) -> Result<(), Error> {
         let [a, b] = self.edges[edge].range;
         if !(parameter > a && parameter < b) {
@@ -2986,13 +3093,19 @@ impl Builder {
             ));
         }
         c.record()?;
-        let position = c
-            .checked(self.edges[edge].curve.evaluate(parameter))?
-            .position;
-        let vertex = VertexId(c.raw.vertices.len());
-        c.raw.vertices.push(Vertex { position });
-        c.point_entities
-            .push(self.edges[edge].entity.unwrap_or(c.current));
+        let vertex = match vertex {
+            Some(vertex) => vertex,
+            None => {
+                let position = c
+                    .checked(self.edges[edge].curve.evaluate(parameter))?
+                    .position;
+                let vertex = VertexId(c.raw.vertices.len());
+                c.raw.vertices.push(Vertex { position });
+                c.point_entities
+                    .push(self.edges[edge].entity.unwrap_or(c.current));
+                vertex
+            }
+        };
         let [start, end] = self.edges[edge].vertices;
         let mut second = self.edges[edge].clone();
         second.range = [parameter, b];

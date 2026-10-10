@@ -11,6 +11,7 @@ use tessstep_part21::{EntityId, ParseLimits};
 const HOLE_OUTER: &str = include_str!("../../../corpus/geometry/brep-hole-outer-bound.step");
 const FAR_GENERATOR: &str = include_str!("../../../corpus/geometry/brep-far-generator.step");
 const SAMPLED_PEAK: &str = include_str!("../../../corpus/geometry/brep-sampled-peak.step");
+const SEAM_CYLINDER: &str = include_str!("../../../corpus/geometry/brep-seam-cylinder.step");
 
 fn import(text: &str, tolerance: f64, options: ImportOptions) -> Result<ImportedSolid, Error> {
     let doc = tessstep_model::parse(text.as_bytes(), ParseLimits::default()).unwrap();
@@ -154,5 +155,57 @@ fn edge_deviations_between_pcurve_samples_are_measured_at_their_peak() {
             .message
             .contains("lies 2.725e-6 m from the face surface"),
         "{error}"
+    );
+}
+
+#[test]
+fn an_edge_sense_against_its_vertex_order_follows_the_vertices_unless_strict() {
+    // The seam line runs from the bottom vertex #2 to the top vertex #4 along its
+    // LINE direction; written with SAME_SENSE false, the sense contradicts the
+    // vertices, which the loops on both sides follow.
+    let reversed = SEAM_CYLINDER.replace(
+        "#40=EDGE_CURVE('',#2,#4,#39,.T.);",
+        "#40=EDGE_CURVE('',#2,#4,#39,.F.);",
+    );
+    assert_ne!(reversed, SEAM_CYLINDER);
+    let expected = import(SEAM_CYLINDER, 1e-8, ImportOptions::default()).unwrap();
+    assert_eq!(expected.adaptations().reversed_senses, 0);
+    let solid = import(&reversed, 1e-8, ImportOptions::default()).unwrap();
+    assert_eq!(
+        solid.adaptations(),
+        Adaptations {
+            reversed_senses: 1,
+            ..expected.adaptations()
+        }
+    );
+    let (mesh, reference) = (
+        tessellate(&solid, 1e-5).unwrap(),
+        tessellate(&expected, 1e-5).unwrap(),
+    );
+    mesh.require_solid().unwrap();
+    assert_eq!(
+        mesh.data().triangles.len(),
+        reference.data().triangles.len()
+    );
+    let (volume, exact) = (
+        mesh.statistics().signed_volume,
+        reference.statistics().signed_volume,
+    );
+    assert!(
+        ((volume - exact) / exact).abs() < 1e-9,
+        "volume {volume} exact {exact}"
+    );
+    let error = import(&reversed, 1e-8, strict()).unwrap_err();
+    assert_eq!(
+        (error.kind, error.stage, error.entity),
+        (
+            ErrorKind::InvalidGeometry,
+            Stage::Geometry,
+            EntityId::new(40)
+        )
+    );
+    assert_eq!(
+        error.message,
+        "EDGE_CURVE same_sense contradicts curve parameter direction"
     );
 }

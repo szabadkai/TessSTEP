@@ -299,3 +299,45 @@ fn shared_edge_rational_arc_has_dense_independent_error_and_determinism_checks()
         }
     }
 }
+#[test]
+fn shared_edge_knots_within_the_model_tolerance_of_a_vertex_are_not_sampled() {
+    use tessstep_curves::spline::{NurbsCurve, SplineLimits};
+    use tessstep_math::Point;
+    // A unit line with one interior knot at `k` of its length, under a 10 nm model
+    // tolerance. The knot's span to the vertex is a span the model does not resolve
+    // when it is shorter than the tolerance: its chord would follow the vertex's
+    // offset from the curve instead of the curve (an exporter's knot 3 pm before a
+    // vertex doubled a chart boundary back on itself at the next edge's image of
+    // that vertex). Longer spans keep their knot sample as before.
+    let sampled = |k: f64| {
+        let mut r = square();
+        r.edges[0].curve = CurveGeometry::Nurbs(
+            NurbsCurve::new(
+                1,
+                &[0., 0., k, 1., 1.],
+                &[
+                    Point::new([0., 0., 0.]).unwrap(),
+                    Point::new([k, 0., 0.]).unwrap(),
+                    Point::new([1., 0., 0.]).unwrap(),
+                ],
+                &[1.; 3],
+                SplineLimits::default(),
+            )
+            .unwrap(),
+        );
+        let n = r
+            .validate(tolerance(), ValidationLimits::default())
+            .unwrap()
+            .normalize();
+        let s = sample_edges(&n, tol(1e-3, 0.1), SamplingLimits::default()).unwrap();
+        s.edges()[0]
+            .samples()
+            .iter()
+            .map(|s| s.parameter)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(sampled(1e-7), [0., 1e-7, 1.]);
+    assert_eq!(sampled(1. - 1e-7), [0., 1. - 1e-7, 1.]);
+    assert_eq!(sampled(5e-9), [0., 1.]);
+    assert_eq!(sampled(1. - 5e-9), [0., 1.]);
+}

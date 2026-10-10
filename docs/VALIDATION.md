@@ -1,3 +1,43 @@
+# The 646-root support attachment under PreForm's settings — 2026-10-10
+
+PreForm imports through the C++ wrapper's `import_assembly` with a 12.5 µm chord, a 30°
+normal angle, sewing and orientation repair, the default 0.1 µm minimum model
+tolerance (the file declares 0.1 nm to 1 µm) and the default deviation factor. A Rust
+reproduction of that call on `jira/PP-30107/Bad_STEP.stp` (55.7 MB, 646 solid roots,
+302 occurrences of 209 products) lost 26 roots before this work. Each root was then
+extracted with its reference closure and reproduced with the `brep` example
+(`--model-tolerance 1e-7 --chord 12.5e-6 --angle 0.5236 --repair --deviation-factor
+125`, the floor as a multiple), fixed in the library and measured again:
+
+| Failure as PreForm saw it | Roots | Cause | Now |
+| --- | ---: | --- | --- |
+| Edge or vertex beyond 16 × the 0.1 µm model tolerance | 15 | 1.7 to 9.3 µm off, which a 12.5 µm mesh cannot show | 11 mesh (`deviation_floor` = chord); 3 moved on to the faces below; 1 vertex 27.8 µm off stays rejected |
+| `the largest accepted deviation exceeds the chord tolerance` | 1 | 12.78 µm accepted, 12.5 µm chord | meshes (refusal removed) |
+| `unresolved triangulation` (no bridge to a hole) | 4 | the first hole listed sat in the notches of later holes, so no bridge was visible in face order | mesh (holes re-bridged leftmost first) |
+| `tangent edges at a vertex` (UV trimming) | 3 | loop spurs: the loop ran out and back along two coincident edges | 2 mesh (`collapsed_spurs`); 1 goes on to a pinched face whose lobe is 51 µm wide under a 17 µm working tolerance |
+| `Mesh(DuplicateTriangle)` | 2 | a plane strip on the strip of a fillet cylinder it cuts 0.03 µm below the tangent line | 1 meshes (`collapsed_faces`); 1 overlaps its neighbour along generators that are no edges and stays rejected, now located at its face |
+| self-intersecting edge image | 1 | a triple knot 3 pm before the vertex was sampled | meshes |
+| degenerate outer bound | 1 | a 22 µm sliver face beside a vertex 9 µm off its arc | meshes (slivers collapse at the working tolerance) |
+| `same_sense contradicts curve parameter direction` | 1 | a B-spline written closed without its flag; the seam vertex projected to the wrong domain end | meshes |
+| `NonManifoldVertex` | 1 | a pinched vertex shared by two edge cycles (two lines, and a circle with a B-spline) | stays rejected: pinched vertices are rejected by design ([TOPOLOGY.md](TOPOLOGY.md)) |
+| horn torus | 1 | major radius = minor radius | unsupported |
+
+| `Bad_STEP.stp`, PreForm's settings | Before | After |
+| --- | ---: | ---: |
+| Roots imported | 620 of 646 | 641 of 646 |
+| Scene triangles | 341,510 | 533,528 |
+| Survey (default import, 1e-3 of the diagonal as chord, no repair) | 545 roots | 617 roots |
+
+Two further bodies (0.28 mm across, 14 µm edges) and two three-edge sliver faces
+meshed before the loop-spur healer and were lost to its first version; the healer now
+requires a lobe at least four tolerances long and a tenth as wide, and leaves a loop
+at least three uses. The crate tests and the installed C and C++ consumers pass, and
+the corpus check against the saved 1.0.0-era baseline reports 3,227 compatible inputs
+and 7 changed, none a regression: three OCCT solids (`OCC8229`, both `trj3_s1`
+variants, one root of `trj9_ap209-mp`) and four shells (`Gp054`, `trj6_k1`, `trj7_k1`)
+now mesh, for 786 meshed shape roots (778 before) and 1,133 meshed surface models
+(1,130). The baseline was not refreshed.
+
 # HOOPS Exchange parity on the PreForm collection — 2026-10-10
 
 An internal, non-redistributable collection of 54 STEP files used by PreForm (NIST
@@ -7,8 +47,9 @@ probe of the same files (its unsimplified mesh volumes). Nothing from the collec
 in this repository. Before the parity work, at 1.0.0: 51 of 54 files parsed and 44
 meshed every root. After the parser, tessellation, loop-healing and assembly-linking
 changes above: all 54 parse and 53 mesh every root; the 646-root attachment, for which
-the HOOPS probe recorded no mesh, meshes 545 roots (the rest are deviations beyond the
-survey chord or the 16× policy, unsewn shells and other named failures). Where both
+the HOOPS probe recorded no mesh, meshed 545 roots at the time (617 after the section
+above; the rest are deviations beyond the 16× policy, unsewn shells and other named
+failures). Where both
 mesh every root, 47 of 53 files agree with HOOPS within 0.1% in volume and 51 within
 0.6%. Three of the larger gaps are HOOPS meshes that are open (10 to 524 boundary
 edges), where TessSTEP agrees with the closed exporter variants of the same parts; the

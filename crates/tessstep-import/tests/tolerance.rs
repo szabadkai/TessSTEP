@@ -176,19 +176,78 @@ fn deviations_beyond_the_policy_are_typed_rejections_naming_distance_and_bound()
             "{error}"
         );
     }
-    // A chord tolerance below the accepted deviation is refused.
+    // A chord tolerance below the accepted deviation still meshes: the boundary
+    // follows the 3 um-off edge, the surfaces keep the chord.
     let near = import(NEAR, 1e-6, ImportOptions::default()).unwrap();
-    let error = near
-        .tessellate(chord(1e-6), TessellationOptions::default())
-        .unwrap_err();
+    assert!((near.largest_deviation() - 3e-6).abs() < 1e-12);
+    let fine = mesh(&near, 1e-6);
+    let coarse = mesh(&near, 1e-4);
+    assert!(fine.data().triangles.len() > coarse.data().triangles.len());
+}
+
+#[test]
+fn the_deviation_floor_accepts_what_the_factor_rejects_unless_the_factor_is_1() {
+    let floor = |deviation_floor, deviation_factor| ImportOptions {
+        deviation_floor,
+        deviation_factor,
+        ..ImportOptions::default()
+    };
+    assert_eq!(ImportOptions::default().deviation_floor, 0.);
+    // 50 um off its cylinder, beyond 16 x 1 um but within a 60 um floor.
+    let far = import(FAR, 1e-6, floor(6e-5, 16.)).unwrap();
+    assert_eq!(far.adaptations().off_surface_edges, 1);
+    assert!((far.largest_deviation() - 5e-5).abs() < 1e-12);
+    assert_eq!(
+        far.brep().model_tolerance(),
+        1e-6 + 2. * far.largest_deviation()
+    );
+    mesh(&far, 1e-4).require_solid().unwrap();
+    // Below it the bound names the floor.
+    let error = import(FAR, 1e-6, floor(4e-5, 16.)).unwrap_err();
     assert_eq!(
         (error.kind, error.stage),
-        (ErrorKind::InvalidGeometry, Stage::Tessellation)
+        (ErrorKind::InvalidGeometry, Stage::Geometry)
     );
-    assert_eq!(
-        error.message,
-        "the largest accepted deviation 3.000e-6 m exceeds the chord tolerance 1.000e-6 m"
+    assert!(
+        error.message.contains(
+            "beyond the accepted deviation 4.000e-5 m (the deviation floor, above 16 × the model tolerance 1.000e-6 m)"
+        ),
+        "{error}"
     );
+    // A floor below the factor's bound changes nothing, and the bound names the factor.
+    let error = import(FAR, 1e-6, floor(1e-5, 16.)).unwrap_err();
+    assert!(
+        error.message.contains(
+            "beyond the accepted deviation 1.600e-5 m (16 × the model tolerance 1.000e-6 m)"
+        ),
+        "{error}"
+    );
+    // A factor of 1, or strict import, accepts no deviation whatever the floor.
+    for options in [
+        floor(5e-5, 1.),
+        ImportOptions {
+            deviation_floor: 5e-5,
+            ..strict()
+        },
+    ] {
+        let error = import(NEAR, 1e-6, options).unwrap_err();
+        assert_eq!(error.stage, Stage::Geometry);
+        assert!(
+            error
+                .message
+                .contains("beyond the model tolerance 1.000e-6 m"),
+            "{error}"
+        );
+    }
+    // A negative or non-finite floor is an option error before decoding.
+    for invalid in [-1e-6, f64::NAN, f64::INFINITY] {
+        let error = import(NEAR, 1e-6, floor(invalid, 16.)).unwrap_err();
+        assert_eq!(
+            (error.kind, error.stage),
+            (ErrorKind::InvalidOptions, Stage::Profile),
+            "{error}"
+        );
+    }
 }
 
 #[test]

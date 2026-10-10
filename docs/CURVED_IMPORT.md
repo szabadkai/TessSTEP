@@ -205,7 +205,56 @@ Each loop is classified by its winding in the periodic surface axes.
   written beside the arc it approximates, 0.1 µm apart under a 20 µm uncertainty) is
   removed before planning; every use and entity link of the second edge is retargeted
   onto the first (an analytic edge survives a B-spline), so neighbours share one edge
-  and the shell stays closed. The removal is reported as `collapsed_faces`.
+  and the shell stays closed. The removal is reported as `collapsed_faces`. The test
+  uses the working tolerance the vertex deviations accepted so far imply
+  ([tolerance policy](#tolerance-policy)), as every later check does: a sliver whose
+  B-spline tail ends at a vertex 9 µm off its arc runs that far from the arc, and
+  trimming would otherwise reject the face it bounds, 22 µm long under a 19 µm
+  working tolerance, as a degenerate loop.
+* **Coincident faces.** A face bounded by one loop that splits into a chain shared
+  with one neighbour and a chain shared with other faces, whose sampled boundary and
+  interior lie within the model tolerance of the neighbour's surface *facing away
+  from it*, is the near side of a lens of no thickness: an exporter wrote a 49 µm
+  strip of a plane that cuts a 10 mm fillet cylinder 0.03 µm below its tangent line,
+  and the plane face and the cylinder's strip meshed into the same triangles with
+  opposite windings (`DuplicateTriangle`, now located at the face of the repeat). The
+  face is merged into the neighbour before planning: the neighbour's loop runs along
+  the face's other chain instead of the shared one, the face and the shared edges are
+  removed, and the merge counts in `collapsed_faces`. The face must be the smaller
+  region (two faces on one plane satisfy the surface test both ways), must not be a
+  sliver (its other chain running along the shared one within the tolerance is left
+  as written), and a face continuing its neighbour on one surface, facing the same
+  way, is not a lens. Only lenses thinner than the model tolerance qualify, not the
+  working tolerance: an accepted vertex or edge deviation says nothing about the
+  volume between two faces. A face whose overlap with its neighbour is only part of
+  either (the same plane 1.75 µm through a fillet, crossing it along two generators
+  that are no edges) is not healed; its repeat is still located.
+* **Loop spurs.** Two consecutive edges of a loop whose curves run back along each
+  other within the working tolerance from their shared vertex enclose no area
+  between them, and trimming would reject the loop as
+  [tangent edges at a vertex](#uv-loop-failures). Exporters write them beside flush
+  features: a slab top meeting a fin that stands flush on the slab's wall, where the
+  wall's top edge spans the whole wall and the fin's base edge only its part, so the
+  slab top's loop runs out along the wall edge and back along the fin's; or a
+  B-spline that continues the arc it was fitted to and first runs back over it; or
+  two fitted B-splines leaving a vertex together within a micrometre and crossing
+  tens of micrometres out. Where the curves part, the edges are split: at the vertex
+  of one edge that lies on the other's curve (the vertex is reused), or at the point
+  where the curves cross again, at an angle, beyond the tolerance box around the
+  shared vertex (a vertex is inserted there). The coincident halves beside the
+  vertex are merged as sliver-face edges are, and the loop's out-and-back run is
+  dropped, so the neighbouring faces share the surviving half. A tangent cusp (an
+  arc and its tangent line, which part only quadratically) and the fit noise along
+  it are not spurs, however long they stay within the tolerance; nor is a lobe wider
+  than a tenth of its run or shorter than four tolerances (a corner of a body whose
+  edges are a few tolerances long lies within the band whatever its angle, and is
+  left as written), nor a run whose loop would keep fewer than three uses (a sliver
+  face of three edges, which meshes as the thin face it is), nor one whose two edges
+  no other loop uses (free edges of an open shell, whose merged half no loop would
+  keep). Spurs are measured
+  at the working tolerance after planning (off-surface edges widen it), and the
+  faces are planned again after healing. The count is `collapsed_spurs`; strict
+  import keeps the loop.
 * **Edge splits.** When no aligned vertex pair exists (for example two closed circles
   whose vertices sit at different angles), the loop edge that the isoparametric line
   through a vertex of the other loop crosses is split there. Both halves keep the
@@ -249,10 +298,22 @@ Each loop is classified by its winding in the periodic surface axes.
   ([tolerance policy](#tolerance-policy)).
 
 `ImportedSolid::adaptations()` counts inferred and relabelled outer bounds, inserted
-seams (annulus and pole seams), split edges, re-charted spheres, collapsed edges and
-the tolerance adaptations below. All are representation choices, not repairs: no
-coordinate, curve or surface is modified and no topology is merged; the only inserted
-vertices are split points and poles that no `VERTEX_LOOP` names.
+seams (annulus and pole seams), split edges, re-charted spheres, collapsed edges,
+faces and spurs, reversed edge senses and the tolerance adaptations below. All are
+representation choices, not repairs: no coordinate, curve or surface is modified and
+no topology is merged beyond the coincident edges of sliver faces and loop spurs; the
+only inserted vertices are split points (a spur's second crossing among them) and
+poles that no `VERTEX_LOOP` names.
+
+An open edge whose `SAME_SENSE` runs against the order of its vertices along the
+curve (the start vertex at the larger parameter when true, the smaller when false)
+follows its vertices, as the loops on both sides do, with the opposite sense; this is
+counted in `Adaptations::reversed_senses`, and strict import rejects it (`EDGE_CURVE
+same_sense contradicts curve parameter direction`), as the planar profile does. Only an
+open curve is read this way: on a closed curve the two arcs between the vertices are
+indistinguishable by their order, so the contradiction stays an error. A B-spline
+written closed without its closed flag places a vertex at its seam at both domain
+ends; the end the edge direction asks for is taken (the sampled tie fell to rounding).
 
 ## Tolerance policy
 
@@ -261,8 +322,8 @@ their edge curves, beyond the length uncertainty they declare. One policy (Miles
 22.3, `crates/tessstep-import/src/brep/tolerance.rs`) covers both distances:
 
 * **Within the model tolerance** the geometry is consistent; nothing is counted.
-* **Above it and up to `deviation_factor` times it** the deviation is accepted and
-  counted. An edge use whose 3D curve lies off its face surface receives the pcurve
+* **Above it and up to `deviation_factor` times it, or up to `deviation_floor`,
+  whichever is larger,** the deviation is accepted and counted. An edge use whose 3D curve lies off its face surface receives the pcurve
   of the curve's surface projection (still fitted to a quarter of the model
   tolerance) and counts in `Adaptations::off_surface_edges`; the mesh boundary follows
   the 3D curve, so neighbouring faces stay watertight. An edge end whose vertex lies
@@ -285,23 +346,27 @@ distance (a vertex and the edge end beside it may each deviate, on either side o
 surface); `ImportedSolid::largest_deviation()` reports that distance and
 `brep().model_tolerance()` the working tolerance. A solid without deviations keeps
 the model tolerance, so its import is unchanged. Seams inserted between deviating
-loop ends accept the same working distance from their vertices. `tessellate` refuses
-a chord tolerance below the largest accepted deviation (`the largest accepted
-deviation ... exceeds the chord tolerance ...`), since its mesh could not stay within
-the chord of the surfaces. A vertex off its surface also tilts small facets: the
+loop ends accept the same working distance from their vertices. `tessellate` takes
+any chord: the mesh boundary follows each edge's 3D curve, so beside an edge accepted
+off its surface the facets lie up to the largest deviation from that surface in
+addition to the chord, which the surfaces themselves keep (until 1.1 a chord below the
+deviation was refused). A vertex off its surface also tilts small facets: the
 normal-angle criterion needs facets around it larger than about the deviation over
 the angle, which a chord close to the deviation may not allow.
 
 Options (Rust `ImportOptions`, used only by `import_brep_solid` and the curved roots
 of `import_assembly`; the planar and faceted profiles ignore them). In C and C++ they
-are `ts_import_options.deviation_factor` and `TS_IMPORT_STRICT`, and the counters,
+are `ts_import_options.deviation_factor` and `TS_IMPORT_STRICT`, with `chord_m` as
+the floor (a mesh cannot show an inconsistency below its chord), and the counters,
 largest deviation and working tolerance are fields of `ts_solid_info`
 ([C API](C_API.md#import-options-discovery-and-solid-import-milestone-2210));
-the frozen-options C assembly import uses the default factor and `TS_IMPORT_STRICT`:
+the frozen-options C assembly import uses the default factor, its `chord_m` as the
+floor and `TS_IMPORT_STRICT`:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `deviation_factor` | `f64` | Accepted multiple of the model tolerance. Finite and at least 1, otherwise `ErrorKind::InvalidOptions` at `Stage::Profile` before decoding; 1 accepts no deviation. Default `ImportOptions::DEVIATION_FACTOR` = 16; `for_document` keeps it. |
+| `deviation_floor` | `f64` | Distance in metres the accepted deviation never falls below, whatever the factor makes of the model tolerance; a consumer passes the chord it will mesh with. Finite and at least 0, otherwise `InvalidOptions`; the default 0 leaves the factor alone. A factor of 1, or `strict`, still accepts no deviation. The bound in a rejection names whichever applied. |
 | `strict` | `bool` | Existing field; additionally forces a factor of 1, so strict import rejects every deviation as before the policy. |
 
 Reported per solid (all zero for the planar and faceted profiles):
@@ -349,7 +414,7 @@ mesh boundary`), the entities involved and a cause class in parentheses:
 | Class | Located at | Meaning |
 | --- | --- | --- |
 | `self-touching loop` | the two edges and the vertex | the loop passes through that vertex twice and touches itself there |
-| `tangent edges at a vertex` | the two edges and their shared vertex | adjacent edges cross or touch again beyond the model tolerance in trimming, or at floating-point resolution at the mesh boundary (a cusp, or an edge running back over the previous one) |
+| `tangent edges at a vertex` | the two edges and their shared vertex | adjacent edges cross or touch again beyond the model tolerance in trimming, or at floating-point resolution at the mesh boundary (a cusp, or an edge running back over the previous one; a run that encloses no area within the working tolerance is collapsed as a [loop spur](#face-charts) unless the import is strict) |
 | `crossing trims` | the two edges | edges of one loop cross or touch in the chart |
 | `intersecting loops` | the two edges, or the hole | loops cross, touch or nest |
 | `self-intersecting edge` | the edge | one edge's image doubles back or crosses itself (beyond the model tolerance in trimming, at floating-point resolution at the mesh boundary) |

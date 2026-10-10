@@ -200,6 +200,26 @@ fn c_abi_tolerance_policy_counts_deviations_and_names_the_working_tolerance() {
         );
         assert!((info.largest_deviation_m - 3e-6).abs() < 1e-12);
         assert!((info.working_tolerance_m - (1e-6 + 2. * info.largest_deviation_m)).abs() < 1e-18);
+        // The chord floors the accepted deviation: a factor of 2 (2 um) rejects the
+        // 3 um edge under a 1 um chord and accepts it under the default 0.1 mm chord.
+        let (status, _, info, error) = import(
+            doc,
+            &TsImportOptions {
+                deviation_factor: 2.,
+                chord_m: 1e-6,
+                ..near
+            },
+        );
+        assert_eq!((status, error.stage), (TS_INVALID_GEOMETRY, 2));
+        assert_eq!(info.off_surface_edges, 0);
+        let (status, _, info, _) = import(
+            doc,
+            &TsImportOptions {
+                deviation_factor: 2.,
+                ..near
+            },
+        );
+        assert_eq!((status, info.off_surface_edges), (TS_OK, 1));
         // A factor of 1, or strict import, accepts no deviation.
         for o in [
             TsImportOptions {

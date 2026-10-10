@@ -694,8 +694,10 @@ baseline movements, never a refreshed baseline.
   `InvalidGeometry` naming the measured distance and the bound. No coordinate moves:
   an off-surface edge receives the pcurve of its surface projection and the mesh
   follows its 3D curve, and an edge is bounded at its vertex's projection onto the
-  curve (a shared vertex cannot be projected onto every edge). `tessellate` refuses a
-  chord tolerance below the accepted deviation. Every singular crossing with a
+  curve (a shared vertex cannot be projected onto every edge). `tessellate` refused a
+  chord tolerance below the accepted deviation until 1.1, which floors the accepted
+  deviation at the consumer's chord instead (`ImportOptions::deviation_floor`). Every
+  singular crossing with a
   measured singular point was a B-spline side that collapses only within a large
   declared uncertainty (46 µm under 50.8 µm, 0.10 mm under 0.127 mm, 5 µm under
   10 µm, 0.39 mm under 1 mm) with an edge running along it; such a side is now a

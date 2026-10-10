@@ -652,7 +652,7 @@ fn run(
         }
         if requests.is_empty() {
             return assemble(brep, completed, options, &mut work)
-                .map_err(|k| fail(&mut work, None, k));
+                .map_err(|(face, k)| fail(&mut work, face, k));
         }
         if pass == options.max_boundary_passes {
             work.exhausted = budget("max_boundary_passes", options.max_boundary_passes);
@@ -778,16 +778,20 @@ pub fn tessellate_solid(
     }
     Ok(mesh)
 }
+/// Weld the face meshes into one mesh. A failure names the face it is found in when
+/// one is: the face whose triangle repeats one that is already in the mesh (its own
+/// or a neighbour's).
 fn assemble(
     brep: &NormalizedBrep,
     faces: Vec<(FaceId, FaceMesh)>,
     options: TessellationOptions,
     work: &mut Work,
-) -> Result<Mesh, Failure> {
+) -> Result<Mesh, (Option<FaceId>, Failure)> {
     let mut data = MeshData::default();
     let mut ids = BTreeMap::<Source, u32>::new();
-    for (face, mesh) in faces {
-        work.charge(mesh.vertices.len() + mesh.triangles.len())?;
+    for (face, mesh) in &faces {
+        work.charge(mesh.vertices.len() + mesh.triangles.len())
+            .map_err(|k| (None, k))?;
         let mut local = Vec::with_capacity(mesh.vertices.len());
         for v in &mesh.vertices {
             let next = data.positions.len() as u32;
@@ -796,14 +800,13 @@ fn assemble(
                 next
             });
             if data.positions[index as usize] != v.position.coordinates() {
-                return Err(Failure::Geometry);
+                return Err((Some(*face), Failure::Geometry));
             }
             local.push(index);
         }
         let reversed = brep.data().faces[face.0].orientation.is_reversed();
-        for ((mut tri, mut normals), mut uvs) in
-            mesh.triangles.into_iter().zip(mesh.normals).zip(mesh.uvs)
-        {
+        for ((&tri, &normals), &uvs) in mesh.triangles.iter().zip(&mesh.normals).zip(&mesh.uvs) {
+            let (mut tri, mut normals, mut uvs) = (tri, normals, uvs);
             if reversed {
                 tri.swap(1, 2);
                 normals.swap(1, 2);
@@ -819,7 +822,27 @@ fn assemble(
             data.face_ids.push(face.0 as u64);
         }
     }
-    Mesh::new(data, options.mesh).map_err(Failure::Mesh)
+    Mesh::new(data, options.mesh).map_err(|e| {
+        let face = match e {
+            // The validation found a triangle twice: name the face of its repeat, which
+            // the welded corners locate (the face meshes are still here).
+            tessstep_mesh::Error::DuplicateTriangle => {
+                let mut unique = BTreeSet::new();
+                faces.iter().find_map(|(face, mesh)| {
+                    mesh.triangles
+                        .iter()
+                        .any(|tri| {
+                            let mut key = tri.map(|i| ids[&mesh.vertices[i as usize].source]);
+                            key.sort();
+                            !unique.insert(key)
+                        })
+                        .then_some(*face)
+                })
+            }
+            _ => None,
+        };
+        (face, Failure::Mesh(e))
+    })
 }
 enum Outcome {
     Complete(FaceMesh),

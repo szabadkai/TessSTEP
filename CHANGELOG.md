@@ -7,8 +7,45 @@ corpus compatibility record is `corpus/baseline.json` at its tag; see
 
 ## Unreleased
 
-Parity work against HOOPS Exchange on the PreForm CAD collection.
+Parity work against HOOPS Exchange on the PreForm CAD collection. The 646-root
+support attachment of that collection, imported as PreForm does (12.5 µm chord, 30°,
+sewing and orientation repair), lost 26 bodies before the changes below and loses 5
+(a pinched face, a pinched vertex, a vertex 28 µm off its curve, a plane cutting a
+fillet along generators that are no edges, and a horn torus); the survey's default
+import meshes 617 of its roots instead of 545.
 
+- Curved import takes `ImportOptions::deviation_floor`, a distance the accepted edge
+  and vertex deviation never falls below whatever the factor makes of the model
+  tolerance; a factor of 1 and strict import still accept none. The C API sets it
+  from `chord_m` on every import, so an inconsistency the requested mesh cannot show
+  no longer rejects a solid (11 of the attachment's bodies, 2 to 9 µm off under a
+  0.1 µm floor tolerance). `ImportedSolid::tessellate` no longer refuses a chord below
+  the largest accepted deviation: the boundary facets beside such an edge lie up to
+  that deviation off the surface in addition to the chord (65 roots of the survey).
+  A vertex at the seam of a B-spline written closed without its closed flag takes the
+  domain end its edge direction asks for, and an open edge whose `SAME_SENSE`
+  contradicts the order of its vertices along the curve follows the vertices, counted
+  in `Adaptations::reversed_senses` (strict import rejects it). The `brep` example
+  sizes its budgets from the document and takes `--angle`.
+- Mesh loop healing for three exporter defects, each counted or located, none
+  moving a coordinate. A face that lies on a neighbouring face's surface facing away
+  from it (a plane strip written over the strip of a fillet cylinder it cuts 0.03 µm
+  below its tangent line: a lens of no thickness, which meshed into the same
+  triangles twice) is merged into the neighbour before planning and counted in
+  `Adaptations::collapsed_faces`; a duplicate triangle that remains names the face
+  of its repeat instead of none. A sliver face whose edges coincide only within the
+  working tolerance an accepted vertex deviation implies is collapsed at that
+  tolerance, as every later check already used it. Edge sampling no longer samples a
+  knot within the model tolerance of the edge's vertex (an exporter's triple knot 3
+  pm before it, which doubled a face boundary back on itself at the next edge's image
+  of the vertex). Fixtures: `brep-lens-flap.step`, `brep-crescent-sliver.step`.
+- Planar triangulation bridges a hole that the holes listed after it enclose. Holes
+  were bridged into the face polygon in face order, and a bridge may not cross an
+  unbridged hole, so a face whose first hole saw no polygon vertex past the later
+  ones (a square through hole between two L-shaped ones, as in four customer solids)
+  failed with `unresolved triangulation`. Such a face now bridges its remaining holes
+  leftmost first, which always has a visible bridge. Faces whose holes bridged in
+  face order keep their triangles (`brep-enclosed-hole.step`).
 - Assemblies written by HOOPS Exchange (Shapr3D exports among them) and the CATIA V4
   STEP interface link: an item defined transformation that lists the parent's placement
   before the child's frame is read by membership, counted as
@@ -21,6 +58,16 @@ Parity work against HOOPS Exchange on the PreForm CAD collection.
   tangent at their common vertex, instead of failing the resolution check. Meshes
   that already passed are unchanged; the NIST FTC 06, FTC 11, CTC 04 (AP242) and,
   at a 0.1 mm chord, CTC 02 parts now mesh within 0.06% of the closed HOOPS meshes.
+- Curved import collapses loop spurs: two consecutive edges of a face loop that run
+  back along each other within the working tolerance (a slab top meeting a fin
+  flush with the slab's wall, a B-spline running back over the arc it continues, two
+  fitted B-splines leaving a vertex together and crossing again) are split where
+  they part, the coincident halves merged as sliver-face edges are, and the
+  out-and-back run dropped, counted in the new `Adaptations::collapsed_spurs`;
+  strict import keeps the loop. Tangent cusps, corners of bodies whose edges are a
+  few tolerances long and three-edge sliver faces are untouched. Two Open CASCADE solids
+  of the PreForm collection rejected as tangent edges at a vertex now mesh; the
+  third goes on to a pinched face whose lobe is three tolerances wide.
 - Curved import heals three face loop defects. A `FACE_OUTER_BOUND` written on a
   clockwise hole loop, beside one counterclockwise loop that encloses the others, now
   bounds a hole: this is counted in the new `Adaptations::relabelled_outer_bounds`,

@@ -1,10 +1,11 @@
 //! Usage: cargo run -p tessstep-import --example brep -- FILE ROOT_ID METRES_PER_UNIT
-//!     [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict] [--repair]
+//!     [--degrees] [--model-tolerance METRES] [--chord METRES] [--angle RADIANS] [--strict] [--repair]
 //!     [--deviation-factor F]
 //! Imports one MANIFOLD_SOLID_BREP with the curved B-rep profile and reports
 //! profile/geometry/tessellation stages independently as JSON. Plane angles are
 //! radians unless --degrees is given; the model tolerance defaults to 1e-8 m and the
-//! tolerance policy multiple to `ImportOptions::DEVIATION_FACTOR`.
+//! tolerance policy multiple to `ImportOptions::DEVIATION_FACTOR`. Import budgets are
+//! sized by the document's entity count (`ImportOptions::for_document`).
 //! --repair enables the opt-in sewing and orientation repair at the default sewing
 //! tolerance; the repair counts are reported either way.
 #![forbid(unsafe_code)]
@@ -42,9 +43,10 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     };
     let model_tolerance = value("--model-tolerance", 1e-8)?;
     let chord = value("--chord", 1e-6)?;
+    let normal_angle = value("--angle", 0.1)?;
     let deviation_factor = value("--deviation-factor", ImportOptions::DEVIATION_FACTOR)?;
     if args.len() != 3 {
-        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--strict] [--repair] [--deviation-factor F]".into());
+        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--angle RADIANS] [--strict] [--repair] [--deviation-factor F]".into());
     }
     let root = EntityId::new(args[1].parse()?).ok_or("root must be nonzero")?;
     let unit = LengthUnit::metres_per_unit(args[2].parse()?)?;
@@ -58,7 +60,8 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         ParseLimits::default(),
     )?;
     let model = ModelTolerance::new(Length::metres(model_tolerance)?, Angle::radians(1e-8)?)?;
-    let tolerance = TessellationTolerance::new(Length::metres(chord)?, Angle::radians(0.1)?)?;
+    let tolerance =
+        TessellationTolerance::new(Length::metres(chord)?, Angle::radians(normal_angle)?)?;
     let options = ImportOptions {
         strict,
         repair: if repair {
@@ -67,7 +70,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
             RepairOptions::default()
         },
         deviation_factor,
-        ..ImportOptions::default()
+        ..ImportOptions::for_document(&doc)
     };
     let imported = import_brep_solid(&doc, root, unit, angle, model, options);
     let adaptations = imported
@@ -81,7 +84,7 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let result =
         imported.and_then(|solid| solid.tessellate(tolerance, TessellationOptions::default()));
     let adapted = format!(
-        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{},\"supplied_pcurves\":{},\"rejected_pcurves\":{},\"off_surface_edges\":{},\"off_curve_vertices\":{},\"uncollapsed_sides\":{},\"relabelled_outer_bounds\":{},\"largest_deviation_m\":{deviation:e},\"working_tolerance_m\":{working:e}",
+        "\"inferred_outer_bounds\":{},\"inserted_seams\":{},\"split_edges\":{},\"recharted_spheres\":{},\"collapsed_edges\":{},\"collapsed_faces\":{},\"supplied_pcurves\":{},\"rejected_pcurves\":{},\"off_surface_edges\":{},\"off_curve_vertices\":{},\"uncollapsed_sides\":{},\"relabelled_outer_bounds\":{},\"reversed_senses\":{},\"collapsed_spurs\":{},\"largest_deviation_m\":{deviation:e},\"working_tolerance_m\":{working:e}",
         adaptations.inferred_outer_bounds,
         adaptations.inserted_seams,
         adaptations.split_edges,
@@ -93,7 +96,9 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         adaptations.off_surface_edges,
         adaptations.off_curve_vertices,
         adaptations.uncollapsed_sides,
-        adaptations.relabelled_outer_bounds
+        adaptations.relabelled_outer_bounds,
+        adaptations.reversed_senses,
+        adaptations.collapsed_spurs
     ) + &format!(
         ",\"merged_vertices\":{},\"merged_edges\":{},\"max_merge_distance_m\":{:e},\"disconnected_shells\":{},\"flipped_faces\":{},\"reversed_loops\":{},\"reoriented_shells\":{},\"undecided_shells\":{}",
         repairs.merged_vertices,

@@ -210,9 +210,40 @@ pub(crate) fn triangulate_uv(
         eps,
         work: options.max_work,
     };
+    // Holes are bridged into the ring in face order, each to a ring vertex it can
+    // see. A bridge may not cross a hole not yet bridged, so a hole that later holes
+    // enclose (a pad between two notched pockets, say) sees no ring vertex at all in
+    // that order. The remaining holes are then bridged leftmost first: a leftward ray
+    // from the leftmost vertex of the leftmost remaining hole reaches the ring, and
+    // the ring vertex it finds (the hit edge's endpoint, or the vertex inside that
+    // sight triangle at the smallest angle to the ray) is visible from it, since the
+    // whole triangle lies at or left of that vertex, where no unbridged hole reaches.
+    // Faces whose holes bridge in face order keep that order, and their triangles.
     let mut ring = boundaries[0].clone();
-    for hole in &boundaries[1..] {
-        let (hi, ri) = engine.bridge(hole, &ring)?;
+    let mut pending: Vec<&Vec<u32>> = boundaries[1..].iter().collect();
+    let mut leftmost_first = false;
+    while let Some(&hole) = pending.first() {
+        let (hi, ri) = match engine.bridge(hole, &ring) {
+            Ok(bridge) => bridge,
+            Err(PlanarError::UnresolvedGeometry) if !leftmost_first => {
+                leftmost_first = true;
+                engine.charge(pending.iter().map(|h| h.len()).sum())?;
+                let leftmost = |hole: &[u32]| {
+                    hole.iter()
+                        .map(|&i| uv[i as usize])
+                        .fold([f64::INFINITY; 2], |m, p| if p < m { p } else { m })
+                };
+                // Ties (a shared leftmost coordinate) keep face order.
+                pending.sort_by(|a, b| {
+                    leftmost(a)
+                        .partial_cmp(&leftmost(b))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        pending.remove(0);
         engine.charge(ring.len() + hole.len() + 2)?;
         // Duplicate bridge endpoints in the walk, not in vertex storage.
         let mut joined = Vec::with_capacity(ring.len() + hole.len() + 2);
@@ -774,5 +805,23 @@ mod tests {
             triangulate_uv(&uv, &boundaries, PlanarOptions::default(), [1e-3, 1.]).unwrap();
         assert_eq!(triangles.len(), 14);
         assert!((area(&uv, &triangles) - 1.4 * 0.0026).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_hole_its_later_holes_enclose_is_bridged_after_them() {
+        // A 2 x 2 hole in the middle of a 10 x 10 face, listed first, between an L
+        // along the left and bottom sides and an L along the right and top sides:
+        // from the middle hole no outer corner is visible past the Ls, so in face
+        // order it has no bridge. Bridged leftmost first (the Ls, then it) it has one.
+        let outer = vec![[0., 0.], [10., 0.], [10., 10.], [0., 10.]];
+        let middle = vec![[4., 4.], [4., 6.], [6., 6.], [6., 4.]];
+        let lower = vec![[1., 1.], [1., 7.], [2., 7.], [2., 2.], [9., 2.], [9., 1.]];
+        let upper = vec![[9., 9.], [9., 3.], [8., 3.], [8., 8.], [1., 8.], [1., 9.]];
+        let (uv, boundaries) = indexed(&[outer, middle, lower, upper]);
+        let triangles =
+            triangulate_uv(&uv, &boundaries, PlanarOptions::default(), [1.; 2]).unwrap();
+        // Twenty vertices and three holes: 20 + 2 * 3 - 2 triangles covering the area.
+        assert_eq!(triangles.len(), 24);
+        assert!((area(&uv, &triangles) - (100. - 4. - 13. - 13.)).abs() < 1e-9);
     }
 }

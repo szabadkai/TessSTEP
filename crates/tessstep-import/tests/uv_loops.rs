@@ -10,6 +10,7 @@ const UNKNOWN_CLOSURE: &str =
     include_str!("../../../corpus/geometry/brep-unknown-closure-cylinder.step");
 const CUT_SPHERE: &str = include_str!("../../../corpus/geometry/brep-cut-sphere.step");
 const PINCHED_POCKET: &str = include_str!("../../../corpus/geometry/brep-pinched-pocket.step");
+const ENCLOSED_HOLE: &str = include_str!("../../../corpus/geometry/brep-enclosed-hole.step");
 
 fn import(text: &str) -> Result<ImportedSolid, Error> {
     let doc = tessstep_model::parse(text.as_bytes(), ParseLimits::default()).unwrap();
@@ -106,4 +107,23 @@ fn self_touching_loops_fail_at_their_edges_with_a_named_cause() {
         "{}",
         e.message
     );
+}
+
+#[test]
+fn holes_that_later_holes_enclose_are_bridged_after_them() {
+    // Both plate faces list their square hole before the two L-shaped holes that
+    // hide every face corner from it, so in face order the square has no bridge into
+    // the face polygon; the top face's loops are all FACE_BOUND, its outer inferred.
+    let solid = import(ENCLOSED_HOLE).unwrap();
+    assert_eq!(
+        solid.adaptations(),
+        Adaptations {
+            inferred_outer_bounds: 1,
+            ..Adaptations::default()
+        }
+    );
+    let mesh = tessellate(&solid, 1e-5).unwrap();
+    mesh.require_solid().unwrap();
+    let volume = mesh.statistics().signed_volume;
+    assert!((volume - 140e-9).abs() <= 1e-12 * 140e-9, "volume {volume}");
 }

@@ -368,9 +368,9 @@ instance and depth budgets, the chord and angle tolerance, the minimum model tol
 and `flags` (`TS_IMPORT_STRICT`); zero or non-finite tolerances, unknown flags and
 nonzero reserved fields return `TS_INVALID_ARGUMENT` after clearing outputs. Curved
 roots use the default tolerance policy (Milestone 22.3: deviations up to 16 times the
-model tolerance are accepted and counted, see
+model tolerance, or up to `chord_m`, whichever is larger, are accepted and counted, see
 [curved import](CURVED_IMPORT.md#tolerance-policy)); `TS_IMPORT_STRICT` keeps
-rejecting every deviation. The multiple is not yet a C option.
+rejecting every deviation. The multiple is not an option of this record.
 
 ```cpp
 auto parsed = tessstep::Document::parse(bytes);
@@ -409,8 +409,10 @@ shares:
 - `sewing_factor` (sewing tolerance as a multiple of the model distance, default 10)
   and `deviation_factor` (the 22.3 tolerance policy, default 16, at least 1: an edge
   farther than the model distance from its face surface, or a vertex from its edge
-  curve, is accepted and counted up to that multiple and rejected beyond it with
-  `TS_INVALID_GEOMETRY` at the geometry stage; `TS_IMPORT_STRICT` forces 1,
+  curve, is accepted and counted up to that multiple of the model distance or up to
+  `chord_m`, whichever is larger, since a mesh cannot show a smaller inconsistency,
+  and rejected beyond it with `TS_INVALID_GEOMETRY` at the geometry stage; a factor
+  of 1 or `TS_IMPORT_STRICT` accepts none,
   [curved import](CURVED_IMPORT.md#tolerance-policy));
 - `max_assembly_instances` / `max_assembly_depth` (product-structure expansion),
   the session budgets `max_session_decoded_entities`, `max_session_adapted_entities`
@@ -680,6 +682,15 @@ Rust `tessstep_model::parse` is tolerant by default (`parse_with` takes
 warnings are existing codes with the existing warning severity, produced only for
 documents the new entry point accepted. The installed C and C++ consumers check the
 sized budgets, both policies, the counts and the warnings on an authored input.
+
+Without a record change, every C import of a curved solid now floors the accepted
+edge and vertex deviation at its `chord_m` (Rust `ImportOptions::deviation_floor`,
+which the C options set from the chord): an inconsistency the requested mesh cannot
+show no longer rejects the solid, and `ts_solid_info.largest_deviation_m` reports it.
+A factor of 1 and `TS_IMPORT_STRICT` still accept none. Tessellation no longer refuses
+a chord below the largest accepted deviation; the boundary facets beside such an edge
+lie up to that deviation off the surface in addition to the chord
+([curved import](CURVED_IMPORT.md#tolerance-policy)).
 
 ## ABI 1 freeze
 

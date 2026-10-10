@@ -112,7 +112,8 @@ impl TsImportOptions {
         }
         let count = |v: u64| usize::try_from(v).ok();
         // Strict rejection of topology defects stays the default; each repair is a
-        // separate opt-in. Strict import also forces a deviation factor of 1.
+        // separate opt-in. Strict import also forces a deviation factor of 1. The
+        // chord floors the accepted deviation: the mesh cannot show a smaller one.
         let import = ImportOptions {
             max_work: count(self.max_work)?,
             max_records: count(self.max_records)?,
@@ -123,6 +124,7 @@ impl TsImportOptions {
                 sewing_factor: self.sewing_factor,
             },
             deviation_factor: self.deviation_factor,
+            deviation_floor: self.chord_m,
         };
         let model = ModelTolerance::new(
             Length::metres(self.model_distance_m).ok()?,
@@ -382,7 +384,12 @@ mod tests {
             format!("{:?}", o.presentation),
             format!("{:?}", PresentationLimits::default())
         );
-        let assembly = AssemblyImportOptions::default();
+        // The C defaults floor the accepted deviation at the default chord; the Rust
+        // assembly defaults leave the floor at zero.
+        let chord = TsImportOptions::default().chord_m;
+        let mut assembly = AssemblyImportOptions::default();
+        assembly.assembly.import.deviation_floor = chord;
+        assert_eq!(c.deviation_floor, chord);
         let mapped = o.assembly(RepresentationPreference::Exact);
         assert_eq!(
             format!("{:?}", mapped.tessellation),

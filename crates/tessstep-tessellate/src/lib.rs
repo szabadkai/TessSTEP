@@ -255,6 +255,43 @@ fn sample_edges_seeded<'a>(
                 return Ok(out);
             }
             let first = evaluate(edge.range[0], KnotSide::Right, budget)?;
+            // A curve break (knot) whose point lies within the model tolerance of a
+            // range end's is a span the model does not resolve either: the end sample
+            // moves onto the vertex, which may sit that far off the curve, so the
+            // span's chord would follow the vertex offset instead of the curve. (An
+            // exporter's knot 3 pm before a vertex that sits 33 nm off the
+            // neighbouring edge doubled the chart boundary back on itself at that
+            // join.) Requested parameters are kept: a request dropped would only be
+            // made again in the next pass.
+            if seeds.len() > 2 {
+                let requested = forced.get(i).map_or(&[][..], Vec::as_slice);
+                let reach = brep.model_tolerance();
+                let near = |p: Point3<ModelSpace>, q: Point3<ModelSpace>| {
+                    p.distance(q).map_err(|_| ErrorKind::Geometry)
+                };
+                while seeds.len() > 2
+                    && !requested.contains(&seeds[1])
+                    && near(
+                        evaluate(seeds[1], KnotSide::Right, budget)?.position,
+                        first.position,
+                    )? <= reach
+                {
+                    seeds.remove(1);
+                }
+                let last = evaluate(edge.range[1], KnotSide::Left, budget)?;
+                while seeds.len() > 2 {
+                    let n = seeds.len();
+                    if requested.contains(&seeds[n - 2])
+                        || near(
+                            evaluate(seeds[n - 2], KnotSide::Left, budget)?.position,
+                            last.position,
+                        )? > reach
+                    {
+                        break;
+                    }
+                    seeds.remove(n - 2);
+                }
+            }
             budget.push(
                 &mut out,
                 Sample {

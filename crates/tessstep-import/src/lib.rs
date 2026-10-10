@@ -139,6 +139,12 @@ pub struct ImportOptions {
     /// no deviation. The planar and faceted profiles do not use it. See
     /// docs/CURVED_IMPORT.md#tolerance-policy.
     pub deviation_factor: f64,
+    /// The accepted distance in metres is never below this, whatever the model
+    /// tolerance and `deviation_factor` make of it: a consumer passes the chord
+    /// tolerance it will mesh with, since its mesh cannot show a smaller
+    /// inconsistency (the C API does). Finite and at least 0; the default 0 leaves the
+    /// factor alone. A factor of 1, or `strict`, still accepts no deviation.
+    pub deviation_floor: f64,
 }
 impl Default for ImportOptions {
     fn default() -> Self {
@@ -148,6 +154,7 @@ impl Default for ImportOptions {
             strict: false,
             repair: RepairOptions::default(),
             deviation_factor: Self::DEVIATION_FACTOR,
+            deviation_floor: 0.,
         }
     }
 }
@@ -213,26 +220,15 @@ impl ImportedSolid {
         &self.faces
     }
     /// Returns an owned mesh in metres. Triangle face_ids are physical STEP IDs.
-    /// A solid with an accepted deviation larger than the chord tolerance is rejected:
-    /// its mesh could not stay within the chord of its surfaces.
+    /// The mesh boundary follows each edge's 3D curve, so beside an edge accepted off
+    /// its surface the facets lie up to [`Self::largest_deviation`] from that surface
+    /// in addition to the chord; a chord below the deviation is still honoured on the
+    /// surfaces themselves.
     pub fn tessellate(
         &self,
         tolerance: TessellationTolerance,
         options: TessellationOptions,
     ) -> Result<tessstep_mesh::Mesh, Error> {
-        let chord = tolerance.chord().as_metres();
-        if self.deviation > chord {
-            return Err(Error {
-                kind: ErrorKind::InvalidGeometry,
-                stage: Stage::Tessellation,
-                entity: Some(self.root),
-                source: None,
-                message: format!(
-                    "the largest accepted deviation {:.3e} m exceeds the chord tolerance {chord:.3e} m",
-                    self.deviation
-                ),
-            });
-        }
         let mesh =
             tessstep_tessellate::tessellate_solid(&self.brep, SolidId(0), tolerance, options)
                 .map_err(|e| {

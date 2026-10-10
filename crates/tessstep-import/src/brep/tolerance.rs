@@ -2,8 +2,9 @@
 //! curves (see docs/CURVED_IMPORT.md#tolerance-policy).
 //!
 //! A distance within the model tolerance is consistent geometry. A larger one, up to
-//! `ImportOptions::deviation_factor` times the model tolerance, is accepted and
-//! counted; anything farther is rejected with the measured distance and the bound.
+//! `ImportOptions::deviation_factor` times the model tolerance or the
+//! `ImportOptions::deviation_floor`, whichever is larger, is accepted and counted;
+//! anything farther is rejected with the measured distance and the bound.
 //! No coordinate is moved: an edge keeps its 3D curve (the mesh boundary follows it)
 //! and receives the pcurve of its surface projection, and a vertex keeps its position
 //! while its edge is bounded at the vertex's projection onto the curve. Every later
@@ -18,25 +19,42 @@ pub(super) struct Policy {
     pub tolerance: f64,
     /// Accepted multiple of the model tolerance; 1 accepts no deviation.
     pub factor: f64,
+    /// The accepted distance in metres is never below this, unless the factor is 1.
+    pub floor: f64,
 }
 impl Policy {
     /// The policy of `options`: strict import accepts no deviation. A factor below 1,
-    /// or not finite, is invalid.
+    /// a negative floor, or either not finite, is invalid.
     pub(super) fn new(tolerance: f64, options: ImportOptions) -> Result<Self, String> {
-        let factor = options.deviation_factor;
+        let (factor, floor) = (options.deviation_factor, options.deviation_floor);
         if !(factor.is_finite() && factor >= 1.) {
             return Err(format!(
                 "deviation_factor must be a finite multiple of at least 1 (got {factor})"
             ));
         }
+        if !(floor.is_finite() && floor >= 0.) {
+            return Err(format!(
+                "deviation_floor must be a finite distance of at least 0 m (got {floor})"
+            ));
+        }
         Ok(Self {
             tolerance,
             factor: if options.strict { 1. } else { factor },
+            floor,
         })
     }
-    /// The largest accepted distance in metres.
+    /// The largest accepted distance in metres: the model tolerance times the factor,
+    /// raised to the floor; a factor of 1 accepts no deviation, whatever the floor.
     pub(super) fn allowance(&self) -> f64 {
-        self.tolerance * self.factor
+        if self.factor == 1. {
+            self.tolerance
+        } else {
+            (self.tolerance * self.factor).max(self.floor)
+        }
+    }
+    /// Whether the floor, not the factor, sets the allowance.
+    fn floored(&self) -> bool {
+        self.factor != 1. && self.floor > self.tolerance * self.factor
     }
     /// Whether `distance` is accepted.
     pub(super) fn accepts(&self, distance: f64) -> bool {
@@ -57,6 +75,13 @@ impl Policy {
     pub(super) fn bound(&self) -> String {
         if self.factor == 1. {
             format!("the model tolerance {:.3e} m", self.tolerance)
+        } else if self.floored() {
+            format!(
+                "the accepted deviation {:.3e} m (the deviation floor, above {} × the model tolerance {:.3e} m)",
+                self.allowance(),
+                self.factor,
+                self.tolerance
+            )
         } else {
             format!(
                 "the accepted deviation {:.3e} m ({} × the model tolerance {:.3e} m)",
