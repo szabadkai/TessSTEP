@@ -143,10 +143,14 @@ def check_static_archive(package):
         # The static MSVC consumers above link every symbol; dumpbin is not used.
         print(f"Static ABI archive: {archives[0].name}", flush=True)
         return
+    check_archive_symbols(archives[0])
+
+
+def check_archive_symbols(archive):
     flags = ["-gUj"] if sys.platform == "darwin" else ["-g", "--defined-only", "--format=posix"]
     # nm may fail on members it cannot read (symbol-less objects, or embedded bitcode
     # of a newer LLVM in the Rust standard library); the exact ts_ set decides.
-    output = subprocess.run(["nm", *flags, str(archives[0])], stdout=subprocess.PIPE,
+    output = subprocess.run(["nm", *flags, str(archive)], stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, text=True).stdout
     names = {line.split()[0].removeprefix("_") if sys.platform == "darwin" else line.split()[0]
              for line in output.splitlines() if line.strip() and not line.endswith(":")}

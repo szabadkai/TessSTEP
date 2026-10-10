@@ -1,0 +1,80 @@
+name: Prepare release
+# One click from the Actions tab: date the CHANGELOG's Unreleased changes as the new
+# version, commit the version change to main, tag it and start the Release workflow,
+# which verifies everything again at the tag and drafts the GitHub release for review.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (MAJOR.MINOR.PATCH, above the current one, same major)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+jobs:
+  tag:
+    name: Commit, tag and start the release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # Push the version commit and tag. Pushes made with this token start no
+      # workflows, so the Release workflow is dispatched on the tag explicitly.
+      contents: write
+      actions: write
+    steps:
+      # Credentials stay configured: this job pushes.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Require main with a green CI run on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Run this workflow on main, not $GITHUB_REF"; exit 1
+          fi
+          green=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success" --jq .total_count)
+          if [ "$green" = 0 ]; then
+            echo "::error::CI has not passed on $GITHUB_SHA; wait for it or fix main first"; exit 1
+          fi
+      - name: Set the version and date the CHANGELOG section
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python scripts/release.py bump "$VERSION"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" > /dev/null; then
+            echo "::error::Tag v$VERSION already exists"; exit 1
+          fi
+          cargo metadata --locked --format-version 1 > /dev/null
+          cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version 1 > /dev/null
+          python scripts/release.py notes --repository "$GITHUB_REPOSITORY" > /dev/null
+          git diff --stat
+      - name: Commit, tag and push both atomically
+        env:
+          VERSION: ${{ inputs.version }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          git config user.name "$ACTOR"
+          git config user.email "$ACTOR_ID+$ACTOR@users.noreply.github.com"
+          git commit --all --message "Set the version to $VERSION and date its CHANGELOG section"
+          git tag --annotate "v$VERSION" --message "TessSTEP $VERSION"
+          git push --atomic origin HEAD:refs/heads/main "refs/tags/v$VERSION"
+      - name: Start the Release workflow on the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh workflow run release.yml --ref "v$VERSION"
+          {
+            echo "Tagged \`v$VERSION\` at \`$(git rev-parse HEAD)\` on main."
+            echo "The [Release workflow]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/release.yml)"
+            echo "now verifies the tag and drafts the GitHub release for review."
+          } >> "$GITHUB_STEP_SUMMARY"

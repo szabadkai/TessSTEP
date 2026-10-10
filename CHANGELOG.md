@@ -88,6 +88,15 @@ import meshes 617 of its roots instead of 545.
   an iOS 17 deployment target (`.cargo/config.toml`), and `scripts/ios_sim_run.py` runs
   simulator test binaries through `simctl spawn`; the `tessstep-capi` tests pass in an
   iPad simulator. See [docs/C_API.md](docs/C_API.md#ios).
+- CI builds that library for both targets, runs the `tessstep-capi` tests in a booted
+  simulator, and packages `TessSTEP.xcframework`, whose slices must carry only objects
+  for their platform no newer than iOS 17 and exactly the ABI's C symbols, and against
+  which the standalone C11/C++17 consumers link for devices and pass in the simulator.
+  Releases ship it as `tessstep-<version>-ios.zip`.
+- Releases take their notes from the version's CHANGELOG section, with links pinned to
+  the tag, and the **Prepare release** workflow sets the version, dates the Unreleased
+  section, pushes the commit and tag to `main` and starts the release from the Actions
+  tab. See [docs/RELEASING.md](docs/RELEASING.md).
 
 ## 1.0.0 — 2026-10-10
 

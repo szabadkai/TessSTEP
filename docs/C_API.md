@@ -567,10 +567,28 @@ simulator named by `TESSSTEP_IOS_SIMULATOR` (a UDID or device name) with `simctl
 TESSSTEP_IOS_SIMULATOR="iPad Pro 13-inch (M4)" cargo test --release -p tessstep-capi --target aarch64-apple-ios-sim
 ```
 
-Spawned binaries have no working directory and no shell, but they can read host paths, so
-`tests/abi.rs`, which reads the header and sources through `CARGO_MANIFEST_DIR`, passes
-there as well; the other tests embed their fixtures at compile time. Device binaries need
-signing and are not run.
+Spawned binaries start in the simulator's data directory without a shell, but they can read
+host paths, so `tests/abi.rs`, which reads the header and sources through
+`CARGO_MANIFEST_DIR`, passes there as well; the other tests embed their fixtures at compile
+time. Device binaries need signing and are not run.
+
+CI builds both archives, runs the `tessstep-capi` tests in a booted simulator, and packages
+them with `scripts/package_ios.py` as `TessSTEP.xcframework`: slices `ios-arm64` and
+`ios-arm64-simulator`, each with `libtessstep_capi.a` and the C and C++ headers under
+`Headers/`. Every object in a slice must be built for that slice's platform and require no
+iOS newer than the deployment target (Rust's prebuilt standard library objects require
+older ones), and each archive must define exactly the C symbols of `abi/exports.txt`. The
+standalone C11 and C++17 consumers of `tests/capi` are then compiled with the iOS SDK against
+each slice as the XCFramework's `Info.plist` lists it, with the warning flags of their CMake
+build; the simulator builds run in the simulator against the authored fixtures, and the
+device builds are linked only. Releases ship the result as `tessstep-<version>-ios.zip`
+with the ABI record, documentation and license. Add the XCFramework to an Xcode target, or
+link a slice's archive and put its `Headers` on the include path; the compiler driver's
+default libraries are enough.
+
+```sh
+TESSSTEP_IOS_SIMULATOR="iPad Pro 13-inch (M4)" python3 scripts/package_ios.py
+```
 
 ## Surface models, sessions, assembly options and failure text (Milestone 22.10)
 

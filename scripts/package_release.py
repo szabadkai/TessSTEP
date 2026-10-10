@@ -82,19 +82,25 @@ def main():
                       "scope": "documents_meshes_scenes_appearance_solid_surface_tessellated_presentation_assembly_import_discovery_sessions"},
             "cpp_wrapper": {"standard": "C++17", "target": "TessSTEP::TessSTEP", "static_target": "TessSTEP::TessSTEP_static"},
             "tessellation": "planar_faceted_and_curved_brep_explicit_root_and_units"}, indent=2) + "\n", encoding="utf-8")
-        if suffix:
-            archive = output / (name + ".zip")
-            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as stream:
-                for path in sorted(package.rglob("*")):
-                    if path.is_file():
-                        stream.write(path, path.relative_to(package.parent))
-        else:
-            archive = output / (name + ".tar.gz")
-            with tarfile.open(archive, "w:gz") as stream:
-                stream.add(package, arcname=name)
+        archive = write_archive(package, output, zipped=bool(suffix))
+    print(f"Packaged and smoke-tested: {archive}")
+
+
+def write_archive(package, output, *, zipped):
+    """Archive the package directory under its own name, with a SHA-256 checksum file."""
+    if zipped:
+        archive = output / (package.name + ".zip")
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as stream:
+            for path in sorted(package.rglob("*")):
+                if path.is_file():
+                    stream.write(path, path.relative_to(package.parent))
+    else:
+        archive = output / (package.name + ".tar.gz")
+        with tarfile.open(archive, "w:gz") as stream:
+            stream.add(package, arcname=package.name)
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
     archive.with_name(archive.name + ".sha256").write_text(f"{checksum}  {archive.name}\n", encoding="utf-8")
-    print(f"Packaged and smoke-tested: {archive}")
+    return archive
 
 
 if __name__ == "__main__":

@@ -41,7 +41,8 @@ coverage-guided targets. Nightly cargo-fuzz adds coverage and sanitizer instrume
 see `fuzz/README.md` and the extended fuzzing section below. Commit a minimized failure
 under `fuzz/regressions/<target>/`, where `fuzz_regressions` replays it.
 
-PR CI covers stable Linux/Windows/macOS, the MSRV, parser/property/corpus tests, architecture,
+PR CI covers stable Linux/Windows/macOS, the iOS static library (C API tests and the packaged
+XCFramework's C/C++ consumers in a simulator), the MSRV, parser/property/corpus tests, architecture,
 format/lint, conformance generation, JSON determinism, dependency policy and advisory checks.
 Scheduled CI runs release tests, benchmarks, and the instrumented fuzz matrix.
 Benchmarks run automatically only there (artifact `benchmark-results`); the
