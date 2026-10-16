@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           python scripts/package_release.py --target "$(rustc -vV | sed -n 's/^host: //p')"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-${{ matrix.os }}
           path: dist/*
@@ -65,7 +65,7 @@ jobs:
       - name: Summarize authored corpus suites
         if: always()
         run: python scripts/corpus_summary.py --report reports/schema/latest.json --report reports/product/latest.json --report reports/generated/latest.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: test-reports-${{ matrix.os }}
@@ -101,7 +101,7 @@ jobs:
       - name: Package the XCFramework and run its C/C++ consumers in the simulator
         run: python scripts/package_ios.py
       # The Release workflow publishes this archive, built and tested at the tag.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-ios
           path: dist/*
@@ -166,7 +166,7 @@ jobs:
       - name: Write Actions summary and JUnit results
         if: always()
         run: python scripts/corpus_summary.py
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: corpus-report
