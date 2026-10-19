@@ -1,3 +1,95 @@
+# Deviations up to the sewing distance, horn tori and far-nappe cones — 2026-10-19
+
+Milestone 23.5 took up the five roots of `jira/PP-30107/Bad_STEP.stp` that still
+failed under PreForm's settings (entry below) and the corpus files that fail for the
+same reasons. Each root was extracted with its closure and reproduced with the
+`brep` example, now with `--deviation-floor 12.5e-6` (as the C API passes its chord)
+and `--sewing-distance`; the corpus and collection were measured with the PreForm
+benchmark harness: its C++ consumer through the C API, and a Rust replica of it that
+can also set the new sewing distance, which the ABI 1.1 options cannot.
+
+| Root | Cause | Decision | Now |
+| --- | --- | --- | --- |
+| #926652 | horn torus (radii 4.75 mm) | the limiting spindle, apex on the axis | meshes, closed, 6,664.6 mm³ (HOOPS's mesh is open: 8 boundary edges, 6,632.2 mm³) |
+| #257468 | vertex 27.8 µm off its curve, beyond the 12.5 µm chord floor | accepted up to the sewing distance when sewing | meshes at a 0.1 mm sewing distance (Rust; ABI 1.2 for C), 7,676.7 mm³ against HOOPS's 7,675.3 |
+| #25789 | pinched face: a 3 mm fillet arc bulges 54 µm past a 1.1 mm line back from its vertex, and the face continues through a 7 µm neck | named trimming rejection: the neck lies within the 17.8 µm working tolerance that 8.4 µm deviations elsewhere imply; a per-face working tolerance would accept it | rejected (`tangent edges at a vertex`) |
+| #112849 | pinched vertex shared by two edge cycles | rejected by design ([TOPOLOGY.md](TOPOLOGY.md)) | `NonManifoldVertex` |
+| #400457 | a plane strip overlapping a fillet along generators that are no edges | not a lens of no thickness, so no merge; located at the face | `Mesh(DuplicateTriangle)` |
+
+**Sewing distance.** `RepairOptions::sewing_distance` (default 0) is an absolute
+sewing tolerance; with sewing, the curved import accepts edge and vertex deviations
+up to it, counted, widening the working tolerance and meshing as every accepted
+deviation does. `sewing_factor` does not widen the policy, so the C contract
+(`deviation_factor` times the model distance or `chord_m`) holds unchanged until the
+ABI 1.2 options carry the distance. At 0.1 mm, PreForm's HOOPS sewing distance, the
+corpus deviation failures within it move as follows:
+
+| File (OpenCASCADE dataset) | Deviation | At 0.1 mm |
+| --- | ---: | --- |
+| `trj3_s1-ac-214` #3845 | 16.7 µm | meshes, 7.499066 m³ against HOOPS's 7.499037 m³ |
+| `ec_exhaust-A` #12 | 29.5 µm | meshes, 7,294,866 mm³ against HOOPS's 7,294,780 mm³ (after the pcurve clamp below) |
+| `OCC8228` #15 | 19.4 µm | moves on to a self-intersecting edge image at its 40 µm working tolerance (HOOPS's mesh is open) |
+| `bug25013_25013face` | 59.6 µm vertex | moves on to an open shell whose gap needs 0.45 mm |
+| `bug31251_Albatros_d2_elisa_a` | 26.5 µm | moves on to another edge 0.15 mm off |
+
+The files beyond 0.1 mm stay rejected with the distance and the bound named
+(`bm2_ec_exhaust-A` 3.04 mm, `bug25415` 0.56 mm, `bug28444` 0.66 mm, `trj5_s1`
+2.95 mm, and `bug31251` above). The 20.5 mm of `trj4_pm2` and `trj6_pm4` was no
+deviation but the distance of faces on a cone's far nappe from its near one; they
+import now (below). `ec_exhaust-A` #12 first exposed a supplied
+degree-8 pcurve tangent to its patch edge whose second control point lies 8e-5 beyond
+it: the curve left the bilinear patch by 8e-7 between the agreement probes, and the
+trimmer could not evaluate the surface there. Supplied B-spline pcurves now have their
+control points clamped to the surface domain, as fitted images do.
+
+**Horn tori.** Of the 8 corpus roots in 7 files rejected as horn tori, only those of
+`r0901_ec` and `trj10_b2-oc-214` (and the attachment's) have equal radii; the others
+are spindles written as `TOROIDAL_SURFACE`, whose part is now the one the face
+boundary lies on (`screw` and `bug30053` are lemons). Every horn face is a
+quarter-tube fillet away from the apex. `screw` and `bug30053` also have faces on the
+far nappe of a `CONICAL_SURFACE` (OpenCASCADE writes faces beyond the apex from the
+placement), which now get a kernel cone opening the other way; that also brings one
+root each of `trj4_pm2-ec-214` and `trj6_pm4-ec-203`. Faces that reach a horn apex
+(authored fixtures only) mesh where the model tolerance resolves its cusp.
+
+| Under PreForm's settings | Before | C API now | Rust, 0.1 mm sewing distance |
+| --- | ---: | ---: | ---: |
+| `Bad_STEP.stp` roots imported | 641 of 646 | 642 | 643 |
+| Collection (54 files): changed files | — | 1 (`Bad_STEP.stp`) | 1 |
+| Corpus real inputs: roots imported | 778 of 866 | 787 | 789 |
+| Corpus real inputs: closed assets | 758 | 767 | 769 |
+| Corpus losses where HOOPS meshes: horn tori (roots in files) | 8 in 7 | 0 | 0 |
+| Corpus losses where HOOPS meshes: deviations beyond the policy (roots in files) | 11 in 11 | 9 in 9 | 5 in 5 |
+
+Every other collection and corpus file keeps its triangles and volume exactly. The
+newly meshed corpus roots agree with HOOPS's closed meshes within 0.06 %: `screw` and
+`bug30053` 3,781.29 mm³ against 3,781.05, `r103ec` +0.034 %, `tr9_r1001-ec`
+−0.0012 %, the two `bug32239` roots +0.057 % and +0.028 %, and the `trj4`/`trj6` root
+41,675.0 mm³ against HOOPS's 41,665.8 for the extracted root; `r0901_ec` agrees
+within 0.006 % with HOOPS's open mesh. `trj10_b2-oc-214` moves on to a planar face
+whose two arcs touch at a vertex.
+
+The corpus check against the committed baseline reports 3,227 compatible inputs and
+21 changed, none a regression: the 7 that `main` already moves (9d7b376) and 14 of
+this item. The survey (its own default import, no repair) meshes 795 shape roots (786
+on `main`): one more each in `bug30053`, `screw`, `r0901_ec`, `r103ec`,
+`tr9_r1001-ec`, `trj4_pm2-ec-214` and `trj6_pm4-ec-203`, two more in `bug32239`.
+`trj10_b2-oc-214` passes geometry and fails at tessellation (above). Surface models
+mesh 1,134 shells (1,133): the synthetic `Tfa260` is a cone face on its mirrored nappe
+whose belt circle encloses the apex. Four synthetic and exporter inputs move from an
+unsupported horn torus to the defect behind it: `Tfa221` and `Gs050` (edges 0.5 and
+1 mm off their tori), `Twi296` (a broken wire) and `bug25287_bad_tess_face_plus` (a
+torus with a negative major radius).
+
+The repair-on survey (`--geometry-repair`, the default sewing tolerance, so no sewing
+distance) moves the same 14 inputs against `main`'s repair-on run and no other: 866
+meshed shape roots (857) and 1,134 meshed surface-model shells (1,133). The authored
+fixtures add the spindle zones on `TOROIDAL_SURFACE`s, a horn torus zone, three horn
+apple variants reaching the apex and the frustum on the far nappe, each with its
+closed-form volume (`check_geometry.py`, 144 reviewed outcomes, and `tests/brep.rs`),
+and the sewing-distance cases of the 50 µm off-surface fixture and the 0.05 mm corner
+gap (`tests/tolerance.rs`, `tests/repair.rs`).
+
 # Exact and tessellated sibling representations (Milestone 23.3) — 2026-10-19
 
 CATIA V5-6R2022 writes each of the four NIST UUID plates of the PreForm collection

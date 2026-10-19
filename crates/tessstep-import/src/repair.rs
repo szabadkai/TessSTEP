@@ -21,6 +21,15 @@ pub struct RepairOptions {
     pub orient: bool,
     /// The sewing tolerance as a multiple of the model distance tolerance.
     pub sewing_factor: f64,
+    /// Distance in metres the sewing tolerance never falls below, whatever
+    /// `sewing_factor` makes of the model tolerance: a consumer that sews at one
+    /// distance for every file passes it here (PreForm asks HOOPS Exchange to sew at
+    /// 0.1 mm). With `sew`, the curved importer also accepts edge and vertex
+    /// deviations up to this distance, counted as every accepted deviation is
+    /// ([`ImportOptions::deviation_factor`](crate::ImportOptions::deviation_factor)).
+    /// Finite and at least 0; the default 0 leaves the factor and the deviation policy
+    /// alone.
+    pub sewing_distance: f64,
 }
 impl Default for RepairOptions {
     fn default() -> Self {
@@ -28,6 +37,7 @@ impl Default for RepairOptions {
             sew: false,
             orient: false,
             sewing_factor: Self::DEFAULT_SEWING_FACTOR,
+            sewing_distance: 0.,
         }
     }
 }
@@ -45,12 +55,15 @@ impl RepairOptions {
     pub fn is_enabled(self) -> bool {
         self.sew || self.orient
     }
-    /// The sewing tolerance in metres for a model tolerance.
+    /// The sewing tolerance in metres for a model tolerance: `sewing_factor` times it,
+    /// raised to `sewing_distance`.
     pub fn sewing_tolerance(self, model: ModelTolerance) -> f64 {
-        model.distance().as_metres() * self.sewing_factor
+        (model.distance().as_metres() * self.sewing_factor).max(self.sewing_distance)
     }
-    /// The sewing tolerance, or an options error unless it is finite and positive.
+    /// The sewing tolerance, or an options error unless the sewing distance is valid
+    /// and the tolerance is finite and positive.
     pub(crate) fn checked_sewing_tolerance(self, model: ModelTolerance) -> Result<f64, Error> {
+        self.checked_sewing_distance().map_err(invalid)?;
         let tolerance = self.sewing_tolerance(model);
         if tolerance.is_finite() && tolerance > 0. {
             Ok(tolerance)
@@ -59,6 +72,17 @@ impl RepairOptions {
                 "repair sewing_factor {} must give a finite positive sewing tolerance",
                 self.sewing_factor
             )))
+        }
+    }
+    /// `sewing_distance`, or the options message unless it is finite and at least 0.
+    pub(crate) fn checked_sewing_distance(self) -> Result<f64, String> {
+        if self.sewing_distance.is_finite() && self.sewing_distance >= 0. {
+            Ok(self.sewing_distance)
+        } else {
+            Err(format!(
+                "repair sewing_distance must be a finite distance of at least 0 m (got {})",
+                self.sewing_distance
+            ))
         }
     }
 }
@@ -91,7 +115,8 @@ pub struct RepairReport {
     /// tessellation failed or its volume was within its error bound. They keep their
     /// orientation; tessellation reports an inward shell as before.
     pub undecided_shells: usize,
-    /// The sewing tolerance in force, metres; zero when sewing is off.
+    /// The sewing tolerance in force, metres ([`RepairOptions::sewing_tolerance`]);
+    /// zero when sewing is off.
     pub sewing_tolerance: f64,
 }
 impl RepairReport {

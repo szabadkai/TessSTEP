@@ -122,6 +122,8 @@ impl TsImportOptions {
                 sew: self.flags & TS_IMPORT_REPAIR_SEW != 0,
                 orient: self.flags & TS_IMPORT_REPAIR_ORIENT != 0,
                 sewing_factor: self.sewing_factor,
+                // No ABI 1.1 field sets an absolute sewing distance.
+                ..RepairOptions::default()
             },
             deviation_factor: self.deviation_factor,
             deviation_floor: self.chord_m,

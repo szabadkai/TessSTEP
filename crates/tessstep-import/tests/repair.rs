@@ -260,6 +260,50 @@ fn repair_rejects_gaps_beyond_the_sewing_tolerance_with_the_distance() {
         "{}",
         e.message
     );
+    // An absolute sewing distance of 0.1 mm, as PreForm asks HOOPS Exchange to sew,
+    // raises the tolerance above the factor's 1e-7 m and closes the 0.05 mm gap, in
+    // the curved and the planar profile alike.
+    let distance = RepairOptions {
+        sewing_distance: 1e-4,
+        ..on
+    };
+    for solid in [import(GAP, distance), planar(GAP, distance)] {
+        let solid = solid.unwrap();
+        assert_eq!(
+            counts(&solid),
+            RepairReport {
+                sewing_tolerance: 1e-4,
+                ..repairs(1, 2)
+            }
+        );
+        assert!((solid.repairs().max_merge_distance - 5e-5).abs() < 1e-12);
+        let mesh = mesh(&solid).unwrap();
+        mesh.require_solid().unwrap();
+        // The corner keeps one of its two positions, 0.05 mm apart: moving one corner
+        // of the 20 x 30 mm face changes the volume by about 0.05 x 20 x 30 / 3 mm3.
+        let volume = mesh.statistics().signed_volume;
+        assert!((volume - BOX_VOLUME).abs() <= 1.5e-8, "{volume}");
+    }
+    for sewing_distance in [-1e-6, f64::NAN] {
+        let e = import(
+            DUPLICATED,
+            RepairOptions {
+                sewing_distance,
+                ..on
+            },
+        )
+        .unwrap_err();
+        assert_eq!(e.kind, ErrorKind::InvalidOptions, "{e}");
+        let e = planar(
+            DUPLICATED,
+            RepairOptions {
+                sewing_distance,
+                ..on
+            },
+        )
+        .unwrap_err();
+        assert_eq!(e.kind, ErrorKind::InvalidOptions, "{e}");
+    }
     for sewing_factor in [0., f64::NAN] {
         let e = import(
             DUPLICATED,

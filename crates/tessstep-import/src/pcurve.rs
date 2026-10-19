@@ -926,15 +926,26 @@ fn fitted(
         let (p, d) = curve_jet(curve, t, side, work)?;
         // A curve end at a pole or apex takes its one-sided limit: the coordinate
         // along the singular line from just inside the curve, the other on the line.
-        if t == range[0] || t == range[1] {
-            if let Some(s) = singular.iter().find(|s| distance(p, s.point) <= tolerance) {
-                let h = 1e-7 * (range[1] - range[0]) * if t == range[0] { 1. } else { -1. };
-                let (q, _) = curve_jet(curve, t + h, side, work)?;
-                let inside = invert(q, hint, work)?;
-                let mut uv = inside;
-                uv[1 - s.k] = s.value;
-                return Ok((uv, [0, 1].map(|k| (inside[k] - uv[k]) / h), 0.));
-            }
+        // Both singular lines of a horn torus map to its apex; the curve ends on the
+        // one it approaches.
+        if (t == range[0] || t == range[1])
+            && singular.iter().any(|s| distance(p, s.point) <= tolerance)
+        {
+            let h = 1e-7 * (range[1] - range[0]) * if t == range[0] { 1. } else { -1. };
+            let (q, _) = curve_jet(curve, t + h, side, work)?;
+            let inside = invert(q, hint, work)?;
+            let s = singular
+                .iter()
+                .filter(|s| distance(p, s.point) <= tolerance)
+                .min_by(|a, b| {
+                    (inside[1 - a.k] - a.value)
+                        .abs()
+                        .total_cmp(&(inside[1 - b.k] - b.value).abs())
+                })
+                .expect("a singular point within the tolerance");
+            let mut uv = inside;
+            uv[1 - s.k] = s.value;
+            return Ok((uv, [0, 1].map(|k| (inside[k] - uv[k]) / h), 0.));
         }
         let uv = invert(p, hint, work)?;
         let lifted = surface_jet(inverter.surface, uv, work)?.p;

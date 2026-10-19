@@ -788,6 +788,12 @@ Left for after the freeze, each additive under the policy above:
   and depth budgets into the scene limits; the extensible entry point keeps the Rust
   scene limits. Neither exposes the scene limits themselves.
 - **Debug static consumers.** The static target is tested in Release only.
+- **Absolute sewing distance.** Rust `RepairOptions::sewing_distance` (Milestone 23.5)
+  raises the sewing tolerance to a fixed distance and, with sewing, bounds the accepted
+  curved-profile deviations from below ([curved import](CURVED_IMPORT.md#tolerance-policy)).
+  `ts_import_options` revision 1 has no field for it, so C and C++ imports keep 0 and
+  the documented factor and chord bound; the ABI 1.2 revision is to append a
+  `sewing_distance_m`.
 
 ## Errors and panic containment
 

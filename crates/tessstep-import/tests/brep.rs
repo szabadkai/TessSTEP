@@ -128,6 +128,138 @@ fn brep_elementary_surfaces_close_with_expected_volumes() {
         }
     );
     check_volume(&mesh(&washer, chord), PI * 300. * 5. * 1e-9, chord, 0.01);
+    // A face beyond the apex lies on the far nappe of STEP's double cone: the same
+    // frustum written on the far nappe meshes at the same vertices.
+    let far = include_str!("../../../corpus/geometry/brep-far-nappe-cone.step");
+    let far = mesh(&import(far).unwrap(), chord);
+    let near = mesh(&cone, chord);
+    assert_eq!(far.data().positions, near.data().positions);
+    assert_eq!(far.data().triangles.len(), near.data().triangles.len());
+    let (a, b) = (
+        far.statistics().signed_volume,
+        near.statistics().signed_volume,
+    );
+    assert!((a - b).abs() <= 1e-12 * b, "{a} {b}");
+}
+
+/// Pi times the integral over z in [-h, h] of (a ± sqrt(b² - z²))²: the volume of the
+/// apple (+) or lemon (-) zone of a spindle torus with radii a <= b between z = ±h.
+fn spindle_zone(a: f64, b: f64, h: f64, outer: bool) -> f64 {
+    let sign = if outer { 1. } else { -1. };
+    2. * PI
+        * ((a * a + b * b) * h - h * h * h / 3.
+            + sign * 2. * a * (h / 2. * (b * b - h * h).sqrt() + b * b / 2. * (h / b).asin()))
+}
+
+#[test]
+fn brep_spindle_and_horn_toroidal_surfaces_are_spindle_parts() {
+    let chord = 1e-5;
+    // A TOROIDAL_SURFACE whose minor radius exceeds its major radius (as OpenCASCADE
+    // writes spindle tori) is the part its face's boundary lies on: the same chart,
+    // mesh and volume as the DEGENERATE_TOROIDAL_SURFACE that names the part.
+    for (degenerate, toroidal, outer) in [
+        (
+            include_str!("../../../corpus/geometry/brep-spindle-apple.step"),
+            include_str!("../../../corpus/geometry/brep-toroidal-apple.step"),
+            true,
+        ),
+        (
+            include_str!("../../../corpus/geometry/brep-spindle-lemon.step"),
+            include_str!("../../../corpus/geometry/brep-toroidal-lemon.step"),
+            false,
+        ),
+    ] {
+        let named = mesh(&import(degenerate).unwrap(), chord);
+        let inferred = import(toroidal).unwrap();
+        assert_eq!(inferred.adaptations().inserted_seams, 1);
+        let inferred = mesh(&inferred, chord);
+        assert_eq!(inferred.data().positions, named.data().positions);
+        assert_eq!(inferred.data().triangles, named.data().triangles);
+        let radius = 108f64.sqrt() + if outer { 5. } else { -5. };
+        check_volume(
+            &inferred,
+            spindle_zone(5., 12., 6., outer) * 1e-9,
+            chord,
+            radius * 1e-3,
+        );
+    }
+    // A horn torus (equal radii) is the apple of the limiting spindle, whose two axis
+    // points meet at the apex. A zone away from the apex meshes like a ring torus.
+    let zone = import(include_str!("../../../corpus/geometry/brep-horn-zone.step")).unwrap();
+    assert_eq!(
+        zone.adaptations(),
+        Adaptations {
+            inserted_seams: 1,
+            ..Adaptations::default()
+        }
+    );
+    check_volume(
+        &mesh(&zone, chord),
+        spindle_zone(10., 10., 6., true) * 1e-9,
+        chord,
+        0.01,
+    );
+    // A loop running up a meridian seam to the apex and back: the seam's pcurve ends
+    // on the singular line it approaches (v = pi; v = -pi maps to the same point), and
+    // a collapsed edge along that line joins its uses.
+    let seam = import(include_str!("../../../corpus/geometry/brep-horn-seam.step")).unwrap();
+    assert_eq!(
+        seam.adaptations(),
+        Adaptations {
+            collapsed_edges: 1,
+            ..Adaptations::default()
+        }
+    );
+    check_volume(&mesh(&seam, chord), PI * PI * 1000e-9, chord, 0.01);
+    // The apex is a cusp: the tube lies within the model tolerance t of the axis for a
+    // height of sqrt(2 a t), where facet planes are not resolved. With a 10 um
+    // uncertainty the half apple whose equator encloses the apex meshes, and so does
+    // the full apple bounded by a VERTEX_LOOP at its apex, which spans both singular
+    // lines: its second apex is an inserted vertex at the same point.
+    let coarse = |text: &str| {
+        let doc = tessstep_model::parse(text.as_bytes(), ParseLimits::default()).unwrap();
+        import_brep_solid(
+            &doc,
+            EntityId::new(1000).unwrap(),
+            LengthUnit::MILLIMETRE,
+            AngleUnit::RADIAN,
+            ModelTolerance::new(Length::metres(1e-5).unwrap(), Angle::radians(1e-8).unwrap())
+                .unwrap(),
+            ImportOptions::default(),
+        )
+        .unwrap()
+    };
+    let half = coarse(include_str!("../../../corpus/geometry/brep-horn-half.step"));
+    assert_eq!(
+        half.adaptations(),
+        Adaptations {
+            inserted_seams: 1,
+            collapsed_edges: 1,
+            ..Adaptations::default()
+        }
+    );
+    check_volume(&mesh(&half, chord), PI * PI * 1000e-9, chord, 0.01);
+    let apple = coarse(include_str!(
+        "../../../corpus/geometry/brep-horn-apple.step"
+    ));
+    assert_eq!(
+        apple.adaptations(),
+        Adaptations {
+            inserted_seams: 1,
+            collapsed_edges: 2,
+            ..Adaptations::default()
+        }
+    );
+    let tolerance =
+        TessellationTolerance::new(Length::metres(1e-4).unwrap(), Angle::radians(1.).unwrap())
+            .unwrap();
+    let full = apple
+        .tessellate(tolerance, TessellationOptions::default())
+        .unwrap();
+    full.require_solid().unwrap();
+    let exact = 2. * PI * PI * 1000e-9;
+    let volume = full.statistics().signed_volume;
+    assert!(((volume - exact) / exact).abs() < 1e-2, "{volume}");
 }
 
 #[test]
@@ -450,6 +582,18 @@ fn brep_supplied_pcurves_are_verified_before_use() {
     let a = solid.adaptations();
     assert_eq!((a.supplied_pcurves, a.rejected_pcurves), (0, 1));
     assert!((mesh(&solid, 1e-6).statistics().signed_volume - 1e-6).abs() < 1e-18);
+    // A control point written beyond the patch edge (the rational pcurve along u = 1)
+    // is clamped to the surface domain, as fitted images are, so the image stays on
+    // the patch; the clamped pcurve agrees with its edge and is used.
+    let beyond = text.replace(
+        "=CARTESIAN_POINT('',(1.,0.5));",
+        "=CARTESIAN_POINT('',(1.000001,0.5));",
+    );
+    assert_ne!(beyond, text);
+    let solid = import(&beyond).unwrap();
+    let a = solid.adaptations();
+    assert_eq!((a.supplied_pcurves, a.rejected_pcurves), (4, 0));
+    assert!((mesh(&solid, 1e-6).statistics().signed_volume - 1e-6).abs() < 1e-18);
     // Elementary faces keep their exact images: the cylinder's supplied pcurves are
     // read but not used, and the one written 1 mm off is counted as rejected.
     let text = include_str!("../../../corpus/geometry/brep-pcurve-cylinder.step");
@@ -577,9 +721,11 @@ fn brep_rejections_are_typed_and_located() {
             "ambiguous outer bound",
         ),
         (
+            // A spindle TOROIDAL_SURFACE is the part its face lies on; the ring torus's
+            // edges lie on neither.
             TORUS.replace("20.,5.)", "5.,20.)"),
-            ErrorKind::Unsupported,
-            "horn tori",
+            ErrorKind::InvalidGeometry,
+            "from the face surface",
         ),
         (
             // A degenerate torus must have its minor radius above its major radius.
@@ -588,6 +734,20 @@ fn brep_rejections_are_typed_and_located() {
                 .replace("20.,5.)", "20.,5.,.T.)"),
             ErrorKind::InvalidGeometry,
             "DEGENERATE_TOROIDAL_SURFACE needs",
+        ),
+        (
+            // Equal radii are a horn torus, which ISO 10303-42 writes only as a
+            // TOROIDAL_SURFACE.
+            TORUS
+                .replace("TOROIDAL_SURFACE('',", "DEGENERATE_TOROIDAL_SURFACE('',")
+                .replace("20.,5.)", "5.,5.,.T.)"),
+            ErrorKind::InvalidGeometry,
+            "DEGENERATE_TOROIDAL_SURFACE needs",
+        ),
+        (
+            TORUS.replace("20.,5.)", "-5.,20.)"),
+            ErrorKind::InvalidGeometry,
+            "MAJOR_RADIUS must be a positive length",
         ),
         (
             // 30 read as radians is not a cone semi-angle.

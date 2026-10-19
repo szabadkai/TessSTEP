@@ -56,14 +56,14 @@ pub struct Adaptations {
     /// 3D curve on their face; those uses receive a computed pcurve.
     pub rejected_pcurves: usize,
     /// Edge uses on a face whose 3D curve lies farther than the model tolerance from
-    /// the face surface, within [`ImportOptions::deviation_factor`] times it. The
-    /// use receives the pcurve of the curve's surface projection; the mesh boundary
-    /// follows the 3D curve.
+    /// the face surface, within the accepted deviation
+    /// ([`ImportOptions::deviation_factor`]). The use receives the pcurve of the
+    /// curve's surface projection; the mesh boundary follows the 3D curve.
     pub off_surface_edges: usize,
     /// Edge ends whose vertex lies farther than the model tolerance from the edge
-    /// curve, within [`ImportOptions::deviation_factor`] times it. The edge is
-    /// bounded at the vertex's projection onto its curve; the vertex keeps its
-    /// position, which the mesh uses.
+    /// curve, within the accepted deviation ([`ImportOptions::deviation_factor`]).
+    /// The edge is bounded at the vertex's projection onto its curve; the vertex
+    /// keeps its position, which the mesh uses.
     pub off_curve_vertices: usize,
     /// B-spline surface sides that collapse to a point only within the model
     /// tolerance (their points spread by more than a thousandth of it) and that an
@@ -114,9 +114,11 @@ pub struct Adaptations {
 ///
 /// Edges farther than the model tolerance from their face surfaces and vertices
 /// farther than it from their edge curves are accepted up to
-/// `options.deviation_factor` times the model tolerance (none when strict), counted
-/// in the adaptations and reported by [`ImportedSolid::largest_deviation`]; farther
-/// ones are typed rejections naming the distance and the bound.
+/// `options.deviation_factor` times the model tolerance, `options.deviation_floor`
+/// or, when the repair sews, its absolute sewing distance, whichever is largest
+/// (none when strict), counted in the adaptations and reported by
+/// [`ImportedSolid::largest_deviation`]; farther ones are typed rejections naming the
+/// distance and the bound.
 ///
 /// `angle` scales plane-angle measures (cone semi-angles and conic and surface
 /// parameters of supplied pcurves). No unit inference is performed, and no topology is
@@ -553,6 +555,23 @@ fn degree<'d, 'a>(c: &Context<'d, 'a>, v: &'d EntityView<'a>, name: &str) -> Res
     }
 }
 
+/// Whether the face boundary sampled by `points` lies on the apple of the spindle
+/// torus with radii `a < b` in frame `f` rather than on its lemon. A point lies on
+/// the apple when its distance from the tube centre on its own side of the axis is
+/// `b`, and on the lemon when its distance from the centre on the far side is; the
+/// part whose largest such misfit is smaller wins. The axis points lie on both, so
+/// a boundary only there is the apple.
+fn spindle_apple(f: &Frame, a: f64, b: f64, points: &[V3]) -> bool {
+    let (mut apple, mut lemon) = (0.0_f64, 0.0_f64);
+    for &p in points {
+        let d = sub(p, f.o);
+        let (rho, z) = (dot(d, f.x).hypot(dot(d, f.y)), dot(d, f.z));
+        apple = apple.max(((rho - a).hypot(z) - b).abs());
+        lemon = lemon.max(((rho + a).hypot(z) - b).abs());
+    }
+    apple <= lemon
+}
+
 impl Builder {
     fn curve<'d, 'a>(
         &mut self,
@@ -734,14 +753,16 @@ impl Builder {
         if c.is(v, "SWEPT_SURFACE") {
             return self.swept_surface(c, v, points);
         }
-        self.plain_surface(c, v)
+        self.plain_surface(c, v, points)
             .map(|(chart, surface)| (chart, surface, false))
     }
 
+    /// An elementary or B-spline surface; `points` sample the face's boundary.
     fn plain_surface<'d, 'a>(
         &mut self,
         c: &mut Context<'d, 'a>,
         v: &'d EntityView<'a>,
+        points: &[V3],
     ) -> Result<(Chart, SurfaceGeometry), Error> {
         if c.is(v, "ELEMENTARY_SURFACE") {
             let frame = c.placement(c.reference(v, "POSITION")?)?;
@@ -767,11 +788,25 @@ impl Builder {
                     ));
                 }
                 // The kernel cone is placed at its apex, on the axis below the placement.
+                // STEP's cone is a double cone: a face whose boundary lies only beyond
+                // the apex (OpenCASCADE writes them) is on the far nappe, whose kernel
+                // cone opens the other way. Its normal du x dv agrees with STEP's there.
                 let apex = sub(f.o, scale(f.z, r / alpha.tan()));
+                let tolerance = c.tolerance.distance().as_metres();
+                let side = |sign: f64| {
+                    points
+                        .iter()
+                        .any(|p| sign * dot(sub(*p, apex), f.z) > tolerance)
+                };
+                let y = if side(-1.) && !side(1.) {
+                    c.checked(frame.y().scaled(-1.))?
+                } else {
+                    frame.y()
+                };
                 let apex_frame = c.checked(PlaneFrame::new(
                     c.checked(Point::new(apex))?,
                     frame.x(),
-                    frame.y(),
+                    y,
                     NumericalTolerance::default(),
                 ))?;
                 Ok((
@@ -807,21 +842,25 @@ impl Builder {
             } else if c.is(v, "TOROIDAL_SURFACE") {
                 let major = c.length(v, "MAJOR_RADIUS")?;
                 let minor = c.length(v, "MINOR_RADIUS")?;
+                let radii = (
+                    c.checked(Length::metres(major))?,
+                    c.checked(Length::metres(minor))?,
+                );
                 if major <= minor {
-                    return Err(c.error(
-                        ErrorKind::Unsupported,
-                        "horn tori (major radius = minor radius) are not supported; a spindle torus needs DEGENERATE_TOROIDAL_SURFACE",
-                    ));
+                    // A horn torus (equal radii) is the apple of the limiting spindle,
+                    // and a spindle written without DEGENERATE_TOROIDAL_SURFACE is the
+                    // part its face's boundary lies on.
+                    let outer = major == minor || spindle_apple(&f, major, minor, points);
+                    Ok((
+                        Chart::Spindle(f, major, minor, outer),
+                        Surface::degenerate_torus(frame, radii.0, radii.1, outer).map_err(shape)?,
+                    ))
+                } else {
+                    Ok((
+                        Chart::Torus(f, major, minor),
+                        Surface::torus(frame, radii.0, radii.1).map_err(shape)?,
+                    ))
                 }
-                Ok((
-                    Chart::Torus(f, major, minor),
-                    Surface::torus(
-                        frame,
-                        c.checked(Length::metres(major))?,
-                        c.checked(Length::metres(minor))?,
-                    )
-                    .map_err(shape)?,
-                ))
             } else {
                 Err(c.error(ErrorKind::Unsupported, "unsupported elementary surface"))
             }
@@ -1334,7 +1373,9 @@ impl Builder {
             .filter(|s| s.surface == face.surface_entity)
         {
             offered = true;
-            let Some(curve) = supplied::to_chart(&s.curve, map, s.parameter_scale, angle) else {
+            let domain = face.surface.domain();
+            let Some(curve) = supplied::to_chart(&s.curve, map, s.parameter_scale, angle, domain)
+            else {
                 continue;
             };
             // Probe 17 uniform parameters and four interior points of every knot span
@@ -1393,9 +1434,12 @@ impl Builder {
         Ok(match *chart {
             Chart::Plane(_) => Some([[length; 2], [0.; 2]]),
             Chart::Cylinder(..) => Some([[angle, length], [0.; 2]]),
-            Chart::Cone(_, alpha) => {
+            Chart::Cone(f, alpha) => {
+                // A far-nappe chart is not this affine image of STEP's parameters.
+                let axis = Frame::new(c.placement(c.reference(surface, "POSITION")?)?).z;
                 let r = c.checked(c.unit.to_metres(c.real(surface, "RADIUS")?))?;
-                Some([[angle, length / alpha.cos()], [0., r / alpha.sin()]])
+                (dot(f.z, axis) > 0.)
+                    .then_some([[angle, length / alpha.cos()], [0., r / alpha.sin()]])
             }
             Chart::Sphere(..) | Chart::Torus(..) => Some([[angle; 2], [0.; 2]]),
             Chart::Nurbs(..) if b_spline => Some([[1.; 2], [0.; 2]]),
@@ -2240,7 +2284,8 @@ impl Builder {
         Ok(Some((self.edges.len() - 1, forward, pcurve)))
     }
 
-    /// The vertex at a singular point: a VERTEX_LOOP's vertex, or an inserted one.
+    /// The vertex at a singular point: a VERTEX_LOOP's vertex, or an inserted one. A
+    /// VERTEX_LOOP at a horn torus apex may name either singular line's point.
     fn pole_vertex(
         c: &mut Context<'_, '_>,
         face: &FaceRecord,
@@ -2249,7 +2294,7 @@ impl Builder {
     ) -> Result<VertexId, Error> {
         if let Some(i) = poles
             .iter()
-            .position(|(p, _)| p.k == s.k && p.value == s.value)
+            .position(|(p, _)| p.k == s.k && (p.value == s.value || p.point == s.point))
         {
             return Ok(poles.remove(i).1);
         }
@@ -2367,9 +2412,9 @@ impl Builder {
                 } else {
                     e.vertices[0]
                 };
-                let Some(s) = at_singular(c, v) else {
+                if at_singular(c, v).is_none() {
                     continue;
-                };
+                }
                 if !allow_singular {
                     return Err(c.error(
                         ErrorKind::Unsupported,
@@ -2380,11 +2425,18 @@ impl Builder {
                     .map_err(|e| self.pcurve_error(c, u.edge, e))?;
                 let start = use_uv(&pcurves[&next.edge], next, 0.)
                     .map_err(|e| self.pcurve_error(c, next.edge, e))?;
-                let (k, j) = (s.k, 1 - s.k);
-                let near = |x: f64| (x - s.value).abs() <= 1e-7 * (1. + s.value.abs());
-                if !near(end[j]) || !near(start[j]) {
+                // The singular line both chart ends lie on: both lines of a horn torus
+                // map to its apex.
+                let near =
+                    |s: &Singular, x: f64| (x - s.value).abs() <= 1e-7 * (1. + s.value.abs());
+                let Some(s) = singular.iter().copied().find(|s| {
+                    norm(sub(position(c, v), s.point)) <= tolerance
+                        && near(s, end[1 - s.k])
+                        && near(s, start[1 - s.k])
+                }) else {
                     continue;
-                }
+                };
+                let (k, j) = (s.k, 1 - s.k);
                 // The face lies on the singular line's side: the join runs along it in
                 // the direction that keeps the face on its left.
                 let sign = if k == 0 { s.side } else { -s.side };

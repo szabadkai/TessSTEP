@@ -19,10 +19,15 @@ azimuth in radians, with period 2 pi. Constructors provide these surfaces:
 | Sphere | O + r cos(v) E(u) + r sin(v) Z | Latitude in closed [-pi/2, pi/2] |
 | Ring torus | O + (R + r cos(v)) E(u) + r sin(v) Z | Unwrapped angle, period 2 pi; R > r > 0 |
 | Spindle torus | same formula with 0 < R < r | Closed: the apple part covers [-v*, v*] and the lemon part [v*, 2 pi - v*], v* = acos(-R/r); both end at the two axis points, where du vanishes like at a sphere pole |
+| Horn torus | same formula with R = r | The limiting spindle (Milestone 23.5): the apple covers [-pi, pi], and both ends are the apex O, where the tube touches the axis; there is no lemon |
 
 Radii must be positive and finite. `degenerate_torus(frame, R, r, outer)` selects the
-apple (`outer`) or lemon part of a spindle torus; du x dv points away from the axis on
-the apple and towards it on the lemon. Horn tori (R = r) and degenerate cone angles are
+apple (`outer`) or lemon part of a spindle torus, and with R = r the apple of the horn
+torus (the lemon is then `InvalidShape`); du x dv points away from the axis on the
+apple near its equator and towards it on the lemon. On the apple it points away from
+the tube's centre circle, so towards the axis next to a horn torus's apex, where the
+tube is a cusp tangent to the axis whose radius grows with the square of the height.
+Degenerate cone angles are
 explicitly unsupported. A cone's frame origin is its vertex, not a STEP reference-radius
 placement. A future adapter must convert schema parameter conventions explicitly.
 No axes or modeling tolerances are defaulted by the geometry evaluator.
@@ -40,7 +45,9 @@ floating-point trig, cancellation/underflow and conservative overflow failures f
 cross product. Zero partials or a sine separation at/below the dimensionless numerical
 tolerance produce `SingularNormal`; successful evaluation alone does not mean regularity.
 At the cone apex du is exactly zero. At either exact sphere-latitude endpoint the cosine
-factor is set to zero, so numerical sin/cos residue cannot hide the pole singularity.
+factor is set to zero, so numerical sin/cos residue cannot hide the pole singularity;
+likewise the tube radius at a spindle's axis points and at both ends of a horn
+torus's apple (`analytic_horn_torus_apple_ends_at_its_apex`).
 Near a pole, nonzero partials remain legitimate; no modeling-distance cutoff is inferred.
 
 `Evaluation::transformed` applies an affine map to the position and the linear part to

@@ -88,6 +88,19 @@ BREP_EXPECTED = {
     # Spindle zones a=5, b=12 between z=±6: pi * integral of (a ± sqrt(b²-z²))² dz.
     "brep-spindle-apple.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * spindle_zone(5, 12, 6, True) * 1e-9, (5 + 108 ** 0.5) * 1e-3)),
     "brep-spindle-lemon.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * spindle_zone(5, 12, 6, False) * 1e-9, (108 ** 0.5 - 5) * 1e-3)),
+    # Milestone 23.5: the same zones on a TOROIDAL_SURFACE (the part is the one the
+    # boundary lies on); a horn torus a=b=10 as the limiting spindle, away from its
+    # apex, up a meridian seam to it, around it (resolved at a 10 um uncertainty, see
+    # BREP_MODEL_TOLERANCE) and as the full apple, whose cusp exhausts the planar
+    # vertex budget at this chord; and a frustum on the far nappe of its cone.
+    "brep-toroidal-apple.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * spindle_zone(5, 12, 6, True) * 1e-9, (5 + 108 ** 0.5) * 1e-3)),
+    "brep-toroidal-lemon.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * spindle_zone(5, 12, 6, False) * 1e-9, (108 ** 0.5 - 5) * 1e-3)),
+    "brep-horn-zone.step": (("accepted",) * 3, (0, 1, 0, 0, 0), (math.pi * spindle_zone(10, 10, 6, True) * 1e-9, 0.01)),
+    "brep-horn-seam.step": (("accepted",) * 3, (0, 0, 0, 0, 1), (math.pi ** 2 * 1e-6, 0.01)),
+    "brep-horn-half.step": (("accepted",) * 3, (0, 1, 0, 0, 1), (math.pi ** 2 * 1e-6, 0.01)),
+    "brep-horn-apple.step": (("accepted", "accepted", "resource_limit"), (0, 1, 0, 0, 2), None),
+    "brep-far-nappe-cone.step": (("accepted",) * 3, (0, 1, 0, 0, 0),
+                                 (math.pi * 10 / 3 * (100 + 10 * (10 + 10 * math.tan(math.pi / 6)) + (10 + 10 * math.tan(math.pi / 6)) ** 2) * 1e-9, 0.01)),
     "brep-washer.step": (("accepted",) * 3, (2, 2, 0, 0, 0), (math.pi * 1500e-9, 0.01)),
     "brep-bspline-cube.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (1e-6, math.inf)),
     "brep-bezier-cube.step": (("accepted",) * 3, (0, 0, 0, 0, 0), (1e-6 + 1600 / 9 * 1e-9, 0.002)),
@@ -191,11 +204,22 @@ ADAPTATIONS = ("inferred_outer_bounds", "inserted_seams", "split_edges", "rechar
 BREP_MODEL_TOLERANCE = {"brep-near-surface.step": 1e-6, "brep-far-surface.step": 1e-6,
                         "brep-vertex-off-curve.step": 1e-6, "brep-short-side.step": 5e-5,
                         "brep-far-generator.step": 1e-6, "brep-sampled-peak.step": 2.7e-6,
-                        "brep-crescent-sliver.step": 1e-6}
+                        "brep-crescent-sliver.step": 1e-6, "brep-horn-half.step": 1e-5}
 # Strict import (`brep --strict`) of fixtures whose default import tolerates an
 # exporter deviation: expected stages.
 BREP_STRICT_EXPECTED = {"brep-hole-outer-bound.step": ("accepted", "accepted", "rejected"),
                         "brep-loop-spurs.step": ("accepted", "accepted", "rejected")}
+# Repair with an absolute sewing distance (`brep --repair --sewing-distance M`), which
+# also bounds the accepted deviations (Milestone 23.5): distance, expected stages,
+# repair counts, off-surface edge uses and a fragment of the diagnostic.
+SEWING_EXPECTED = {
+    # The 50 um off-surface edge under a 1 um uncertainty, within and beyond 60 um.
+    "brep-far-surface.step": [(6e-5, ("accepted",) * 3, (0,) * 6, 1, None),
+                              (4e-5, ("accepted", "rejected", "not_run"), (0,) * 6, 0,
+                               "(the sewing distance, above 16 × the model tolerance 1.000e-6 m)")],
+    # The 0.05 mm corner gap, sewn at 0.1 mm.
+    "brep-repair-gap.step": [(1e-4, ("accepted",) * 3, (1, 2, 0, 0, 0, 0), 0, None)],
+}
 
 
 # Product structure linked with the bundled product profile and placed in a scene:
@@ -396,6 +420,22 @@ def main():
             case["passed"] &= r.get("boundary_edges") == 0 and r.get("components") == BREP_COMPONENTS.get(name, 1)
             case["passed"] &= abs(r.get("volume_m3", 0) - exact) <= relative * exact
         cases.append(case)
+    for name, runs in SEWING_EXPECTED.items():
+        for distance, expected, counts, off_surface, diagnostic in runs:
+            extra = ["--chord", str(BREP_CHORD), "--repair", "--sewing-distance", str(distance)]
+            if name in BREP_MODEL_TOLERANCE:
+                extra += ["--model-tolerance", str(BREP_MODEL_TOLERANCE[name])]
+            case = inspect(brep_binary, ROOT / "corpus/geometry" / name, scope="brep-solid", extra=extra)
+            r = case["result"]
+            case["expected"] = {"sewing_distance": distance, "stages": expected, "repairs": counts,
+                                "off_surface_edges": off_surface, "diagnostic": diagnostic}
+            case["passed"] = (tuple(r[k] for k in ("profile", "geometry", "tessellation")) == expected
+                              and tuple(r.get(k) for k in REPAIR_COUNTS) == counts
+                              and r.get("off_surface_edges") == off_surface
+                              and (diagnostic is None or diagnostic in case["diagnostic"]))
+            if expected[2] == "accepted":
+                case["passed"] &= r.get("boundary_edges") == 0 and r.get("components") == 1
+            cases.append(case)
     # The curved profile reproduces the planar profile's accepted fixtures.
     for name in ("planar-box.step", "planar-tube.step"):
         case = inspect(brep_binary, ROOT / "corpus/geometry" / name, scope="brep-solid")
