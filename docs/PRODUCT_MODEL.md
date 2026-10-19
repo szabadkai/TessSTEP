@@ -242,6 +242,68 @@ and the corpus files `bug33410.step` (HOOPS Exchange 2020.1) and `trj3_s1-ct-203
 (CATIA V4, non-identity placements whose membership reading arranges the CAx-IF S1 model
 as the NX and Pro/ENGINEER exports of the same model do).
 
+## Surface models in assemblies (Milestone 23.10)
+
+Shape roots are solids and shape tessellations unless the caller asks for surface
+models: `AssemblyOptions::surface_models` (off by default) makes `link_assembly` and
+`import_assembly` treat every `SHELL_BASED_SURFACE_MODEL` that discovery finds
+([CURVED_IMPORT.md](CURVED_IMPORT.md#surface-models)) as a shape root. It is placed by
+the rules above, wherever an expanded representation (typically a
+`MANIFOLD_SURFACE_SHAPE_REPRESENTATION`) or one associated with it holds it, so
+occurrences, mapped items and operators place it as they place a solid. A surface
+model with no placing representation is listed in `LinkedAssembly::unplaced`, and one
+in a placed representation without supplied shells in `unimported`, as for solids.
+With the option off, surface models are neither imported, placed nor listed, and every
+earlier result is unchanged.
+
+`import_assembly` imports each surface model with its context units and the model
+tolerance a solid in that context gets, through the session's shared curved-profile
+decodes (surface models are prepared together, apart from the solids). Each declared
+shell is validated as declared and meshed as a shell, never as a solid: no volume or
+orientation is checked, and an open shell keeps its boundary. Every shell becomes its
+own scene asset: `ShapeAsset::shell` names the shell, its `AssetId` is the shell's
+entity ID (`ShapeAsset::asset`), and its leaves carry `AssemblyNode::shell` beside
+`root`, the surface model. The first shell that fails to validate or mesh fails its
+root; `RootImport` reports the root with `ShapeRootKind::SurfaceModel`, always
+selected (representation selection does not pair surface models), and its failure,
+located and with its text. A shell that an earlier surface model already supplied fails the
+later root (`Unsupported` at the product stage, naming both); no corpus file lists a
+shell twice.
+
+The opt-in repair stage (`ImportOptions::repair`) applies to surface models here, and
+only here: the single-root `import_surface_model` keeps ignoring it. Sewing plans
+merges inside one declared shell only, since `plan_sewing` takes candidate vertices
+used by one shell and pairs free edges per shell, and an edge or vertex two shells
+share is never free; face orientation is made consistent per shell; and the
+volume-sign reorientation, which applies to solid shells, does not run. Orientation
+repair leaves a surface model that validates as declared unchanged; sewing may still
+merge coincident boundary edges of an open shell. Sewn, a disconnected open shell can
+close, while it keeps its declared open closure (`SurfaceShell::closed`).
+
+**Bodies are the consumer's choice.** `ImportedAssembly::asset_class` reports each
+asset as `Solid` (a B-rep, faceted or tessellated solid), `ClosedShell` (a shell mesh
+without boundary) or `OpenShell`, read from the mesh. Which of them become printable
+bodies is the consumer's policy, not the importer's. A surface model can be a
+construction, cosmetic or thread surface in the same space as a solid: in PP-31465 a
+SOLIDWORKS thread surface body lying in the same space as its solid filled a hole
+when HOOPS Exchange imported it and it was printed. Keeping closed shells only, or
+surface models only from documents without solids, are such policies; PreForm decided
+on the second (2026-10-19), which `ImportedAssembly::has_solid_roots` (any solid root
+of the document, imported or not; `ShapeRootKind::is_solid`) states. In the corpus,
+35 real inputs import solids beside surface models and gain only open shells (95),
+and 11 NIST files of the PreForm collection gain 29 open construction surfaces beside
+their solids ([VALIDATION.md](VALIDATION.md)). Evidence (`tests/assembly.rs`, fixtures
+from [`assembly_fixtures.py`](../corpus/geometry/assembly_fixtures.py) and
+[`surface_fixtures.py`](../corpus/geometry/surface_fixtures.py)):
+`surface_models_join_an_assembly_only_on_request` (a block and an open trough placed
+twice, default off),
+`a_closed_surface_model_imports_as_a_watertight_shell_asset_not_a_solid` (a closed
+cylinder shell part and an unplaced open model),
+`surface_model_failures_are_reported_per_root_with_their_text` and
+`opt_in_repair_sews_each_declared_shell_of_a_surface_model_on_its_own`; the merge
+counts in `sewing_merges_within_one_declared_shell_only`; and the session's sharing in
+`tests/session.rs`.
+
 ## Evidence and references
 
 The authored `corpus/product` schema is a reduced synthetic schema, not an ISO extract.

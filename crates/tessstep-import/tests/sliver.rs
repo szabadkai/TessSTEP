@@ -71,3 +71,39 @@ fn sliver_faces_collapse_at_the_working_tolerance_a_vertex_deviation_implies() {
         error.message
     );
 }
+
+const STACKED: &str = include_str!("../../../corpus/geometry/brep-stacked-slivers.step");
+
+#[test]
+fn stacked_sliver_faces_collapse_onto_one_edge() {
+    // Two sliver faces between three edges on one half circle: the first collapsed
+    // keeps the middle edge, which the second then merges into the side's arc. Each
+    // use follows the chain to the last survivor (this panicked before; seen in an
+    // OpenCASCADE surface model sewn under PreForm's settings).
+    let doc = tessstep_model::parse(STACKED.as_bytes(), ParseLimits::default()).unwrap();
+    let solid = import_brep_solid(
+        &doc,
+        EntityId::new(1000).unwrap(),
+        LengthUnit::MILLIMETRE,
+        AngleUnit::RADIAN,
+        ModelTolerance::new(Length::metres(1e-7).unwrap(), Angle::radians(1e-8).unwrap()).unwrap(),
+        ImportOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(solid.adaptations().collapsed_faces, 2);
+    assert_eq!(solid.face_entities().len(), 3);
+    assert_eq!(solid.brep().data().edges.len(), 4);
+    let tolerance =
+        TessellationTolerance::new(Length::metres(1e-5).unwrap(), Angle::radians(0.1).unwrap())
+            .unwrap();
+    let mesh = solid
+        .tessellate(tolerance, TessellationOptions::default())
+        .unwrap();
+    mesh.require_solid().unwrap();
+    let exact = PI * 100. * 20. * 1e-9;
+    let volume = mesh.statistics().signed_volume;
+    assert!(
+        ((volume - exact) / exact).abs() <= 2. * 1e-5 / 0.01,
+        "{volume}"
+    );
+}

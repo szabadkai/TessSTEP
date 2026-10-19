@@ -24,12 +24,19 @@ EXPECTED = {
                                            ("volumes", [2000 * math.pi * 1e-9, -1e-6], 0.01)),
     ("surface-closed-shells.step", 1001): (("accepted", "rejected", "not_run"), [], None),
     ("surface-closed-shells.step", 1002): (("unsupported", "not_run", "not_run"), [], None),
+    # Unsewn shells (Milestone 23.10): the single-root import never sews, so the
+    # disconnected box and the squares written as one shell are rejected; the two
+    # declared shells of one square each are valid apart.
+    ("surface-unsewn.step", 1000): (("accepted", "rejected", "not_run"), [], None),
+    ("surface-unsewn.step", 1001): (("accepted",) * 3, [(False, 1, 4), (False, 1, 4)], ("area", 200e-6, 0.01)),
+    ("surface-unsewn.step", 1002): (("accepted", "rejected", "not_run"), [], None),
 }
 # The survey's surface-model class over each fixture: root -> status. The fixtures
 # have no solid or tessellation roots.
 SURVEY_EXPECTED = {
     "surface-open-patches.step": {1000: "accepted", 1001: "accepted"},
     "surface-closed-shells.step": {1000: "accepted", 1001: "rejected", 1002: "unsupported"},
+    "surface-unsewn.step": {1000: "rejected", 1001: "accepted", 1002: "rejected"},
 }
 
 

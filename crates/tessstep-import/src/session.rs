@@ -3,17 +3,19 @@
 //!
 //! An [`ImportSession`] borrows a parsed [`Document`] and caches what does not belong
 //! to a single root: root and unit discovery, representation selection, and profile
-//! decodes shared by several roots. [`ImportSession::prepare`] decodes the reference
-//! closures of several roots with one profile together, once; each root's import then
-//! adapts its records from that shared decode. Every result equals the corresponding
-//! free function's. A shared decode is kept only when it succeeds within the per-root
-//! work budget (`ImportOptions::max_work`); a root's closure is a subset of the shared
-//! one, the structural checks of one record never depend on other roots, and decoding
-//! work is additive over the records, so decoding the root alone would succeed with
-//! the same records within the same budget. Otherwise every root of the group is
-//! decoded alone, exactly as the free functions do. Adapters follow references from
-//! their root only, and the curved B-rep adapter scans exactly the root's closure for
-//! supplied pcurves, so a superset of records changes nothing they read.
+//! decodes shared by several roots. Surface models are discovered and imported on
+//! request ([`ImportSession::surface_models`], [`ImportSession::import_surface_model`])
+//! and share the curved B-rep profile's decodes. [`ImportSession::prepare`] decodes the
+//! reference closures of several roots with one profile together, once; each root's
+//! import then adapts its records from that shared decode. Every result equals the
+//! corresponding free function's. A shared decode is kept only when it succeeds within
+//! the per-root work budget (`ImportOptions::max_work`); a root's closure is a subset
+//! of the shared one, the structural checks of one record never depend on other roots,
+//! and decoding work is additive over the records, so decoding the root alone would
+//! succeed with the same records within the same budget. Otherwise every root of the
+//! group is decoded alone, exactly as the free functions do. Adapters follow references
+//! from their root only, and the curved B-rep adapter scans exactly the root's closure
+//! for supplied pcurves, so a superset of records changes nothing they read.
 //!
 //! Budgets: every decode, adapter and tessellation keeps its per-root budget
 //! ([`ImportOptions`], `TessellationOptions`). [`SessionBudgets`] bound what a session
@@ -49,7 +51,8 @@ pub enum ImportProfile {
     Faceted,
     /// Edge-based planar roots, as [`import_planar_solid`] decodes them.
     Planar,
-    /// Curved B-rep roots, as [`import_brep_solid`] decodes them.
+    /// Curved B-rep roots, as [`import_brep_solid`] decodes them, and
+    /// SHELL_BASED_SURFACE_MODEL roots, as [`import_surface_model`] decodes them.
     Brep,
     /// Existing tessellations and tessellated annotation occurrences, as
     /// [`import_tessellated`] and [`import_presentation`] decode them.
@@ -114,8 +117,8 @@ impl SessionBudgets {
 /// Work a session did and shared, for tests and benchmarks.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SessionStatistics {
-    /// Discovery passes run: solids, tessellations, presentations and each
-    /// representation preference, at most once each.
+    /// Discovery passes run: solids, tessellations, presentations, surface models and
+    /// each representation preference, at most once each.
     pub discoveries: usize,
     /// Decodes of several roots' closures together that succeeded.
     pub shared_decodes: usize,
@@ -147,6 +150,7 @@ pub struct ImportSession<'a> {
     solids: OnceCell<Result<Vec<SolidRoot>, Error>>,
     tessellations: OnceCell<Result<Vec<TessellatedRoot>, Error>>,
     presentations: OnceCell<Result<Vec<PresentationRoot>, Error>>,
+    surface_models: OnceCell<Result<Vec<SurfaceModelRoot>, Error>>,
     /// Representation choices preferring exact roots, then tessellations.
     choices: [OnceCell<Result<Vec<RepresentationChoice>, Error>>; 2],
     shared: RefCell<Shared<'a>>,
@@ -192,6 +196,7 @@ impl<'a> ImportSession<'a> {
             solids: OnceCell::new(),
             tessellations: OnceCell::new(),
             presentations: OnceCell::new(),
+            surface_models: OnceCell::new(),
             choices: [OnceCell::new(), OnceCell::new()],
             shared: RefCell::default(),
             statistics: Cell::default(),
@@ -229,6 +234,13 @@ impl<'a> ImportSession<'a> {
         cached(&self.presentations, || {
             self.count(|s| s.discoveries += 1);
             discover_presentations(self.document, self.options)
+        })
+    }
+    /// [`discover_surface_models`], run once per session.
+    pub fn surface_models(&self) -> Result<&[SurfaceModelRoot], Error> {
+        cached(&self.surface_models, || {
+            self.count(|s| s.discoveries += 1);
+            discover_surface_models(self.document, self.options)
         })
     }
     /// [`select_representations`] over the session's solids and tessellations, run
@@ -331,6 +343,34 @@ impl<'a> ImportSession<'a> {
             )
         })
     }
+    /// [`import_surface_model`] with the session's options and decodes: surface
+    /// models are prepared with [`ImportProfile::Brep`], alone or together with solids.
+    pub fn import_surface_model(
+        &self,
+        root: EntityId,
+        length: LengthUnit,
+        angle: AngleUnit,
+        tolerance: ModelTolerance,
+    ) -> Result<ImportedSurfaceModel, Error> {
+        self.surface_model(root, length, angle, tolerance, false)
+    }
+    /// The session's [`Self::import_surface_model`], with the opt-in repair stage of
+    /// the session's options applied when `repair` (see [`brep::adapt_model`]).
+    pub(crate) fn surface_model(
+        &self,
+        root: EntityId,
+        length: LengthUnit,
+        angle: AngleUnit,
+        tolerance: ModelTolerance,
+        repair: bool,
+    ) -> Result<ImportedSurfaceModel, Error> {
+        let options = self.options;
+        self.import_with(ImportProfile::Brep, root, |decoded, closure| {
+            brep::adapt_model(
+                decoded, closure, root, length, angle, tolerance, options, repair,
+            )
+        })
+    }
     /// [`import_tessellated`] with the session's options and decodes; the mesh counts
     /// against the triangle budget.
     pub fn import_tessellated(
@@ -368,6 +408,19 @@ impl<'a> ImportSession<'a> {
     ) -> Result<Mesh, Error> {
         self.admit_triangles(Stage::Tessellation, solid.root)?;
         let mesh = solid.tessellate(tolerance, options)?;
+        self.count(|s| s.triangles += mesh.data().triangles.len());
+        Ok(mesh)
+    }
+
+    /// [`SurfaceShell::tessellate`], counted against the triangle budget.
+    pub fn tessellate_shell(
+        &self,
+        shell: &SurfaceShell,
+        tolerance: TessellationTolerance,
+        options: TessellationOptions,
+    ) -> Result<Mesh, Error> {
+        self.admit_triangles(Stage::Tessellation, shell.entity())?;
+        let mesh = shell.tessellate(tolerance, options)?;
         self.count(|s| s.triangles += mesh.data().triangles.len());
         Ok(mesh)
     }

@@ -41,9 +41,9 @@ mod style;
 mod tessellated;
 mod uv_loops;
 pub use assembly::{
-    AssemblyImportOptions, AssemblyNode, AssemblyOptions, ExcludedRecord, ImportedAssembly,
-    LinkedAssembly, ProductInfo, RootImport, ShapeAsset, ShapeRootKind, import_assembly,
-    link_assembly,
+    AssemblyImportOptions, AssemblyNode, AssemblyOptions, AssetClass, ExcludedRecord,
+    ImportedAssembly, LinkedAssembly, ProductInfo, RootImport, ShapeAsset, ShapeRootKind,
+    import_assembly, link_assembly,
 };
 pub use brep::{Adaptations, import_brep_solid};
 pub use brep::{ImportedSurfaceModel, SurfaceShell, import_surface_model};

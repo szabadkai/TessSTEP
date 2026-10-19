@@ -498,6 +498,7 @@ fn independent_import(doc: &Document, options: AssemblyImportOptions) -> Result<
 fn asset(root: EntityId, mesh: Mesh) -> ShapeAsset {
     ShapeAsset {
         root,
+        shell: None,
         mesh: std::sync::Arc::new(mesh),
     }
 }

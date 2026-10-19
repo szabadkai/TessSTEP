@@ -630,3 +630,21 @@ record is data, not code: the bridge's `#[unsafe(no_mangle)]` functions, the hea
 declarations and the installed libraries are each checked against it. Failure text
 stays handle state (a session's last message, per-root reports borrowed from their
 handle), so the bridge keeps no global or thread-local state.
+
+## Surface models in sessions and assemblies architecture review (Milestone 23.10)
+
+Surface models enter sessions and assemblies without a new crate edge, profile,
+adapter or dependency. The surface-model import splits like the solid importers into
+the curved profile's decode and an adapter over a decoded document, so a session
+shares `ImportProfile::Brep` decodes between surface models as it does between solids
+and keeps results equal to the free function's. The assembly linker keys assets by
+`ShapeAsset::asset` (the shell's entity for a surface-model shell) and places them by
+their root, so the product structure, expansion and scene code are unchanged: a root
+with several assets gets one leaf per asset. Representation selection, which another
+Milestone 23 item reworks, is untouched; surface models follow the solids and
+tessellations in the root reports. Each root's import is one function from the root,
+its units and the options to its report and assets (`import_root`), with only the
+duplicate-shell check across roots, so roots can later be imported concurrently. The
+repair stage is reused unchanged: `tessstep_topology::plan_sewing` already confines
+merges to one shell, and the outward reorientation already runs only on solid shells.
+The C bridge gains only an internal match arm; no export, record or header changes.

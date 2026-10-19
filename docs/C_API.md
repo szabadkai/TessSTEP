@@ -620,8 +620,9 @@ and decodes each group together), `ts_import_session_import_solid`,
 `max_triangles`), `ts_import_session_import_presentation` (with `max_polyline_points`
 and `max_presentation_depth`) and `ts_import_session_import_assembly`.
 `ts_import_session_import_surface_model` runs the free import on the session's document
-and options for a uniform API and its failure text; the Rust session has no surface
-models, so it shares no decode and is not counted in the session budgets.
+and options for a uniform API and its failure text; it shares no decode and is not
+counted in the session budgets (the Rust session's surface-model import of Milestone
+23.10 is not routed yet, see [Post-1.0](#post-10)).
 `ts_import_session_get_statistics` returns the Rust `SessionStatistics`. Results are
 owned and independent; no Rust session, decode or borrowed record crosses the
 boundary. C++ `ImportSession` (from `Document::import_session`) is move-only RAII over
@@ -781,8 +782,21 @@ Left for after the freeze, each additive under the policy above:
   document-level call reports the located `ts_import_error` only.
 - **Annotation units text.** `ts_discovered_presentation` unit failures carry a located
   error but no text (only shape roots have `ts_discovery_root_report_at`).
-- **Surface models in sessions and assemblies.** The Rust session and assembly import
-  do not handle surface models; the C session imports them without sharing.
+- **Surface models in sessions and assemblies.** The Rust side is done (Milestone
+  23.10): `ImportSession::surface_models`, `import_surface_model` and
+  `tessellate_shell` share the curved profile's decodes, and
+  `AssemblyOptions::surface_models` (off by default) places surface models in
+  assemblies as one shell-mesh asset per shell (`ShapeAsset::shell`,
+  `AssemblyNode::shell`, `ShapeRootKind::SurfaceModel`, `AssetClass`), with the
+  repair flags applied per shell. C and C++ exposure follows in ABI 1.2: a new
+  import-options flag (not the discovery flag `TS_DISCOVER_SURFACE_MODELS`, which
+  existing callers already set), the shell ID of an asset leaf in the node record,
+  the root kind `TS_ROOT_SHELL_BASED_SURFACE_MODEL` in assembly root reports, the
+  asset class, and routing `ts_import_session_import_surface_model` through the
+  session. PreForm's rule (shells become bodies only in documents without a solid
+  root, Rust `ImportedAssembly::has_solid_roots`) then needs only the root kinds of
+  the root reports. Until then the C session imports surface models without sharing
+  and C assemblies leave them out.
 - **Assembly and scene limits.** The frozen `ts_assembly_options` copies its instance
   and depth budgets into the scene limits; the extensible entry point keeps the Rust
   scene limits. Neither exposes the scene limits themselves.

@@ -1145,6 +1145,29 @@ def fixtures():
     ]
     s.write("brep-crescent-sliver.step", faces, context=context(uncertainty="1.E-3"))
 
+    # A cylinder r=10 h=20 whose cap meets the side's top arc through two stacked
+    # sliver faces: three edges on the one top half circle from V1 = (10, 0, 20) to
+    # V2 = (-10, 0, 20), the sliver between the middle and inner edges listed first.
+    # Collapsed, the inner edge passes to the middle one and the middle one to the
+    # side's arc, and the mesh is the full cylinder.
+    s = Step("Original cylinder r=10 h=20 mm whose cap meets its side through two stacked sliver faces")
+    v0 = s.vertex((10, 0, 0))
+    v1, v2 = s.vertex((10, 0, 20)), s.vertex((-10, 0, 20))
+    bottom = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 10))
+    top = s.circle((0, 0, 20), (0, 0, 1), (1, 0, 0), 10)
+    arc1, arc2 = s.edge(v1, v2, top), s.edge(v2, v1, top)
+    middle, inner = s.edge(v1, v2, top), s.edge(v1, v2, top)
+    surface = s.add(f"CYLINDRICAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.)")
+    cap = s.plane((0, 0, 20), (0, 0, 1))
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(arc2, False), (arc1, False)])], surface),
+        s.face([s.bound([(bottom, False)], outer=True)], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(middle, True), (inner, False)], outer=True)], cap),
+        s.face([s.bound([(arc1, True), (middle, False)], outer=True)], cap),
+        s.face([s.bound([(inner, True), (arc2, True)], outer=True)], cap),
+    ]
+    s.write("brep-stacked-slivers.step", faces, context=context())
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)

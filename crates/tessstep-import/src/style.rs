@@ -4,12 +4,13 @@
 //! Styled items are decoded with the bundled original style profile
 //! (`corpus/geometry/style.exp`); their targets are retained as links and matched to
 //! imported shapes by STEP identity: a solid root or its outer shell styles the asset,
-//! a face styles that face of its asset (mesh face IDs are STEP face IDs), and a
-//! shape representation styles every imported root it holds. Surface colour comes
-//! from a fill-area colour, else from the surface rendering colour; opacity is one
-//! minus the rendering transparency. RGB values are read as sRGB-encoded and
-//! converted to linear light. Curve, point and occurrence-specific styles, layers
-//! and invisibility are counted as unsupported, never applied.
+//! a surface model styles each of its shell assets, a face styles that face of its
+//! asset (mesh face IDs are STEP face IDs), and a shape representation styles every
+//! imported root it holds. Surface colour comes from a fill-area colour, else from
+//! the surface rendering colour; opacity is one minus the rendering transparency. RGB
+//! values are read as sRGB-encoded and converted to linear light. Curve, point and
+//! occurrence-specific styles, layers and invisibility are counted as unsupported,
+//! never applied.
 use super::*;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -108,6 +109,8 @@ pub fn import_appearance(
         }
     }
     let mut shells: BTreeMap<EntityId, AssetId> = BTreeMap::new();
+    // Surface models whose shells are assets (when the assembly requested them).
+    let mut models: BTreeMap<EntityId, Vec<AssetId>> = BTreeMap::new();
     let mut counts = StyleCounts::default();
     let mut roots = Vec::new();
     let mut styled = BTreeSet::new();
@@ -154,6 +157,27 @@ pub fn import_appearance(
                     }) = r.parameters.get(1)
                     {
                         shells.insert(*shell, AssetId(e.id.get()));
+                    }
+                } else if n.eq_ignore_ascii_case("SHELL_BASED_SURFACE_MODEL") {
+                    // SBSM_BOUNDARY, the second parameter, lists the shell assets.
+                    if let Some(StepValue {
+                        kind: ValueKind::Aggregate(items),
+                        ..
+                    }) = r.parameters.get(1)
+                    {
+                        let owned: Vec<AssetId> = items
+                            .iter()
+                            .filter_map(|v| match v.kind {
+                                ValueKind::Reference(id) => Some(AssetId(id.get())),
+                                _ => None,
+                            })
+                            .filter(|a| assets.contains(a))
+                            .collect();
+                        // Only shell assets are charged: without them nothing changes.
+                        if !owned.is_empty() {
+                            charge(owned.len())?;
+                            models.insert(e.id, owned);
+                        }
                     }
                 }
             }
@@ -214,10 +238,17 @@ pub fn import_appearance(
                 (vec![Target::AssetFace(owner, item.get())], true)
             } else if let Some(&owner) = shells.get(&item) {
                 (vec![Target::Asset(owner)], false)
+            } else if let Some(owned) = models.get(&item) {
+                (owned.iter().copied().map(Target::Asset).collect(), false)
             } else if let Some(held) = assembly.held.get(&item) {
                 let found: Vec<Target> = held
                     .iter()
-                    .map(|r| AssetId(r.get()))
+                    .flat_map(|r| {
+                        models
+                            .get(r)
+                            .cloned()
+                            .unwrap_or_else(|| vec![AssetId(r.get())])
+                    })
                     .filter(|a| assets.contains(a))
                     .map(Target::Asset)
                     .collect();

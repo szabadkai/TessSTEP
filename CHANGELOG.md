@@ -14,6 +14,24 @@ sewing and orientation repair), lost 26 bodies before the changes below and lose
 fillet along generators that are no edges, and a horn torus); the survey's default
 import meshes 617 of its roots instead of 545.
 
+- Sessions and assemblies import surface models on request (Milestone 23.10, Rust;
+  C and C++ follow in ABI 1.2). `ImportSession::surface_models`,
+  `import_surface_model` and `tessellate_shell` share the curved profile's decodes.
+  `AssemblyOptions::surface_models` (off by default, so every earlier result is
+  unchanged) places `SHELL_BASED_SURFACE_MODEL` roots through the product structure
+  as solids are placed, each shell a shell-mesh asset keyed by its entity
+  (`ShapeAsset::shell`, `AssemblyNode::shell`, `ShapeRootKind::SurfaceModel`), with
+  per-root failure text, colours from styles on the surface model, and the opt-in
+  repair stage applied one declared shell at a time.
+  `ImportedAssembly::asset_class` tells solids, closed shells and open shells apart,
+  and `has_solid_roots` whether the document holds a solid; which assets become bodies
+  is the consumer's policy (PreForm's: shells only in documents without solids). Fixtures:
+  `assembly-surface.step`, `assembly-surface-only.step`, `surface-unsewn.step`; the
+  `assembly` example takes `--surface-models` and `--repair`.
+- Curved import collapses stacked sliver faces: a sliver whose surviving edge a later
+  sliver merges passes its uses on to the last survivor instead of panicking
+  (`brep-stacked-slivers.step`; seen in the CAx-IF `trj3_s1-al-214` surface models
+  sewn under PreForm's settings).
 - Curved import takes `ImportOptions::deviation_floor`, a distance the accepted edge
   and vertex deviation never falls below whatever the factor makes of the model
   tolerance; a factor of 1 and strict import still accept none. The C API sets it

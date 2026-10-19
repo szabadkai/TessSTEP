@@ -8,6 +8,11 @@
 //! are placements. Placements come only from explicit occurrence relationships or
 //! mapped items; a missing or ambiguous placement fails, and no placement is ever
 //! defaulted to identity.
+//!
+//! Surface models join on request (`AssemblyOptions::surface_models`): a
+//! SHELL_BASED_SURFACE_MODEL root is placed exactly as a solid root is, and each of its
+//! shells becomes a shell-mesh asset. Which assets a consumer turns into bodies is its
+//! own policy ([`ImportedAssembly::asset_class`]).
 use super::*;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -15,11 +20,23 @@ use tessstep_mesh::Mesh;
 use tessstep_mesh::scene::{Asset, AssetId, Instance, InstanceId, Scene};
 use tessstep_product::{ExpansionLimits, Model, RepresentationId};
 
-/// An imported shape root: its mesh in metres, in its representation's coordinates.
+/// An imported shape root, or one shell of an imported surface-model root: its mesh in
+/// metres, in its representation's coordinates.
 #[derive(Clone, Debug)]
 pub struct ShapeAsset {
+    /// The shape root, placed wherever a representation holds it.
     pub root: EntityId,
+    /// For one shell of a SHELL_BASED_SURFACE_MODEL root, the shell entity its
+    /// SBSM_BOUNDARY lists; the root then has one asset per shell.
+    pub shell: Option<EntityId>,
     pub mesh: Arc<Mesh>,
+}
+impl ShapeAsset {
+    /// The scene asset ID: the shell's entity ID for a surface-model shell, else the
+    /// root's.
+    pub fn asset(&self) -> AssetId {
+        AssetId(self.shell.unwrap_or(self.root).get())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -27,6 +44,10 @@ pub struct AssemblyOptions {
     pub import: ImportOptions,
     pub expansion: ExpansionLimits,
     pub scene: tessstep_mesh::scene::Limits,
+    /// Link SHELL_BASED_SURFACE_MODEL roots as shape roots, and import each shell of
+    /// one as a shell-mesh asset ([`import_assembly`]). Off by default: surface models
+    /// are then neither placed, imported nor listed as unimported.
+    pub surface_models: bool,
 }
 
 /// A product record left out because its closure is outside the product profile.
@@ -51,8 +72,11 @@ pub struct AssemblyNode {
     pub occurrence: Option<EntityId>,
     /// The shape representation whose coordinates the node's children use.
     pub representation: EntityId,
-    /// The shape root of an asset leaf (its asset ID is the root's entity ID).
+    /// The shape root of an asset leaf (its asset ID is the root's entity ID, or the
+    /// shell's for a surface-model shell).
     pub root: Option<EntityId>,
+    /// The surface-model shell of a shell asset leaf; None for every other node.
+    pub shell: Option<EntityId>,
 }
 
 /// A product definition and the product it defines.
@@ -81,9 +105,11 @@ pub struct LinkedAssembly {
     pub(crate) held: BTreeMap<EntityId, Vec<EntityId>>,
 }
 impl LinkedAssembly {
-    /// Assets are every supplied shape, with `AssetId` equal to its root entity ID.
-    /// Definition nodes carry their occurrence placement; asset leaves are identity
-    /// children of the definition whose shape representation holds the root.
+    /// Assets are every supplied shape, with `AssetId` equal to its root entity ID
+    /// (its shell's for a surface-model shell, [`ShapeAsset::asset`]). Definition
+    /// nodes carry their occurrence placement; asset leaves are identity children of
+    /// the definition whose shape representation holds the root, one per asset of
+    /// the root.
     pub fn scene(&self) -> &Arc<Scene> {
         &self.scene
     }
@@ -98,7 +124,8 @@ impl LinkedAssembly {
     pub fn occurrence_count(&self) -> usize {
         self.occurrences
     }
-    /// Supplied shapes that no product definition's shape representation holds.
+    /// Roots of supplied shapes that no product definition's shape representation
+    /// holds, once per root.
     pub fn unplaced(&self) -> &[EntityId] {
         &self.unplaced
     }
@@ -128,8 +155,10 @@ impl LinkedAssembly {
 }
 
 /// Link supplied shapes to the document's product structure and build a scene.
-/// Shapes are keyed by their root entity (MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS,
-/// FACETED_BREP or a shape tessellation root); each is placed wherever a product
+/// Shapes are keyed by their asset ID ([`ShapeAsset::asset`]) and placed by their root
+/// entity (MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS, FACETED_BREP, a shape tessellation
+/// root or, with `options.surface_models`, a SHELL_BASED_SURFACE_MODEL, whose shells
+/// are its assets); each is placed wherever a product
 /// definition's shape representation, or a representation associated with it by an
 /// untransformed shape representation relationship in the same context, holds it.
 /// Occurrences are placed by context dependent shape representations (item defined
@@ -151,20 +180,43 @@ pub(crate) fn link_with(
     shapes: &[ShapeAsset],
     options: AssemblyOptions,
 ) -> Result<LinkedAssembly, Error> {
-    let document = session.document();
-    let solids = session.solids()?;
-    let tessellations = session.tessellations()?;
-    let mut held: BTreeMap<EntityId, Vec<EntityId>> = BTreeMap::new();
-    let roots = solids
+    let held = held(session, options)?;
+    link(session.document(), shapes, &held, options)
+}
+
+/// Discovered shape roots by containing representation: solids, tessellations and,
+/// when requested, surface models.
+fn held(
+    session: &ImportSession<'_>,
+    options: AssemblyOptions,
+) -> Result<BTreeMap<EntityId, Vec<EntityId>>, Error> {
+    let surface_models = if options.surface_models {
+        session.surface_models()?
+    } else {
+        &[]
+    };
+    let roots = session
+        .solids()?
         .iter()
         .map(|s| (s.entity, &s.representations))
-        .chain(tessellations.iter().map(|t| (t.entity, &t.representations)));
+        .chain(
+            session
+                .tessellations()?
+                .iter()
+                .map(|t| (t.entity, &t.representations)),
+        )
+        .chain(
+            surface_models
+                .iter()
+                .map(|m| (m.entity, &m.representations)),
+        );
+    let mut held: BTreeMap<EntityId, Vec<EntityId>> = BTreeMap::new();
     for (root, representations) in roots {
         for &r in representations {
             held.entry(r).or_default().push(root);
         }
     }
-    link(document, shapes, &held, options)
+    Ok(held)
 }
 
 pub(crate) fn link(
@@ -187,16 +239,23 @@ pub(crate) fn link(
         })?;
         Ok(())
     };
-    let mut meshes: BTreeMap<EntityId, &ShapeAsset> = BTreeMap::new();
+    // Each root's assets in supply order: one, or one per surface-model shell.
+    let mut ids = BTreeSet::new();
+    let mut meshes: BTreeMap<EntityId, Vec<&ShapeAsset>> = BTreeMap::new();
     for shape in shapes {
         charge(1)?;
-        if meshes.insert(shape.root, shape).is_some() {
+        if !ids.insert(shape.asset()) {
             return Err(product_error(
                 ErrorKind::InvalidOptions,
-                Some(shape.root),
-                "duplicate shape root",
+                Some(shape.shell.unwrap_or(shape.root)),
+                if shape.shell.is_some() {
+                    "duplicate surface-model shell"
+                } else {
+                    "duplicate shape root"
+                },
             ));
         }
+        meshes.entry(shape.root).or_default().push(shape);
     }
     let roots = product_roots(document, &mut charge)?;
     let mut mapped = occurrence_mapped_items(document, &roots, &mut charge)?;
@@ -325,6 +384,7 @@ pub(crate) fn link(
                     occurrence: inst.occurrence.map(|o| entity(o.0)),
                     representation: entity(inst.representation.0),
                     root: None,
+                    shell: None,
                 });
             }
             for (index, inst) in expansion.iter().enumerate() {
@@ -336,25 +396,29 @@ pub(crate) fn link(
                     charge(1)?;
                     for &root in held.get(&entity(r.0)).map_or(&[][..], Vec::as_slice) {
                         charge(1)?;
-                        if !meshes.contains_key(&root) {
+                        let Some(assets) = meshes.get(&root) else {
                             unimported.insert(root);
                             continue;
-                        }
+                        };
                         placed.insert(root);
-                        let id = InstanceId(instances.len() as u64 + 1);
-                        instances.push(Instance {
-                            id,
-                            parent: Some(InstanceId(base as u64 + index as u64 + 1)),
-                            asset: Some(AssetId(root.get())),
-                            local_transform: tessstep_mesh::scene::Transform::identity(),
-                        });
-                        nodes.push(AssemblyNode {
-                            instance: id,
-                            definition: entity(inst.definition.0),
-                            occurrence: None,
-                            representation: entity(r.0),
-                            root: Some(root),
-                        });
+                        for shape in assets {
+                            charge(1)?;
+                            let id = InstanceId(instances.len() as u64 + 1);
+                            instances.push(Instance {
+                                id,
+                                parent: Some(InstanceId(base as u64 + index as u64 + 1)),
+                                asset: Some(shape.asset()),
+                                local_transform: tessstep_mesh::scene::Transform::identity(),
+                            });
+                            nodes.push(AssemblyNode {
+                                instance: id,
+                                definition: entity(inst.definition.0),
+                                occurrence: None,
+                                representation: entity(r.0),
+                                root: Some(root),
+                                shell: shape.shell,
+                            });
+                        }
                     }
                 }
             }
@@ -363,7 +427,7 @@ pub(crate) fn link(
     let assets = shapes
         .iter()
         .map(|s| Asset {
-            id: AssetId(s.root.get()),
+            id: s.asset(),
             mesh: s.mesh.clone(),
         })
         .collect();
@@ -384,11 +448,14 @@ pub(crate) fn link(
         nodes,
         products,
         occurrences,
-        unplaced: shapes
-            .iter()
-            .map(|s| s.root)
-            .filter(|r| !placed.contains(r))
-            .collect(),
+        unplaced: {
+            let mut listed = BTreeSet::new();
+            shapes
+                .iter()
+                .map(|s| s.root)
+                .filter(|r| !placed.contains(r) && listed.insert(*r))
+                .collect()
+        },
         unimported: unimported.into_iter().collect(),
         excluded,
         mapped_placements,
@@ -767,6 +834,19 @@ fn adapter_error(document: &Document, e: tessstep_ap242::Error) -> Error {
 pub enum ShapeRootKind {
     Solid(SolidKind),
     Tessellated(TessellatedKind),
+    /// A SHELL_BASED_SURFACE_MODEL, imported as shells, never as a solid
+    /// ([`import_surface_model`]); only with `AssemblyOptions::surface_models`.
+    SurfaceModel,
+}
+impl ShapeRootKind {
+    /// A solid root: MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS, FACETED_BREP or
+    /// TESSELLATED_SOLID. Tessellated shells, surface sets and surface models are not.
+    pub fn is_solid(self) -> bool {
+        matches!(
+            self,
+            Self::Solid(_) | Self::Tessellated(TessellatedKind::Solid)
+        )
+    }
 }
 
 /// The outcome of importing one discovered shape root.
@@ -776,6 +856,7 @@ pub struct RootImport {
     pub kind: ShapeRootKind,
     /// Whether representation selection chose this root for its shape. An
     /// alternative is imported only when every earlier member of its group failed.
+    /// Always true for a surface model, which representation selection does not pair.
     pub selected: bool,
     pub result: Result<(), Error>,
     /// Tolerated encodings in the units of the root's context; zero when the root
@@ -816,7 +897,54 @@ impl Default for AssemblyImportOptions {
 #[derive(Clone, Debug)]
 pub struct ImportedAssembly {
     pub assembly: LinkedAssembly,
+    /// Solid and tessellation roots in representation-selection order, then surface
+    /// models in document order.
     pub roots: Vec<RootImport>,
+}
+
+/// What an assembly asset's mesh is. Which assets become bodies (printable parts,
+/// say) is the consumer's policy, not the importer's: a surface model may be a
+/// construction, cosmetic or thread surface lying in the same space as a solid, as in
+/// PP-31465, where such a SOLIDWORKS thread surface body filled a hole once printed.
+/// A consumer might keep closed shells only, or surface models only from documents
+/// without solids.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssetClass {
+    /// The mesh of a solid root (MANIFOLD_SOLID_BREP, BREP_WITH_VOIDS, FACETED_BREP or
+    /// TESSELLATED_SOLID): closed, with positive volume.
+    Solid,
+    /// A shell mesh without open boundary: a surface-model shell, tessellated shell
+    /// or surface set whose mesh is watertight. Its volume and orientation were never
+    /// checked; a shell declared open may close once sewn.
+    ClosedShell,
+    /// A shell mesh with an open boundary.
+    OpenShell,
+}
+
+impl ImportedAssembly {
+    /// The class of a scene asset (placed or not), or None when the scene holds no
+    /// such asset. Shell classes are read from the mesh (`Mesh::is_watertight`), not
+    /// from the declared closure ([`SurfaceShell::closed`]).
+    pub fn asset_class(&self, asset: AssetId) -> Option<AssetClass> {
+        let mesh = &self.assembly.scene().asset(asset)?.mesh;
+        let solid = self
+            .roots
+            .iter()
+            .any(|r| r.root.get() == asset.0 && r.kind.is_solid());
+        Some(if solid {
+            AssetClass::Solid
+        } else if mesh.is_watertight() {
+            AssetClass::ClosedShell
+        } else {
+            AssetClass::OpenShell
+        })
+    }
+    /// Whether the document holds a solid root ([`ShapeRootKind::is_solid`]), imported
+    /// or not. With [`Self::asset_class`] this states a consumer rule such as
+    /// PreForm's: surface-model shells become bodies only in documents without a solid.
+    pub fn has_solid_roots(&self) -> bool {
+        self.roots.iter().any(|r| r.kind.is_solid())
+    }
 }
 
 /// Discover every shape root, select one representation per shape, import it with
@@ -824,6 +952,14 @@ pub struct ImportedAssembly {
 /// structure. A root whose context declares no units is not imported: no unit is
 /// assumed. Failed roots are reported, not placed; their instances are listed as
 /// unimported.
+///
+/// With `options.assembly.surface_models`, every SHELL_BASED_SURFACE_MODEL root is
+/// also imported ([`import_surface_model`], with the root's model tolerance as for
+/// solids) and placed as solids are. Each shell is meshed as a shell
+/// ([`SurfaceShell::tessellate`]) and becomes an asset; the first failing shell fails
+/// the root. The opt-in repair stage (`options.assembly.import.repair`) applies to
+/// surface models here, one declared shell at a time: sewing never joins two shells.
+/// A shell that an earlier surface model already supplied fails the later root.
 pub fn import_assembly(
     document: &Document,
     options: AssemblyImportOptions,
@@ -850,6 +986,11 @@ pub(crate) fn import_with(
     let solids = session.solids()?;
     let tessellations = session.tessellations()?;
     let choices = session.representation_choices(options.preference)?;
+    let surface_models = if options.assembly.surface_models {
+        session.surface_models()?
+    } else {
+        &[]
+    };
     // Selected roots with units are imported first; decode each profile's together.
     let mut prepared: BTreeMap<ImportProfile, Vec<EntityId>> = BTreeMap::new();
     for choice in choices {
@@ -871,6 +1012,13 @@ pub(crate) fn import_with(
     for (profile, roots) in &prepared {
         session.prepare(*profile, roots);
     }
+    // Surface models share decodes among themselves, apart from the solids' group.
+    let models: Vec<EntityId> = surface_models
+        .iter()
+        .filter(|m| m.units.is_ok())
+        .map(|m| m.entity)
+        .collect();
+    session.prepare(ImportProfile::Brep, &models);
     let mut shapes = Vec::new();
     let mut roots = Vec::new();
     for choice in choices {
@@ -888,77 +1036,140 @@ pub(crate) fn import_with(
                     &tessellations[i].units,
                 ),
             };
-            let mesh = units
-                .clone()
-                .and_then(|u| import_root(session, root, kind, u, options));
-            let ok = mesh.is_ok();
-            roots.push(RootImport {
-                root,
-                kind,
-                selected: k == 0,
-                result: mesh.as_ref().map(|_| ()).map_err(Clone::clone),
-                tolerated: units.as_ref().map(|u| u.tolerated).unwrap_or_default(),
-            });
-            if let Ok(mesh) = mesh {
-                shapes.push(ShapeAsset {
-                    root,
-                    mesh: Arc::new(mesh),
-                });
-            }
+            let (report, assets) = import_root(session, root, kind, units, k == 0, options);
+            let ok = report.result.is_ok();
+            roots.push(report);
+            shapes.extend(assets);
             if ok {
                 break;
             }
         }
     }
-    let mut held: BTreeMap<EntityId, Vec<EntityId>> = BTreeMap::new();
-    let found = solids
-        .iter()
-        .map(|s| (s.entity, &s.representations))
-        .chain(tessellations.iter().map(|t| (t.entity, &t.representations)));
-    for (root, representations) in found {
-        for &r in representations {
-            held.entry(r).or_default().push(root);
+    // The surface model that supplied each shell asset.
+    let mut owners: BTreeMap<EntityId, EntityId> = BTreeMap::new();
+    for model in surface_models {
+        let root = model.entity;
+        let (mut report, assets) = import_root(
+            session,
+            root,
+            ShapeRootKind::SurfaceModel,
+            &model.units,
+            true,
+            options,
+        );
+        let shells: Vec<EntityId> = assets.iter().filter_map(|a| a.shell).collect();
+        if let Some((shell, owner)) = shells
+            .iter()
+            .find_map(|s| owners.get(s).map(|&owner| (*s, owner)))
+        {
+            report.result = Err(product_error(
+                ErrorKind::Unsupported,
+                Some(root),
+                &format!(
+                    "shell #{} is already a shell asset of surface model #{}",
+                    shell.get(),
+                    owner.get()
+                ),
+            ));
+        } else {
+            owners.extend(shells.into_iter().map(|s| (s, root)));
+            shapes.extend(assets);
         }
+        roots.push(report);
     }
+    let held = held(session, options.assembly)?;
     let assembly = link(document, &shapes, &held, options.assembly)?;
     Ok(ImportedAssembly { assembly, roots })
 }
 
+/// Import one discovered root with its context units and report it, with its assets
+/// when it imported: one mesh, or one per shell of a surface model.
 fn import_root(
+    session: &ImportSession<'_>,
+    root: EntityId,
+    kind: ShapeRootKind,
+    units: &Result<ContextUnits, Error>,
+    selected: bool,
+    options: AssemblyImportOptions,
+) -> (RootImport, Vec<ShapeAsset>) {
+    let assets = units
+        .clone()
+        .and_then(|u| shape_assets(session, root, kind, u, options));
+    let report = RootImport {
+        root,
+        kind,
+        selected,
+        result: assets.as_ref().map(|_| ()).map_err(Clone::clone),
+        tolerated: units.as_ref().map(|u| u.tolerated).unwrap_or_default(),
+    };
+    (report, assets.unwrap_or_default())
+}
+
+fn shape_assets(
     session: &ImportSession<'_>,
     root: EntityId,
     kind: ShapeRootKind,
     units: ContextUnits,
     options: AssemblyImportOptions,
-) -> Result<Mesh, Error> {
+) -> Result<Vec<ShapeAsset>, Error> {
+    let asset = |shell, mesh| ShapeAsset {
+        root,
+        shell,
+        mesh: Arc::new(mesh),
+    };
     match kind {
-        ShapeRootKind::Tessellated(_) => session
-            .import_tessellated(root, units.length, options.mesh)
-            .map(ImportedTessellation::into_mesh),
+        ShapeRootKind::Tessellated(_) => {
+            let imported = session.import_tessellated(root, units.length, options.mesh)?;
+            Ok(vec![asset(None, imported.into_mesh())])
+        }
         ShapeRootKind::Solid(solid) => {
-            let distance = units
-                .distance_uncertainty
-                .unwrap_or(options.minimum_model_tolerance)
-                .max(options.minimum_model_tolerance);
-            let invalid = |message: &str| Error {
-                kind: ErrorKind::InvalidOptions,
-                stage: Stage::Profile,
-                entity: Some(root),
-                source: None,
-                message: message.into(),
-            };
-            let model = ModelTolerance::new(
-                tessstep_math::Length::metres(distance)
-                    .map_err(|_| invalid("model tolerance out of range"))?,
-                tessstep_math::Angle::radians(1e-8).expect("finite angle"),
-            )
-            .map_err(|_| invalid("model tolerance out of range"))?;
+            let model = model_tolerance(root, &units, &options)?;
             let imported = if solid == SolidKind::FacetedBrep {
                 session.import_faceted_solid(root, units.length, model)?
             } else {
                 session.import_brep_solid(root, units.length, units.plane_angle, model)?
             };
-            session.tessellate(&imported, options.tolerance, options.tessellation)
+            let mesh = session.tessellate(&imported, options.tolerance, options.tessellation)?;
+            Ok(vec![asset(None, mesh)])
+        }
+        ShapeRootKind::SurfaceModel => {
+            let model = model_tolerance(root, &units, &options)?;
+            let imported =
+                session.surface_model(root, units.length, units.plane_angle, model, true)?;
+            imported
+                .shells()
+                .iter()
+                .map(|shell| {
+                    let mesh =
+                        session.tessellate_shell(shell, options.tolerance, options.tessellation)?;
+                    Ok(asset(Some(shell.entity()), mesh))
+                })
+                .collect()
         }
     }
+}
+
+/// A root's model tolerance: its context's length uncertainty, never below the
+/// options' minimum, which also applies when none is declared.
+fn model_tolerance(
+    root: EntityId,
+    units: &ContextUnits,
+    options: &AssemblyImportOptions,
+) -> Result<ModelTolerance, Error> {
+    let distance = units
+        .distance_uncertainty
+        .unwrap_or(options.minimum_model_tolerance)
+        .max(options.minimum_model_tolerance);
+    let invalid = || Error {
+        kind: ErrorKind::InvalidOptions,
+        stage: Stage::Profile,
+        entity: Some(root),
+        source: None,
+        message: "model tolerance out of range".into(),
+    };
+    ModelTolerance::new(
+        tessstep_math::Length::metres(distance).map_err(|_| invalid())?,
+        tessstep_math::Angle::radians(1e-8).expect("finite angle"),
+    )
+    .map_err(|_| invalid())
 }

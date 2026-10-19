@@ -1,3 +1,79 @@
+# Milestone 23.10: surface models in sessions and assemblies — 2026-10-19
+
+Delivered in Rust (C and C++ follow in ABI 1.2): `ImportSession::surface_models`,
+`import_surface_model` and `tessellate_shell`, sharing the curved profile's decodes;
+`AssemblyOptions::surface_models` (off by default), which places
+`SHELL_BASED_SURFACE_MODEL` roots through the product structure as solid roots are
+placed, with one shell-mesh asset per declared shell (`ShapeAsset::shell`,
+`AssemblyNode::shell`), `ShapeRootKind::SurfaceModel` root reports with their failure
+text, colours from styles on the surface model, and the opt-in repair stage applied
+one declared shell at a time; and `ImportedAssembly::asset_class` (solid, closed
+shell, open shell) with `has_solid_roots` for PreForm's rule (shells become bodies only
+in documents without a solid). The `assembly` example takes `--surface-models` and
+`--repair`.
+Measuring with repair under PreForm's settings found a panic in the curved importer's
+sliver collapse, now fixed: two stacked sliver faces whose first survivor the second
+merges (`brep-stacked-slivers.step`, `stacked_sliver_faces_collapse_onto_one_edge`;
+an OpenCASCADE CAx-IF surface model, `trj3_s1-al-214.stp`).
+
+The real corpus inputs that hold only surface models are the 82 real inputs of the
+bench reference (`ref_ts_corpus.jsonl`) that import without failure and have no
+solid or tessellation root (the roadmap's 81 are those HOOPS meshes): 709
+surface-model roots, all OpenCASCADE dataset files (CAx-IF exports from I-DEAS,
+Unigraphics, Pro/ENGINEER, CATIA V5, SolidDesigner and others). Under PreForm's settings the C survey and the
+default Rust assembly import give none of them a body. With surface models:
+
+| 82 surface-only inputs | `assembly --meshes --surface-models` (0.1 mm chord) | with `--repair` | PreForm's settings (Rust) |
+| --- | ---: | ---: | ---: |
+| Surface-model roots imported | 505 of 709 | 506 | 512 |
+| Shell assets (closed + open) | 684 (16 + 668) | 685 (16 + 669) | 692 (19 + 673) |
+| Files with a shell asset / a placed one | 65 / 62 | 65 / 62 | 67 / 64 |
+| Files with a closed shell (all their shells closed) | 16 | 16 | 18 |
+
+PreForm's settings are those of the bench's `ts_survey` (12.5 µm chord, 30°, sewing
+and orientation repair, the deviation floor at the chord, document-sized and raised
+budgets), reproduced through `ImportSession::import_assembly` by a scratch harness
+outside the repository, because C cannot request surface models before ABI 1.2; with
+surface models off, it gives every collection file the C survey's root and import
+counts. Per file against HOOPS Exchange as PreForm calls it (`ref_hoops_corpus.jsonl`),
+with TessSTEP's placed shells under PreForm's settings:
+
+| | TessSTEP closed | TessSTEP open | TessSTEP none |
+| --- | ---: | ---: | ---: |
+| HOOPS closed (35) | 16 | 13 | 6 |
+| HOOPS open (46) | 2 | 33 | 11 |
+| HOOPS none (1) | 0 | 0 | 1 |
+
+TessSTEP gives a body to 64 of the 81 files HOOPS meshes. The gap in closed shells is
+by design: 35 of the 82 files consist only of single-face open shells (CAx-IF models
+written face by face), which HOOPS sews across shells at 0.1 mm, while TessSTEP
+validates each declared shell as declared and never joins two. Of the 15 files with
+no shell asset under these settings (17 at the example's settings), one holds 168
+surface models that no shape representation contains (`bug25166_piston.stp`, no
+units); the others fail in curved import as their solid counterparts do: pcurves that
+miss the model tolerance (3), a contradicted `SAME_SENSE` (3), periodic loop windings
+(2), profile decodes (3), a horn torus, a non-manifold edge and a singular crossing.
+At the example's settings two more fail on edges or vertices beyond the deviation
+policy, which the deviation floor at the chord accepts.
+
+The hazard the policy note in [PRODUCT_MODEL.md](PRODUCT_MODEL.md#surface-models-in-assemblies-milestone-2310)
+names is real in both sets: of the 38 other real inputs with surface-model records
+(two of which the parser rejects), all 36 parsed ones hold solid roots, and 35 gain
+only open shells (95, of which 57 placed); in the PreForm collection 11 NIST PMI files
+gain 29 placed open construction surfaces beside their solids and no closed shell.
+PreForm's rule (surface-model shells become bodies only in documents without a solid
+root, `has_solid_roots`) keeps the 689 placed shells of the 64 surface-only files and
+adds none of these; keeping closed shells only would keep 19.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace --locked` (383 tests), fmt, Clippy (`-D warnings`, all targets), `cargo doc` (`-D warnings`) | passed: four `tests/assembly.rs` surface-model tests, two `tests/session.rs` tests, the per-shell sewing unit test and the stacked-sliver test are new |
+| `check_geometry.py --require-external` | 145 reviewed outcomes passed: the new fixtures with surface models off and on (`--surface-models`, `--repair`), the unsewn models through the single-root import and the survey, and the stacked slivers |
+| `check_product.py`, `check_corpus.py`, `check_architecture.py`, `conformance.py --check`, `test_corpus*.py` | passed (11 product outcomes, 151 fixtures with provenance) |
+| `check_capi.py --library-dir target/release` (no sanitizers) | passed; the C ABI, header and exports are unchanged |
+| `corpus.py --check --repeat 2` with the AP validator | 3,227 compatible, no regressions; 7 changed against the baseline saved before 9d7b376, exactly main's (`Gp054`, `OCC8229`, both `trj3_s1-ct`, `trj6_k1-sd-214`, `trj7_k1-sd-214`, `trj9_ap209-mp`); 786 meshed shape roots and 1,133 meshed surface models, as on main; 1,075 s on a heavily shared machine |
+| Default outcomes | the `assembly` example's output without the new flags, styles included, is identical to main's on the 120 real inputs with surface-model records and the 54 collection files; the bench's C `ts_survey` changes no file of the collection (`ref_ts_collection.jsonl`) or of the 2,072 corpus inputs (`ref_ts_corpus.jsonl`; 82 real inputs still without a root). Its collection times, at four jobs on a loaded machine, are no measurement |
+
 # The 646-root support attachment under PreForm's settings — 2026-10-10
 
 PreForm imports through the C++ wrapper's `import_assembly` with a 12.5 µm chord, a 30°

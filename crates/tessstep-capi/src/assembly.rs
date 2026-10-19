@@ -402,6 +402,8 @@ pub(crate) fn import(
                     ShapeRootKind::Tessellated(TessellatedKind::SurfaceSet) => {
                         TS_ROOT_TESSELLATED_SURFACE_SET
                     }
+                    // Not reachable from C yet: no C option requests surface models.
+                    ShapeRootKind::SurfaceModel => crate::TS_ROOT_SHELL_BASED_SURFACE_MODEL,
                 },
                 selected: u32::from(r.selected),
                 status,
