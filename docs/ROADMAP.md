@@ -29,6 +29,8 @@ Milestone 20 imports existing shape and presentation tessellations without retes
 Milestone 21 compiles the AP long forms for a corpus schema stage, records AP242 geometry
 coverage, and imports STEP assemblies as coloured scenes.
 Milestone 22 hardens the importers for industrial exports and freezes the C ABI 1.0.
+Milestone 23 (planned) makes the importers keep every body HOOPS Exchange meshes under
+PreForm's import settings, and no slower.
 AP conformance is not claimed. Read ARCHITECTURE.md, CONFORMANCE.md and the existing tests before starting every milestone. Finish code,
 tests, fmt/clippy, applicable corpus/fuzz runs, documentation, conformance updates
 and architecture review before declaring work done. Benchmarks
@@ -874,7 +876,9 @@ baseline movements, never a refreshed baseline.
   committed regression. Evidence: `scripts/test_fuzz.py`,
   `every_fuzz_target_has_a_stable_replay`, `committed_fuzz_findings_replay_without_failure`,
   `regression_replay_names_every_failing_finding_and_unknown_target`, and
-  [VALIDATION.md](VALIDATION.md). Not yet observed: an instrumented nightly run.
+  [VALIDATION.md](VALIDATION.md). First instrumented nightly runs: the scheduled runs of
+  2026-10-11 to 2026-10-13 ran all 15 targets instrumented and clean (236 million
+  executions on 2026-10-13, run 38377980764).
 - **22.10 Public interfaces — delivered 2026-10-10; ABI 1.0 export set frozen.**
   Single-root curved import, root and unit discovery, representation selection and
   import options (strictness, budgets, tolerance policy, repair opt-in) in C and C++,
@@ -963,6 +967,141 @@ an unclassified polygon error. The pinned Onshape exporter file moved to post-1.
 38025959160: Linux, macOS and Windows builds and tests, the MSRV, dependency policy
 and the external corpus), and the `v1.0.0` tag's Release workflow passed (run
 38026639055), drafting the 1.0.0 release with its four archives for review.
+
+**Milestone 23 — PreForm's import settings (planned 2026-10-13).**
+
+Goal: imported the way PreForm imports, TessSTEP keeps every body that HOOPS Exchange
+meshes, places no body twice, and is no slower or larger than HOOPS on large files.
+PreForm imports through the C++ `import_assembly` with a 12.5 µm chord, a 30° normal
+angle, sewing and orientation repair, and raised output budgets.
+
+**Baseline.** On 2026-10-13 both libraries ran on the 54 files of the internal PreForm
+CAD collection, each called as PreForm calls it: HOOPS Exchange 2026.5 imports, sews at
+0.1 mm and runs accurate tessellation. Each tool ran three times on one thread; nothing
+from the collection is committed.
+
+| | TessSTEP | HOOPS |
+| --- | --- | --- |
+| Files with closed meshes | 49 with the tolerant parse, 47 with PreForm's strict parse | 44, plus 9 open |
+| Time on the 48 files both mesh | 11.4 s (geometric mean 0.79× HOOPS's per file) | 14.5 s, plus 0.77 s SDK load |
+| Peak memory and triangles on those files | 0.45× and 0.37× HOOPS's | — |
+| `Bad_STEP.stp` (55.7 MB, 646 roots) | 641 bodies, 13.0 s, 1.24 GB peak | 646 bodies (6 open), 10.1 s, 0.86 GB |
+
+Wherever both meshes are closed, volumes agree within 0.015 %.
+
+**Reach in the external corpus.** The same comparison ran over the 2,072 corpus inputs
+that hold solids or surface models; 402 of them come from real exporters (OpenCASCADE
+dataset, NIST, stepcode, foxtrot). Of those 402:
+- HOOPS meshes 396: 296 closed, 100 open;
+- TessSTEP closes 271, 30 of them where the HOOPS mesh is open;
+- 81 contain only surface models, which `import_assembly` does not import, so PreForm
+  gets no body from TessSTEP; HOOPS meshes 35 of them closed and 46 open;
+- 48 lose some or all bodies in TessSTEP where HOOPS meshes. The causes are per-face
+  planar budgets (8 files), edges or vertices beyond the deviation policy (11), horn
+  tori (7), and 22 files with one-off geometry, trimming or decoding causes.
+
+On the 267 real files both mesh fully, TessSTEP takes 0.73× HOOPS's time and is faster
+on 173. It is slower on large multi-body files: `bug30790` 12.9 s against 4.7 s,
+`trj4_s1-ac-214` 8.4 s against 1.7 s. No corpus file fails on the coarse angle (23.1)
+or on sibling representations (23.3). The corpus is mostly older OpenCASCADE test data,
+so these counts measure reach, not the frequencies PreForm users see.
+
+Each item lands with an authored fixture, typed outcomes and reviewed corpus movements.
+The collection benchmark is repeated on every item.
+
+- **23.1 Coarse normal angles converge.** `Core__2_.step` (Onshape) meshes at 15° and
+  below. At 20° and above it fails at every chord from 12.5 to 100 µm: one face
+  exhausts `max_rounds`. A looser angle must never turn a converging face into a
+  failure.
+- **23.2 Per-face planar budgets follow the requested mesh.** At 12.5 µm three NIST
+  files lose their only body to the 10M `planar.max_work` per face:
+  `nist_ctc_02_asme1_rc`, `nist_ftc_09_asme1_rd` and `nist_stc_09_asme1_ap242-e3`. All
+  three mesh at 25 µm. In the corpus the same budgets, `planar.max_work` and
+  `planar.max_vertices`, cost 18 roots in 8 files. The OpenCASCADE `as1_motor`
+  assembly loses 8 of 22 bodies, and the CAx-IF `trj3_s1-ac-214` spaceship 7 of 8.
+  Raising `max_tessellation_work` does not lift the per-face budgets, and C cannot set
+  them. Size the per-face budgets from the solid's tessellation budget or from the face
+  boundary, or make planar triangulation cheaper; every budget stays named.
+- **23.3 Exact and tessellated sibling representations.** CATIA V5 writes a B-rep and
+  a `TESSELLATED_SOLID` whose geometric link is `$`. Each is related to the product's
+  shape representation by its own `SHAPE_REPRESENTATION_RELATIONSHIP`.
+  `import_assembly` places both, so the four NIST UUID plate exports from CATIA
+  V5-6R2022 import twice (+100 % volume) where HOOPS has one body. Representation
+  selection pairs such siblings and keeps the preferred one.
+- **23.4 Tolerant parsing in consumers.** The C++ `Document::parse(bytes, options)`
+  overload is strict, like `ts_document_parse`. PreForm calls it and rejects two files
+  that HOOPS opens: a literal backslash in `827-9999-904 rev c.stp` and a `$`
+  authorisation in `nist_stc_10_asme1_ap242-e2.stp`. Both import through the ABI 1.1
+  overload `parse(bytes, options, nullptr)`. Fix the consumer (PreForm side), and
+  state the strict default prominently in the C++ header and [C API](C_API.md).
+- **23.5 The last `Bad_STEP.stp` bodies and their corpus siblings.** Five of 646 roots
+  still fail. Two of their causes also cost real corpus files:
+  - **Deviations beyond the policy** (a vertex 27.8 µm off its curve; 11 corpus files).
+    PreForm's HOOPS path sews at 0.1 mm, while TessSTEP accepts at most 16 times the
+    model tolerance or the chord. When repair is requested, accept deviations up to
+    the sewing distance, as a counted adaptation.
+  - **Horn tori** (major radius equal to minor radius; 8 roots in 7 corpus files). Add
+    them as the limit of the spindle torus, with the apex on the axis.
+  - **The rest:** a pinched face (a 51 µm lobe under a 17 µm working tolerance), a
+    pinched vertex (`NonManifoldVertex`, rejected by design) and a plane overlapping
+    a fillet along generators that are no edges.
+
+  Each either imports with a counted adaptation or opt-in repair, or stays a decided,
+  named rejection.
+- **23.6 Parallel import in C and C++.** On `Bad_STEP.stp`, 12 of TessSTEP's 13.0 s
+  go to importing 646 independent roots one after another on a single thread.
+  - Append a thread count to `ts_import_options` (ABI 1.2) for
+    `TessellationOptions::threads`.
+  - Import independent roots of an assembly or session concurrently, with results that
+    do not depend on the thread count.
+  - Reduce peak parse memory (80 bytes per value today).
+- **23.7 PreForm integration.** The PreForm reader (`PP_WITH_TESSSTEP`) has these gaps:
+  - it is uncommitted;
+  - it links a checkout's `target/release` archive by path;
+  - it logs failed roots without telling the user;
+  - it has no fallback to HOOPS.
+
+  It also passes the 12.5 µm chord to every model, where its HOOPS path coarsens the
+  chord for models larger than the largest build volume. Consume the release package
+  (`TessSTEP::TessSTEP_static`, and the iOS XCFramework for the iPad build), parse
+  tolerantly (23.4), scale the chord as the HOOPS path does, and decide the
+  failed-root policy. A per-file fallback to HOOPS when TessSTEP loses a body would
+  turn every remaining gap into today's behaviour instead of a lost part. Add a
+  PreForm regression over the collection. The work lands in PreForm; TessSTEP
+  supplies the package and any API it needs.
+- **23.8 Releases.** Release 1.1.0 from the prepare-release workflow: ABI 1.1, plus the
+  HOOPS parity, `Bad_STEP.stp` and iOS changes of the Unreleased section. Release
+  1.2.0 with this milestone.
+- **23.10 Surface models in sessions and assemblies.** 81 of the 402 real corpus files
+  hold only `SHELL_BASED_SURFACE_MODEL` roots. They come from I-DEAS, OpenCASCADE,
+  Unigraphics, Pro/ENGINEER, CATIA V5 and other exporters. `import_surface_model`
+  meshes 669 of these shells, but the session and `import_assembly` skip surface models
+  (a post-1.0 item in [C API](C_API.md#post-10)). Place surface-model roots in sessions
+  and assemblies on request, as shell meshes that report open or closed and are never
+  called solids. Sewing their open shells is opt-in. Which shells a consumer turns into
+  printable bodies stays its own policy: in PP-31465, a SOLIDWORKS thread surface body
+  in the same space as its solid filled a hole when the surface was printed.
+- **23.9 Reviewed corpus baseline.** The baseline has not been saved since 9d7b376: 778
+  → 786 meshed shape roots, 1,130 → 1,133 surface models. Run `corpus.py --check`,
+  review it and save, then again with each item above.
+
+Order, by measured impact (re-evaluated 2026-10-13):
+1. 23.9, 23.4 and 23.8 (1.1.0), since they change no import code.
+2. 23.3, because a duplicated body is wrong output that no fallback detects.
+3. 23.10 (81 real files) and 23.2 (11 files).
+4. 23.6, for the large multi-body files.
+5. 23.5 (deviation policy, 12 files; horn tori, 8 files).
+6. 23.1 (1 file; until then PreForm can pass 15° or less, since TessSTEP's normal angle
+   and HOOPS's segment angle measure different things).
+7. 23.7 closes the milestone, with the C/C++ exposure of 23.2, 23.6 and 23.10 in one
+   ABI 1.2 revision.
+
+Exit criteria:
+- Under PreForm's settings, the collection benchmark loses no body HOOPS meshes, apart
+  from decided rejections, and places no body twice.
+- `Bad_STEP.stp` imports within HOOPS's time and peak memory.
+- The external corpus check has no regressions.
+- PreForm reads STEP through the released package.
 
 Milestone 4 connects physical instances to schema-aware decoding. Milestone 5 builds
 product/representation/units/assembly semantics. Milestones 6–10 build independent math,
