@@ -115,9 +115,11 @@ impl ImportedSurfaceModel {
 /// volume or outward orientation is required. Each shell is then kept as its own
 /// validated B-rep. VERTEX_SHELL and WIRE_SHELL boundaries are outside the profile.
 /// Shells keep their EDGE_CURVE and VERTEX_POINT identities; nothing is sewn: the
-/// opt-in repair stage (`options.repair`) does not apply, since sewing could join
-/// declared shells. The tolerance policy (`options.deviation_factor`) does, and each
-/// shell is validated at the working tolerance it implies.
+/// opt-in repair stage (`options.repair`) does not apply here. Assemblies that
+/// request surface models apply it (`AssemblyOptions::surface_models`), where it sews
+/// and orients each declared shell on its own. The tolerance policy
+/// (`options.deviation_factor`) applies, and each shell is validated at the working
+/// tolerance it implies.
 pub fn import_surface_model(
     document: &Document,
     root: EntityId,
@@ -126,13 +128,42 @@ pub fn import_surface_model(
     tolerance: ModelTolerance,
     options: ImportOptions,
 ) -> Result<ImportedSurfaceModel, Error> {
-    let options = ImportOptions {
-        repair: RepairOptions::default(),
-        ..options
+    let decoded = decode_roots(document, &[root], options)?;
+    adapt_model(
+        &decoded, None, root, length, angle, tolerance, options, false,
+    )
+}
+
+/// Adapt one decoded surface model root, as [`adapt`] adapts a solid; `closure` is
+/// that of [`adapt`]. With `repair` the opt-in repair stage of `options` applies:
+/// sewing merges only vertices and free edges within one declared shell
+/// (`tessstep_topology::plan_sewing` keeps candidates per shell, and an edge or vertex
+/// that two shells use is never free), face orientation is made consistent per shell,
+/// and no shell is reoriented by volume, since no solid is built.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn adapt_model(
+    decoded: &DecodedDocument<'_>,
+    closure: Option<&[EntityId]>,
+    root: EntityId,
+    length: LengthUnit,
+    angle: AngleUnit,
+    tolerance: ModelTolerance,
+    options: ImportOptions,
+    repair: bool,
+) -> Result<ImportedSurfaceModel, Error> {
+    let document = decoded.document();
+    let options = if repair {
+        options
+    } else {
+        ImportOptions {
+            repair: RepairOptions::default(),
+            ..options
+        }
     };
     let mut declared = Vec::new();
-    let imported = import_shells(
-        document,
+    let imported = adapt(
+        decoded,
+        closure,
         root,
         length,
         angle,
@@ -311,5 +342,71 @@ pub(super) fn reference_type(document: &Document, e: &decode::Error) -> String {
             )
         }
         None => e.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The repair counts behind an assembly import with surface models, whose public
+    /// results show only the shells (`tests/assembly.rs`): sewing merges within one
+    /// declared shell, never across two.
+    #[test]
+    fn sewing_merges_within_one_declared_shell_only() {
+        let text = include_str!("../../../../corpus/geometry/surface-unsewn.step");
+        let doc = tessstep_model::parse(text.as_bytes(), tessstep_part21::ParseLimits::default())
+            .unwrap();
+        let options = ImportOptions {
+            repair: RepairOptions::enabled(),
+            ..ImportOptions::default()
+        };
+        let tolerance =
+            ModelTolerance::new(Length::metres(1e-7).unwrap(), Angle::radians(1e-8).unwrap())
+                .unwrap();
+        let (length, angle) = (LengthUnit::MILLIMETRE, AngleUnit::RADIAN);
+        // Merged vertices and edges of the whole model, and each shell's boundary.
+        let import = |root: u64| {
+            let root = EntityId::new(root).unwrap();
+            let decoded = decode_roots(&doc, &[root], options).unwrap();
+            let mut declared = Vec::new();
+            let model = adapt(
+                &decoded,
+                None,
+                root,
+                length,
+                angle,
+                tolerance,
+                options,
+                Some(&mut declared),
+            )
+            .unwrap();
+            let shells = adapt_model(
+                &decoded, None, root, length, angle, tolerance, options, true,
+            )
+            .unwrap();
+            let boundary: Vec<_> = shells.shells.iter().map(|s| s.boundary_edges).collect();
+            let repairs = model.repairs();
+            (repairs.merged_vertices, repairs.merged_edges, boundary)
+        };
+        // Two single-face shells side by side keep their coincident edges apart.
+        assert_eq!(import(1001), (0, 0, vec![4, 4]));
+        // The same squares in one shell: two vertices and one edge merge.
+        assert_eq!(import(1002), (2, 1, vec![6]));
+        // The open box closes without becoming a closed shell or a solid.
+        assert_eq!(import(1000), (16, 12, vec![0]));
+        let decoded = decode_roots(&doc, &[EntityId::new(1000).unwrap()], options).unwrap();
+        let root = EntityId::new(1000).unwrap();
+        let boxed = adapt_model(
+            &decoded, None, root, length, angle, tolerance, options, true,
+        )
+        .unwrap();
+        assert!(!boxed.shells[0].closed && boxed.shells[0].brep.data().solids.is_empty());
+        // Without repair the box stays disconnected.
+        let e = adapt_model(
+            &decoded, None, root, length, angle, tolerance, options, false,
+        )
+        .unwrap_err();
+        assert_eq!(e.message, "DisconnectedShell at shell 0");
     }
 }

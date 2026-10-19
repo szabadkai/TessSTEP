@@ -1120,7 +1120,8 @@ The collection benchmark is repeated on every item.
 - **23.8 Releases.** Release 1.1.0 from the prepare-release workflow: ABI 1.1, plus the
   HOOPS parity, `Bad_STEP.stp` and iOS changes of the Unreleased section. Release
   1.2.0 with this milestone.
-- **23.10 Surface models in sessions and assemblies.** 81 of the 402 real corpus files
+- **23.10 Surface models in sessions and assemblies — delivered 2026-10-19 (Rust; C
+  and C++ follow in ABI 1.2).** 81 of the 402 real corpus files
   hold only `SHELL_BASED_SURFACE_MODEL` roots. They come from I-DEAS, OpenCASCADE,
   Unigraphics, Pro/ENGINEER, CATIA V5 and other exporters. `import_surface_model`
   meshes 669 of these shells, but the session and `import_assembly` skip surface models
@@ -1129,6 +1130,38 @@ The collection benchmark is repeated on every item.
   called solids. Sewing their open shells is opt-in. Which shells a consumer turns into
   printable bodies stays its own policy: in PP-31465, a SOLIDWORKS thread surface body
   in the same space as its solid filled a hole when the surface was printed.
+  Delivered: sessions discover surface models once and import them from the curved
+  profile's shared decodes (`ImportSession::surface_models`, `import_surface_model`,
+  `tessellate_shell`). `AssemblyOptions::surface_models`, off by default, places them
+  through the product structure as solids are placed; each declared shell is
+  validated as declared and becomes one shell-mesh asset keyed by its entity
+  (`ShapeAsset::shell`, `AssemblyNode::shell`), never a solid. Root reports carry
+  `ShapeRootKind::SurfaceModel` and the failure text; styles on a surface model colour
+  its shells; the repair flags sew and orient one declared shell at a time (sewing
+  never joins two). `ImportedAssembly::asset_class` reports solid, closed shell or
+  open shell and `has_solid_roots` whether the document holds a solid;
+  [PRODUCT_MODEL.md](PRODUCT_MODEL.md#surface-models-in-assemblies-milestone-2310)
+  leaves the choice of bodies to the consumer (PreForm decided on shells only in
+  documents without a solid). Under PreForm's settings (a Rust harness, as C cannot
+  ask before ABI 1.2), 67 of the 82 surface-only real inputs get shell assets, 64 of
+  them placed: 692 shells, 19 closed in 18 files. HOOPS meshes 81 of them, 35 closed
+  and 46 open; TessSTEP gives a body to 64 of those 81. Of the 82, 35 are written
+  face by face (single-face open shells), which HOOPS sews across shells; TessSTEP
+  keeps declared shells apart. Beside their solids, 35 other real inputs and 11 NIST
+  files of the PreForm collection gain only open construction surfaces, which
+  PreForm's rule leaves out. The measurement also found and fixed a panic on stacked
+  sliver faces. Defaults are unchanged (corpus check, C survey of the collection and
+  the corpus). Evidence:
+  `surface_models_join_an_assembly_only_on_request`,
+  `a_closed_surface_model_imports_as_a_watertight_shell_asset_not_a_solid`,
+  `surface_model_failures_are_reported_per_root_with_their_text`,
+  `opt_in_repair_sews_each_declared_shell_of_a_surface_model_on_its_own`,
+  `sewing_merges_within_one_declared_shell_only`,
+  `surface_models_share_decodes_through_the_session`,
+  `assembly_import_with_surface_models_decodes_them_together`,
+  `stacked_sliver_faces_collapse_onto_one_edge`; fixtures `assembly-surface.step`,
+  `assembly-surface-only.step`, `surface-unsewn.step`, `brep-stacked-slivers.step`;
+  [VALIDATION.md](VALIDATION.md).
 - **23.9 Reviewed corpus baseline — saved 2026-10-19.** The baseline had not been
   saved since 9d7b376. The check against it moved exactly seven inputs, all
   improvements from that commit: OCC8229, both `trj3_s1-ct` variants and a root of

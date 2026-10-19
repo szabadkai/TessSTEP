@@ -239,7 +239,10 @@ Each loop is classified by its winding in the periodic surface axes.
   ([tolerance policy](#tolerance-policy)), as every later check does: a sliver whose
   B-spline tail ends at a vertex 9 µm off its arc runs that far from the arc, and
   trimming would otherwise reject the face it bounds, 22 µm long under a 19 µm
-  working tolerance, as a degenerate loop.
+  working tolerance, as a degenerate loop. Stacked slivers collapse in turn: when a
+  sliver's surviving edge is merged by a later sliver, its uses follow on to the last
+  survivor (`stacked_sliver_faces_collapse_onto_one_edge`; this panicked before
+  2026-10-19, in a sewn OpenCASCADE surface model under PreForm's settings).
 * **Coincident faces.** A face bounded by one loop that splits into a chain shared
   with one neighbour and a chain shared with other faces, whose sampled boundary and
   interior lie within the model tolerance of the neighbour's surface *facing away
@@ -615,9 +618,22 @@ budgets. Profile, geometry, topology and tessellation errors are typed as for so
 located at the failing entity, the model root (model topology) or the shell
 (per-shell topology and tessellation). The [tolerance policy](#tolerance-policy)
 applies, and each shell is validated at the working tolerance it implies; the opt-in
-[topology repair](#opt-in-topology-repair) does not, since sewing could join declared
-shells (`surface_models_ignore_the_opt_in_repair_stage`). C and C++ import surface
-models through `ts_document_import_surface_model` ([C API](C_API.md)).
+[topology repair](#opt-in-topology-repair) does not
+(`surface_models_ignore_the_opt_in_repair_stage`). C and C++ import surface models
+through `ts_document_import_surface_model` ([C API](C_API.md)).
+
+Sessions discover surface models once (`ImportSession::surface_models`) and import
+them from the curved profile's shared decodes (`ImportSession::import_surface_model`,
+prepared with `ImportProfile::Brep`, with results equal to the free function's);
+`ImportSession::tessellate_shell` counts a shell mesh against the session's triangle
+budget. Assemblies place surface models on request (`AssemblyOptions::surface_models`,
+Milestone 23.10), one shell-mesh asset per shell, and there the repair stage applies
+one declared shell at a time: sewing plans merges inside one shell only, because
+`plan_sewing` takes candidate vertices used by a single shell and pairs free edges
+per shell, and an edge or vertex two shells share is never free; no volume-sign
+reorientation runs without a solid
+([products](PRODUCT_MODEL.md#surface-models-in-assemblies-milestone-2310),
+`sewing_merges_within_one_declared_shell_only`).
 
 Evidence: `tests/surface_model.rs` and
 [`surface_fixtures.py`](../corpus/geometry/surface_fixtures.py): an open shell of a
@@ -626,7 +642,12 @@ half-cylinder trough between a planar and a bilinear B-spline flange (area
 `ORIENTED_OPEN_SHELL(.F.)` (every triangle and normal reversed); a model holding a
 closed cylinder shell (volume `2000π` mm³) and an inward box (signed volume
 `-1000` mm³); and rejections of a declared closed shell that is open (`OpenShell`), a
-`VERTEX_SHELL`, a disconnected open shell, strict `$` slots and zero budgets. Two
+`VERTEX_SHELL`, a disconnected open shell, strict `$` slots and zero budgets.
+`surface-unsewn.step` holds an open box shell whose faces share no edge or vertex, two
+one-square shells side by side with their own copies of the common edge, and the same
+squares as one shell; the single-root import rejects the first and the last as
+`DisconnectedShell` and imports the two shells, which an assembly with repair also
+keeps apart while it closes the box and joins the squares of the one shell. Two
 unmodified exporter files are hash-pinned in
 [external-surface.json](../corpus/geometry/external-surface.json): a CATIA V5 surface
 export of 58 single-face open shells and a Pro/ENGINEER closed shell of 52 faces.

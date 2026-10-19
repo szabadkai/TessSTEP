@@ -53,9 +53,21 @@ representation holds an annotation plane with a callout of one tessellated polyl
 
 assembly-sibling-breps.step: the same layout with two B-rep representations of
 blocks 50 mm apart and no tessellation: two bodies of one part.
+
+assembly-surface.step: `rig` places the faceted `block` once and the open `trough`
+surface model (the half-cylinder trough of surface_fixtures.py, one OPEN_SHELL in a
+MANIFOLD_SURFACE_SHAPE_REPRESENTATION) twice: 50 mm along x, and turned a quarter
+about z at 100 mm along x. A surface model is linked only on request.
+
+assembly-surface-only.step: `skin` is a surface model of one CLOSED_SHELL cylinder
+(r=10, h=20, enclosing 2000 pi mm3) whose styled item colours the surface model red,
+and a second, open surface model sits in a representation that no product uses.
 """
 import argparse
 from pathlib import Path
+
+from brep_fixtures import Step, cylinder
+from surface_fixtures import trough
 
 HEADER = """ISO-10303-21;
 HEADER;
@@ -445,6 +457,55 @@ def siblings(tessellated=True):
     return w
 
 
+class SurfaceWriter(Step):
+    """A Writer whose records also hold the curved geometry of surface models."""
+
+    def __init__(self):
+        super().__init__("")
+
+    def frame(self, origin, z=(0, 0, 1), x=(1, 0, 0)):
+        return self.placement(origin, z, x)
+
+
+def surface_part(w, geometric, name, shell, faces):
+    """A SHELL_BASED_SURFACE_MODEL of one `shell` record and its manifold surface shape
+    representation; returns (rep, origin, model)."""
+    boundary = w.add(f"{shell}('',(" + ",".join(f"#{f}" for f in faces) + "))")
+    model = w.add(f"SHELL_BASED_SURFACE_MODEL('{name}',(#{boundary}))")
+    origin = w.frame((0, 0, 0))
+    rep = w.add(f"MANIFOLD_SURFACE_SHAPE_REPRESENTATION('{name}',(#{model},#{origin}),#{geometric})")
+    return rep, origin, model
+
+
+def surfaces():
+    w = SurfaceWriter()
+    product_context, definition_context, geometric = context(w)
+    block_rep, block_origin, _ = block(w, geometric)
+    block_definition = product(w, "block", product_context, definition_context, block_rep)
+    trough_rep, trough_origin, _ = surface_part(w, geometric, "trough", "OPEN_SHELL", trough(w))
+    trough_definition = product(w, "trough", product_context, definition_context, trough_rep)
+    origin, first = w.frame((0, 0, 0)), w.frame((0, 0, 0))
+    moved, turned = w.frame((50, 0, 0)), w.frame((100, 0, 0), z=(0, 0, 1), x=(0, 1, 0))
+    rep = w.add(f"SHAPE_REPRESENTATION('rig',(#{origin},#{first},#{moved},#{turned}),#{geometric})")
+    rig = product(w, "rig", product_context, definition_context, rep)
+    occurrence(w, "block-1", rig, block_definition, block_rep, block_origin, rep, first)
+    occurrence(w, "trough-1", rig, trough_definition, trough_rep, trough_origin, rep, moved)
+    occurrence(w, "trough-2", rig, trough_definition, trough_rep, trough_origin, rep, turned)
+    return w
+
+
+def surface_only():
+    w = SurfaceWriter()
+    product_context, definition_context, geometric = context(w)
+    rep, _, skin = surface_part(w, geometric, "skin", "CLOSED_SHELL", cylinder(w, 10, 0, 20))
+    product(w, "skin", product_context, definition_context, rep)
+    surface_part(w, geometric, "loose", "OPEN_SHELL", trough(w))
+    red = w.add("COLOUR_RGB('',0.8,0.2,0.2)")
+    styled = w.add(f"STYLED_ITEM('color',(#{surface_style(w, red)}),#{skin})")
+    w.add(f"MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#{styled}),#{geometric})")
+    return w
+
+
 def encoded(encoding):
     w = Writer()
     product_context, definition_context, geometric = context(w, inch=encoding == "untyped", encoding=encoding)
@@ -469,6 +530,9 @@ FIXTURES = {
                                siblings),
     "assembly-sibling-breps.step": ("Original part with two B-rep sibling representations",
                                     lambda: siblings(tessellated=False)),
+    "assembly-surface.step": ("Original assembly placing a faceted block once and an open surface model twice", surfaces),
+    "assembly-surface-only.step": ("Original part whose shape is a closed surface model, and an unplaced open surface model",
+                                   surface_only),
 }
 
 

@@ -15,6 +15,7 @@ use crate::pcurve::{
     sub,
 };
 use std::f64::consts::TAU;
+pub(crate) use surface_model::adapt_model;
 pub use surface_model::{ImportedSurfaceModel, SurfaceShell, import_surface_model};
 use tessstep_curves::spline::{NurbsCurve, SplineLimits};
 use tessstep_math::{Angle, AngleUnit, Length, ParameterSpace};
@@ -133,25 +134,9 @@ pub fn import_brep_solid(
     tolerance: ModelTolerance,
     options: ImportOptions,
 ) -> Result<ImportedSolid, Error> {
-    import_shells(document, root, length, angle, tolerance, options, None)
-}
-
-/// The curved import of a solid's shells or, when `surface` is given, of the shells of
-/// a SHELL_BASED_SURFACE_MODEL root, each recorded there with its declared closure
-/// (entity, closed).
-/// A surface model's result has one kernel shell per declared shell and no solid.
-fn import_shells(
-    document: &Document,
-    root: EntityId,
-    length: LengthUnit,
-    angle: AngleUnit,
-    tolerance: ModelTolerance,
-    options: ImportOptions,
-    surface: Option<&mut Vec<(EntityId, bool)>>,
-) -> Result<ImportedSolid, Error> {
     let decoded = decode_roots(document, &[root], options)?;
     adapt(
-        &decoded, None, root, length, angle, tolerance, options, surface,
+        &decoded, None, root, length, angle, tolerance, options, None,
     )
 }
 
@@ -206,7 +191,9 @@ pub(crate) fn decode_roots<'a>(
 /// Adapt one decoded root. `closure` is `None` when `decoded` holds exactly the
 /// root's closure; a session that decoded several roots together passes the root's
 /// closure in declaration order, so the supplied pcurves scanned below are the
-/// root's own.
+/// root's own. With `surface` the root is a SHELL_BASED_SURFACE_MODEL whose declared
+/// shells are recorded there (entity, closed): the result has one kernel shell per
+/// declared shell and no solid.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn adapt(
     decoded: &DecodedDocument<'_>,
@@ -2049,7 +2036,8 @@ impl Builder {
     }
     /// Retarget every use and entity link of each `merged` edge onto its survivor
     /// (flipping the use when the survivor runs the other way), then compact the edge
-    /// table.
+    /// table. A survivor merged in turn (stacked slivers) passes its uses on to its
+    /// own survivor; a merged edge is never a later survivor, so the chain ends.
     pub(super) fn retarget(
         &mut self,
         faces: &mut [FaceRecord],
@@ -2066,8 +2054,12 @@ impl Builder {
             }
         }
         self.edges = compact;
-        let target = |edge: usize| -> (usize, bool) {
-            let (edge, flip) = merged.get(&edge).copied().unwrap_or((edge, false));
+        let target = |mut edge: usize| -> (usize, bool) {
+            let mut flip = false;
+            while let Some(&(survivor, opposite)) = merged.get(&edge) {
+                edge = survivor;
+                flip ^= opposite;
+            }
             (remap[edge].expect("survivors are kept"), flip)
         };
         for face in faces.iter_mut() {

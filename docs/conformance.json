@@ -762,7 +762,13 @@
       "feature": "Shell-based surface models in curved STEP import",
       "status": "implemented",
       "test": "surface_model_closed_shells_are_watertight_shells_not_solids",
-      "limitations": "SHELL_BASED_SURFACE_MODEL of OPEN_SHELL/CLOSED_SHELL (and ORIENTED_ forms) with curved-profile faces; one validated B-rep and one connected mesh per shell, watertight when closed, never a solid (no volume or orientation check); no sewing; Rust only"
+      "limitations": "SHELL_BASED_SURFACE_MODEL of OPEN_SHELL/CLOSED_SHELL (and ORIENTED_ forms) with curved-profile faces; one validated B-rep and one connected mesh per shell, watertight when closed, never a solid (no volume or orientation check); the single-root import never sews"
+    },
+    {
+      "feature": "Surface models in sessions and assemblies",
+      "status": "implemented",
+      "test": "surface_models_join_an_assembly_only_on_request",
+      "limitations": "Rust only (C/C++ in ABI 1.2); AssemblyOptions::surface_models, off by default; placed as solid roots are; one shell-mesh asset per shell keyed by the shell entity; the first failing shell fails its root; opt-in repair per declared shell; no representation pairing with tessellations; the asset class (solid, closed or open shell) is reported and the choice of bodies is the consumer's"
     },
     {
       "feature": "NURBS surface isoparametric curves",

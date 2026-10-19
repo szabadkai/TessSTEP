@@ -104,7 +104,11 @@ The fill colour wins over the rendering colour; opacity is one minus the transpa
 `COLOUR_RGB` components are read as sRGB-encoded display values and converted to linear
 light; `DRAUGHTING_PRE_DEFINED_COLOUR` names map to the ISO 10303-46 colours. A style on
 a solid root, its outer shell or a shape representation holding it binds the asset; a
-style on a face binds that asset face (mesh face IDs are STEP face IDs). An over-riding
+style on a face binds that asset face (mesh face IDs are STEP face IDs). When an
+assembly imports surface models (Milestone 23.10), a style on a surface model, on one
+of its shells or on a representation holding it binds each of its shell assets
+(`a_closed_surface_model_imports_as_a_watertight_shell_asset_not_a_solid`); without
+them the style counts as unimported, as before. An over-riding
 style wins on its target, then a direct target over a derived one, then document order
 (conflicts are counted). Materials are the distinct colours in order of first use.
 

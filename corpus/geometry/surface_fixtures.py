@@ -16,6 +16,14 @@ volume 2000 pi mm3) and an ORIENTED_CLOSED_SHELL(.F.) of a 10 mm box beside it
 trough faces as a CLOSED_SHELL (rejected: open); #1002 is a VERTEX_SHELL (outside
 the profile).
 
+surface-unsewn.step: defects that only the opt-in repair stage of an assembly import
+with surface models sews. #1000 is one OPEN_SHELL of the six faces of a 10 x 20 x 30 mm
+box, each face with its own vertices and edges (disconnected; sewn, it closes). #1001
+holds two OPEN_SHELLs of one 10 mm square each, side by side in z=0 and each with its
+own copy of their common edge: two valid shells that sewing must keep apart. #1002 is
+one OPEN_SHELL of the same two squares (disconnected; sewn, one open shell with six
+boundary edges).
+
 Run from the repository root: python3 corpus/geometry/surface_fixtures.py
 The output is deterministic; check_geometry.py regenerates the fixtures into a
 temporary directory (``--output DIR``) and requires identical bytes.
@@ -24,6 +32,7 @@ import argparse
 from pathlib import Path
 
 from brep_fixtures import Step, box, cylinder, num
+from repair_fixtures import patched_box
 
 HERE = Path(__file__).resolve().parent
 OUTPUT = HERE
@@ -89,6 +98,17 @@ def trough(s):
     ]
 
 
+def square(s, x0):
+    """A 10 mm square in z=0 from x0 to x0+10 facing +z, with its own vertices and edges."""
+    corners = [(x0, 0, 0), (x0 + 10, 0, 0), (x0 + 10, 10, 0), (x0, 10, 0)]
+    v = [s.vertex(c) for c in corners]
+    uses = []
+    for i in range(4):
+        a, b = corners[i], corners[(i + 1) % 4]
+        uses.append((s.edge(v[i], v[(i + 1) % 4], s.line(a, [b[k] - a[k] for k in range(3)])), True))
+    return s.face([s.bound(uses, outer=True)], s.plane(corners[0], (0, 0, 1)))
+
+
 def fixtures():
     s = Step("Original open surface model: half-cylinder trough between a planar and a B-spline flange")
     shell = s.add(f"OPEN_SHELL('',({','.join(f'#{f}' for f in trough(s))}))")
@@ -108,6 +128,16 @@ def fixtures():
         f"SHELL_BASED_SURFACE_MODEL('',(#{cylinder_shell},#{inward}))",
         f"SHELL_BASED_SURFACE_MODEL('',(#{declared_closed}))",
         f"SHELL_BASED_SURFACE_MODEL('',(#{vertex_shell}))",
+    ])
+
+    s = Step("Original unsewn surface models: an open box shell and two squares, in two shells and in one")
+    box_shell = s.add(f"OPEN_SHELL('',({','.join(f'#{f}' for f in patched_box(s, vertex_key=lambda f, c: (f, c)))}))")
+    apart = [s.add(f"OPEN_SHELL('',(#{square(s, x)}))") for x in (0, 10)]
+    together = s.add(f"OPEN_SHELL('',(#{square(s, 0)},#{square(s, 10)}))")
+    write(s, "surface-unsewn.step", [
+        f"SHELL_BASED_SURFACE_MODEL('',(#{box_shell}))",
+        f"SHELL_BASED_SURFACE_MODEL('',({','.join(f'#{a}' for a in apart)}))",
+        f"SHELL_BASED_SURFACE_MODEL('',(#{together}))",
     ])
 
 

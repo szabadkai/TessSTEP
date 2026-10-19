@@ -179,7 +179,10 @@ once. Each discovery pass (`solids`, `tessellations`, `presentations`,
 several roots' closures with one `ImportProfile` (`Faceted`, `Planar`, `Brep` or
 `Tessellated`, the last shared by shape tessellations and annotation occurrences)
 together; each `import_*` call then adapts its root from that shared decode, and
-`tessellate` meshes a solid. Unprepared roots are decoded alone.
+`tessellate` meshes a solid. Unprepared roots are decoded alone. Surface models are a
+discovery pass of their own (`surface_models`), decode with the `Brep` profile and
+import through `import_surface_model`; `tessellate_shell` meshes one of their shells
+(Milestone 23.10).
 
 ```rust,ignore
 let session = import::ImportSession::new(&document, import::ImportOptions::for_document(&document));
@@ -194,7 +197,8 @@ for root in roots {
 ```
 
 Every result equals the free function's (`import_faceted_solid`, `import_brep_solid`,
-`import_tessellated`, `import_presentation`, ...). A shared decode is kept only when
+`import_tessellated`, `import_presentation`, `import_surface_model`, ...). A shared
+decode is kept only when
 it succeeds within the per-root `max_work`: a root's closure is a subset of it,
 structural checks of one record never depend on other roots, and decoding work adds
 over records, so decoding the root alone would succeed with the same records within
@@ -203,7 +207,8 @@ work than one root's budget) every root of the group is decoded alone, exactly a
 free functions do. Adapters follow references from their root only; the curved
 adapter scans exactly the root's closure for supplied pcurves. `import_assembly`,
 `link_assembly` and the C `ts_document_import_assembly` use a one-shot session that
-prepares each profile's selected roots; the survey and assembly examples use one
+prepares each profile's selected roots (and, when surface models are requested, the
+surface models as a group of their own); the survey and assembly examples use one
 session per document. Adapted geometry is not shared between roots: corpus closures
 share 1,281 of 2.33 million decoded records, so there is nothing to reuse. For the
 same reason a shared decode saves work only where closures overlap; for disjoint

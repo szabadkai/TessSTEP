@@ -1,4 +1,5 @@
-//! Usage: cargo run -p tessstep-import --example assembly -- [--meshes] [--strict] SCHEMA FILE
+//! Usage: cargo run -p tessstep-import --example assembly -- [--meshes] [--strict]
+//!     [--surface-models] [--repair] SCHEMA FILE
 //! Links the product structure of FILE (products, definitions, next assembly usage
 //! occurrences and their context dependent or mapped-item placements) with the
 //! bundled product profile and reports it as the corpus product stage
@@ -13,6 +14,13 @@
 //! exporter slips the parser otherwise accepts (`Conformance::Strict`). Parse budgets
 //! are sized from the file length (`ParseLimits::for_input`), as the corpus runner's
 //! physical stage sizes them. Exit status 0 means accepted.
+//! --surface-models links SHELL_BASED_SURFACE_MODEL roots too
+//! (`AssemblyOptions::surface_models`); with --meshes each shell becomes an asset and
+//! a `surface_models` object reports the roots, their shell assets by class
+//! (`ImportedAssembly::asset_class`), the placed ones, whether the document has a
+//! solid root (`ImportedAssembly::has_solid_roots`) and the first failure. --repair
+//! enables the opt-in sewing and orientation repair (`RepairOptions::enabled`) for
+//! every root. Neither is used by the corpus runner.
 #![forbid(unsafe_code)]
 use std::{collections::BTreeSet, fmt::Write, fs::File, io::BufReader};
 use tessstep_import::*;
@@ -53,8 +61,13 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     };
     let meshes = flag("--meshes");
     let strict = flag("--strict");
+    let surface_models = flag("--surface-models");
+    let repair = flag("--repair");
     let [schema, path] = args.as_slice() else {
-        return Err("usage: assembly [--meshes] [--strict] SCHEMA FILE".into());
+        return Err(
+            "usage: assembly [--meshes] [--strict] [--surface-models] [--repair] SCHEMA FILE"
+                .into(),
+        );
     };
     let file = File::open(path)?;
     let limits = ParseLimits::for_input(file.metadata()?.len());
@@ -71,19 +84,31 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     );
     let mut options = AssemblyImportOptions::default();
     options.assembly.import.strict = strict;
+    options.assembly.surface_models = surface_models;
+    if repair {
+        options.assembly.import.repair = RepairOptions::enabled();
+    }
     // One session discovers roots once for the report, the assembly and its styles.
     let session = ImportSession::new(&doc, options.assembly.import);
     let solids = session.solids()?;
     let tessellations = session.tessellations()?;
+    let models = if surface_models {
+        session.surface_models()?
+    } else {
+        &[]
+    };
     let discovered: BTreeSet<_> = solids
         .iter()
         .map(|s| s.entity)
         .chain(tessellations.iter().map(|t| t.entity))
+        .chain(models.iter().map(|m| m.entity))
         .collect();
+    let mut shells = None;
     let result = if meshes {
-        session
-            .import_assembly(options)
-            .map(|i| (i.assembly, Some(i.roots)))
+        session.import_assembly(options).map(|i| {
+            shells = surface_models.then(|| surface_report(&i));
+            (i.assembly, Some(i.roots))
+        })
     } else {
         session
             .link_assembly(&[], options.assembly)
@@ -232,6 +257,9 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
                     assembly.unimported().len()
                 )?;
             }
+            if let Some(shells) = shells {
+                out.push_str(&shells);
+            }
             status == "accepted"
         }
         Err(e) => {
@@ -253,4 +281,48 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     };
     println!("{out}}}");
     Ok(accepted)
+}
+
+/// Surface-model roots and their shell assets by class; a consumer decides which of
+/// them become bodies.
+fn surface_report(imported: &ImportedAssembly) -> String {
+    let models: Vec<&RootImport> = imported
+        .roots
+        .iter()
+        .filter(|r| r.kind == ShapeRootKind::SurfaceModel)
+        .collect();
+    let failed = models.iter().filter(|r| r.result.is_err()).count();
+    let assembly = &imported.assembly;
+    let placed: BTreeSet<_> = assembly
+        .nodes()
+        .iter()
+        .filter_map(|n| n.shell)
+        .map(|s| s.get())
+        .collect();
+    // Solid and tessellation assets carry their root's ID, shell assets their shell's.
+    let roots: BTreeSet<_> = imported.roots.iter().map(|r| r.root.get()).collect();
+    let (mut assets, mut closed, mut open, mut placed_assets) = (0, 0, 0, 0);
+    for asset in assembly.scene().assets() {
+        if roots.contains(&asset.id.0) {
+            continue;
+        }
+        assets += 1;
+        match imported.asset_class(asset.id) {
+            Some(AssetClass::ClosedShell) => closed += 1,
+            Some(AssetClass::OpenShell) => open += 1,
+            _ => {}
+        }
+        placed_assets += usize::from(placed.contains(&asset.id.0));
+    }
+    let mut out = format!(
+        ",\"surface_models\":{{\"roots\":{},\"imported\":{},\"failed\":{failed},\"shell_assets\":{assets},\"closed_shells\":{closed},\"open_shells\":{open},\"placed_shell_assets\":{placed_assets},\"solid_roots\":{}",
+        models.len(),
+        models.len() - failed,
+        imported.has_solid_roots()
+    );
+    if let Some(e) = models.iter().find_map(|r| r.result.as_ref().err()) {
+        let _ = write!(out, ",\"failed_first\":\"{}\"", escape(&e.to_string()));
+    }
+    out.push('}');
+    out
 }

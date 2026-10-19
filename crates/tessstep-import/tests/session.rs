@@ -477,6 +477,98 @@ fn a_session_moves_between_threads_and_prints_a_summary() {
     assert!(summary.contains("discoveries: 1"));
 }
 
+const PATCHES: &str = include_str!("../../../corpus/geometry/surface-open-patches.step");
+const UNSEWN: &str = include_str!("../../../corpus/geometry/surface-unsewn.step");
+
+#[test]
+fn surface_models_share_decodes_through_the_session() {
+    let doc = parse(PATCHES);
+    let options = ImportOptions::default();
+    let session = ImportSession::new(&doc, options);
+    for _ in 0..2 {
+        assert_eq!(
+            session.surface_models().unwrap(),
+            discover_surface_models(&doc, options).unwrap()
+        );
+    }
+    let roots: Vec<EntityId> = session
+        .surface_models()
+        .unwrap()
+        .iter()
+        .map(|r| r.entity)
+        .collect();
+    assert_eq!(session.prepare(ImportProfile::Brep, &roots), 2);
+    for root in session.surface_models().unwrap() {
+        let units = root.units.clone().unwrap();
+        let shared = session.import_surface_model(
+            root.entity,
+            units.length,
+            units.plane_angle,
+            model(&units),
+        );
+        let alone = import_surface_model(
+            &doc,
+            root.entity,
+            units.length,
+            units.plane_angle,
+            model(&units),
+            options,
+        );
+        assert!(same(&shared, &alone));
+        for (a, b) in shared.unwrap().shells().iter().zip(alone.unwrap().shells()) {
+            let mesh = session.tessellate_shell(a, chord(), TessellationOptions::default());
+            let free = b.tessellate(chord(), TessellationOptions::default());
+            assert!(same(&mesh, &free));
+        }
+    }
+    let s = session.statistics();
+    assert_eq!(
+        (
+            s.discoveries,
+            s.shared_decodes,
+            s.shared_roots,
+            s.root_decodes
+        ),
+        (1, 1, 2, 0)
+    );
+    // The reversed model uses the other's shell: its records were decoded once and
+    // adapted by both.
+    assert!(s.adapted_entities > s.decoded_entities);
+    assert_eq!(s.imports, 2);
+    assert!(s.triangles > 0);
+}
+
+#[test]
+fn assembly_import_with_surface_models_decodes_them_together() {
+    let doc = parse(UNSEWN);
+    let mut options = AssemblyImportOptions::default();
+    options.assembly.surface_models = true;
+    let session = ImportSession::new(&doc, options.assembly.import);
+    let imported = session.import_assembly(options).unwrap();
+    let s = session.statistics();
+    // Solids, tessellations, the exact selection and surface models.
+    assert_eq!(s.discoveries, 4);
+    assert_eq!(
+        (s.shared_decodes, s.shared_roots, s.root_decodes),
+        (1, 3, 0)
+    );
+    let free = import_assembly(&doc, options).unwrap();
+    assert!(same(&imported.roots, &free.roots));
+    let meshes = |a: &LinkedAssembly| {
+        a.scene()
+            .assets()
+            .iter()
+            .map(|asset| format!("{:?} {:?}", asset.id, asset.mesh.data()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(meshes(&imported.assembly), meshes(&free.assembly));
+    // Without the option the session discovers no surface models.
+    let session = ImportSession::new(&doc, options.assembly.import);
+    options.assembly.surface_models = false;
+    assert!(session.import_assembly(options).unwrap().roots.is_empty());
+    assert_eq!(session.statistics().discoveries, 3);
+}
+
 #[allow(dead_code)]
 #[path = "../benches/session.rs"]
 mod bench;

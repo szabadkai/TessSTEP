@@ -153,6 +153,8 @@ BREP_EXPECTED = {
     # beside a vertex 3 um off its arcs is collapsed at the working tolerance.
     "brep-lens-flap.step": (("accepted",) * 3, (0, 0, 0, 0, 0, 1), (1e-6, math.inf)),
     "brep-crescent-sliver.step": (("accepted",) * 3, (0, 1, 0, 0, 0, 1, 0, 0, 0, 3), (math.pi * 2000e-9, 0.01)),
+    # Two stacked slivers between three edges on one half circle collapse in turn.
+    "brep-stacked-slivers.step": (("accepted",) * 3, (0, 1, 0, 0, 0, 2), (math.pi * 2000e-9, 0.01)),
     # Loop spurs: the slab top runs out and back along its wall edge at two flush fins;
     # the wall edge is split at both fin corners and the spurs are dropped (strict
     # import keeps them, BREP_STRICT_EXPECTED).
@@ -241,6 +243,27 @@ ASSEMBLY_EXPECTED = {
     # an alternative; two B-rep siblings are two bodies.
     "assembly-siblings.step": ("accepted", 1, 1, [0, 0, 0, 10, 20, 30], 6e-6),
     "assembly-sibling-breps.step": ("accepted", 1, 2, [0, 0, 0, 60, 20, 30], 1.2e-5),
+    # Surface models are left out unless requested (below): only the block is placed,
+    # and the surface-only part has no body.
+    "assembly-surface.step": ("accepted", 4, 1, [0, 0, 0, 10, 20, 30], 6e-6),
+    "assembly-surface-only.step": ("accepted", 1, 0, None, None),
+}
+# Surface models linked on request (`assembly --meshes --surface-models` and the extra
+# flags): status, definition nodes, asset instances, world bounds (mm) or None, the
+# placed volume (m3) and its relative tolerance or None (an open shell encloses no
+# volume), and the surface-model report: roots, imported roots, shell assets, closed
+# and open shells (read from the mesh) and placed shell assets.
+SURFACE_ASSEMBLY_EXPECTED = {
+    # The open trough placed twice beside the block.
+    ("assembly-surface.step", ()): ("accepted", 4, 3, [0, -15, 0, 100, 20, 30], None, (1, 1, 1, 0, 1, 1)),
+    # The closed cylinder shell (2000 pi mm3) is placed; the loose open model is not.
+    ("assembly-surface-only.step", ()): ("accepted", 1, 1, [-10, -10, 0, 10, 10, 20],
+                                         (2000 * math.pi * 1e-9, 0.02), (2, 2, 2, 1, 1, 1)),
+    # No product structure, so nothing is placed. Without repair the two disconnected
+    # shells fail; sewn, the open box closes and the squares written as one shell join,
+    # while the two declared shells stay apart.
+    ("surface-unsewn.step", ()): ("not_applicable", 0, 0, None, None, (3, 1, 2, 0, 2, 0)),
+    ("surface-unsewn.step", ("--repair",)): ("not_applicable", 0, 0, None, None, (3, 3, 4, 1, 3, 0)),
 }
 # Alternatives held by a placed representation and not imported (unimported_placed).
 ASSEMBLY_UNIMPORTED = {"assembly-siblings.step": 1}
@@ -250,9 +273,9 @@ STYLE_EXPECTED = {"assembly-styled.step": {"asset_styles": 1, "face_styles": 1, 
                   "assembly-siblings.step": {"asset_styles": 1, "materials": 1, "bindings": 1, "unimported": 0}}
 
 
-def assemble(binary, path):
+def assemble(binary, path, extra=()):
     started = time.monotonic()
-    p = subprocess.run([str(binary), "--meshes", "AUTOMOTIVE_DESIGN", str(path)],
+    p = subprocess.run([str(binary), "--meshes", *extra, "AUTOMOTIVE_DESIGN", str(path)],
                        capture_output=True, text=True, timeout=300, cwd=ROOT)
     assert p.returncode in (0, 1), (path, p.returncode, p.stderr)
     result = json.loads(p.stdout)
@@ -269,10 +292,28 @@ def assembly_matches(r, status, nodes, leaves, bounds_mm, volume, volume_toleran
         return False
     if status != "accepted":
         return True
+    counts = (r["definition_nodes"] == nodes and r["asset_instances"] == leaves and r["failed_imports"] == 0
+              and r["unimported_placed"] == unimported)
+    if bounds_mm is None:
+        return counts and "world_bounds_m" not in r
     measured = [round(x * 1e3, 3) for x in r["world_bounds_m"][0] + r["world_bounds_m"][1]]
-    return (r["definition_nodes"] == nodes and r["asset_instances"] == leaves and r["failed_imports"] == 0
-            and r["unimported_placed"] == unimported and measured == [float(x) for x in bounds_mm]
-            and abs(r["volume_m3"] - volume) <= volume_tolerance * volume)
+    return (counts and measured == [float(x) for x in bounds_mm]
+            and (volume is None or abs(r["volume_m3"] - volume) <= volume_tolerance * volume))
+
+
+def surface_assembly_matches(r, status, nodes, leaves, bounds_mm, volume, report):
+    """An assembly with surface models: the counts, bounds and volume of placed instances,
+    and the surface-model report."""
+    s = r.get("surface_models", {})
+    found = tuple(s.get(k) for k in ("roots", "imported", "shell_assets", "closed_shells", "open_shells",
+                                     "placed_shell_assets"))
+    if r["status"] != status or found != report or r["definition_nodes"] != nodes or r["asset_instances"] != leaves:
+        return False
+    if bounds_mm is None:
+        return "world_bounds_m" not in r
+    measured = [round(x * 1e3, 3) for x in r["world_bounds_m"][0] + r["world_bounds_m"][1]]
+    return measured == [float(x) for x in bounds_mm] and (
+        volume is None or abs(r["volume_m3"] - volume[0]) <= volume[1] * volume[0])
 
 
 def expected_adaptations(values):
@@ -333,6 +374,12 @@ def main():
         styles = STYLE_EXPECTED.get(name, {"materials": 0, "bindings": 0})
         case["passed"] = assembly_matches(case["result"], *expected, unimported=ASSEMBLY_UNIMPORTED.get(name, 0)) and (
             expected[0] != "accepted" or all(case["result"]["styles"][k] == v for k, v in styles.items()))
+        cases.append(case)
+    for (name, extra), expected in SURFACE_ASSEMBLY_EXPECTED.items():
+        case = assemble(assembly_binary, ROOT / "corpus/geometry" / name, ("--surface-models", *extra))
+        case["expected"] = {"surface_models": True, "flags": list(extra), "expected": expected,
+                            "repair": "--repair" in extra}
+        case["passed"] = surface_assembly_matches(case["result"], *expected)
         cases.append(case)
     for name, expected in {**EXPECTED, **PLANAR_EXPECTED}.items():
         planar = name in PLANAR_EXPECTED
