@@ -52,6 +52,15 @@ import meshes 617 of its roots instead of 545.
   `ToleratedEncodings::reversed_transform_items` and rejected when strict
   (`tessstep_ap242::adapt_with_policy`, `Policy`). The Shapr3D keycaps sample imports
   as a 265-instance scene; its HOOPS reference volume counts every body twice.
+- Representation selection pairs sibling representations, as CATIA V5 writes a part's
+  B-rep and its `TESSELLATED_SOLID` (geometric link `$`), each related to the
+  product's shape representation by its own untransformed relationship: a
+  representation holding no root and related to exactly one representation holding
+  only a solid and one holding only an unlinked tessellated solid, all in one context,
+  makes them one shape (`Pairing::Relationship`). `import_assembly` places the one the
+  preference selects, so the four NIST UUID plates exported by CATIA V5-6R2022 import
+  as one body with HOOPS's volume (within 0.01%) instead of twice. Two B-rep
+  siblings, or any other layout, stay separate bodies.
 - Tessellation meshes fillet bands whose refinement walked one facet per round
   around the ring (a face that runs out of rounds is refined again with split
   closure), and refines a boundary chord that cuts across a nearby edge, such as one

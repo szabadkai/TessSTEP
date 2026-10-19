@@ -1,5 +1,6 @@
 //! Solid root discovery and representation-context units.
 use super::*;
+use std::collections::BTreeSet;
 use tessstep_math::AngleUnit;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -319,7 +320,9 @@ pub enum Pairing {
     /// TOPOLOGICAL_LINK names its outer shell.
     Link,
     /// A (SHAPE_)REPRESENTATION_RELATIONSHIP without transformation relates a
-    /// representation holding only that tessellation to one holding only that solid.
+    /// representation holding only that tessellation to one holding only that solid,
+    /// or two such relationships relate each of them to one common representation
+    /// (sibling representations, as CATIA V5 writes a B-rep and its tessellation).
     Relationship,
 }
 /// One shape: the root to import and the other representations of it.
@@ -334,10 +337,15 @@ pub struct RepresentationChoice {
 /// Group discovered solid and tessellated roots that represent the same shape and
 /// select one of each group. Links pair first; a representation relationship pairs a
 /// remaining tessellation only when each related representation holds exactly one
-/// root of the respective kind, so ambiguous files are never guessed. Every input
-/// root appears once, as a selection or an alternative: solids in input order, then
-/// unpaired tessellations. Physical records are read without decoding, and nothing
-/// is imported; a caller may fall back to an alternative when the selected root fails.
+/// root of the respective kind, so ambiguous files are never guessed. Sibling
+/// representations pair last: a representation holding no root, related without
+/// transformation to exactly two representations that hold roots, one holding only
+/// a solid and the other only an unlinked TESSELLATED_SOLID, all three in one
+/// context. A tessellation with sibling solids under several representations stays
+/// unpaired. Every input root appears once, as a selection or an alternative: solids
+/// in input order, then unpaired tessellations. Physical records are read without
+/// decoding, and nothing is imported; a caller may fall back to an alternative when
+/// the selected root fails.
 pub fn select_representations(
     document: &Document,
     solids: &[SolidRoot],
@@ -399,6 +407,8 @@ pub fn select_representations(
             _ => None,
         }
     };
+    // Representations related to each representation without transformation.
+    let mut related: BTreeMap<EntityId, BTreeSet<EntityId>> = BTreeMap::new();
     for e in document.entities().iter() {
         work.charge(1)?;
         let [record] = e.kind.records() else {
@@ -420,12 +430,50 @@ pub fn select_representations(
         let (Some(a), Some(b)) = (rep(2), rep(3)) else {
             continue;
         };
+        related.entry(a).or_default().insert(b);
+        related.entry(b).or_default().insert(a);
         for (x, y) in [(a, b), (b, a)] {
             if let (Some(t), Some(s)) = (only(&x, false), only(&y, true)) {
                 if pairs[t].is_none() {
                     pairs[t] = Some((s, Pairing::Relationship));
                 }
             }
+        }
+    }
+    // Sibling solids of each remaining unlinked tessellated solid.
+    let mut siblings: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); tessellations.len()];
+    for (parent, relatives) in &related {
+        work.charge(relatives.len())?;
+        if held.contains_key(parent) {
+            continue;
+        }
+        let holding: Vec<EntityId> = relatives
+            .iter()
+            .copied()
+            .filter(|r| r != parent && held.contains_key(r))
+            .collect();
+        let [x, y] = holding[..] else {
+            continue;
+        };
+        let context = representation_context(document, *parent);
+        if context.is_none()
+            || context != representation_context(document, x)
+            || context != representation_context(document, y)
+        {
+            continue;
+        }
+        for (x, y) in [(x, y), (y, x)] {
+            if let (Some(t), Some(s)) = (only(&x, false), only(&y, true)) {
+                let root = &tessellations[t];
+                if root.kind == TessellatedKind::Solid && root.link.is_none() {
+                    siblings[t].insert(s);
+                }
+            }
+        }
+    }
+    for (t, found) in siblings.iter().enumerate() {
+        if let (None, Some(&s), 1) = (pairs[t], found.first(), found.len()) {
+            pairs[t] = Some((s, Pairing::Relationship));
         }
     }
     let mut choices = Vec::new();
@@ -477,6 +525,25 @@ pub fn select_representations(
         }
     }
     Ok(choices)
+}
+
+/// A representation's CONTEXT_OF_ITEMS, read from the physical record: the third
+/// parameter of a simple record or of a complex instance's REPRESENTATION component.
+fn representation_context(document: &Document, representation: EntityId) -> Option<EntityId> {
+    let records = document.entities().get(representation)?.kind.records();
+    let record = match records {
+        [record] => record,
+        _ => records
+            .iter()
+            .find(|r| r.name.as_ref().eq_ignore_ascii_case("REPRESENTATION"))?,
+    };
+    match record.parameters.get(2) {
+        Some(StepValue {
+            kind: ValueKind::Reference(id),
+            ..
+        }) => Some(*id),
+        _ => None,
+    }
 }
 
 struct Work {

@@ -699,6 +699,12 @@
       "limitations": "Pairs by explicit geometric/topological links, then by a transformation-free representation relationship only when unambiguous; explicit exact or tessellated preference; nothing imported or guessed"
     },
     {
+      "feature": "Sibling exact and tessellated representations",
+      "status": "implemented",
+      "test": "sibling_representations_pair_and_import_one_body",
+      "limitations": "A representation holding no root, related without transformation to exactly one representation holding only a solid and one holding only an unlinked TESSELLATED_SOLID, all in one context (the CATIA V5 layout), pairs them; the assembly places the preferred one once; several root-holding siblings, other contexts, linked or shell tessellations and roots in the common representation stay separate bodies; strict mode pairs alike"
+    },
+    {
       "feature": "C/C++ existing tessellation import",
       "status": "implemented",
       "test": "c_abi_tessellated_import_owns_mesh_and_reports_provenance",

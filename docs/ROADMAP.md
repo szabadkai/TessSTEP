@@ -1022,12 +1022,24 @@ The collection benchmark is repeated on every item.
   Raising `max_tessellation_work` does not lift the per-face budgets, and C cannot set
   them. Size the per-face budgets from the solid's tessellation budget or from the face
   boundary, or make planar triangulation cheaper; every budget stays named.
-- **23.3 Exact and tessellated sibling representations.** CATIA V5 writes a B-rep and
-  a `TESSELLATED_SOLID` whose geometric link is `$`. Each is related to the product's
-  shape representation by its own `SHAPE_REPRESENTATION_RELATIONSHIP`.
-  `import_assembly` places both, so the four NIST UUID plate exports from CATIA
-  V5-6R2022 import twice (+100 % volume) where HOOPS has one body. Representation
-  selection pairs such siblings and keeps the preferred one.
+- **23.3 Exact and tessellated sibling representations — delivered 2026-10-19.**
+  CATIA V5 writes a B-rep and a `TESSELLATED_SOLID` whose geometric link is `$`. Each
+  is related to the product's shape representation by its own
+  `SHAPE_REPRESENTATION_RELATIONSHIP`. `import_assembly` placed both, so the four
+  NIST UUID plate exports from CATIA V5-6R2022 imported twice (+100 % volume) where
+  HOOPS has one body. Representation selection now pairs such siblings and keeps the
+  preferred one: a representation that holds no root, related without transformation
+  to exactly two representations that hold roots, one only a solid and the other only
+  an unlinked tessellated solid, all in one context, makes the two one shape
+  (`Pairing::Relationship`, the alternative reported as for every pair). Two siblings
+  of one kind, a third root-holding sibling, roots in the common representation, a
+  tessellation in another context, linked elsewhere or not a solid, and a
+  tessellation with sibling solids under several representations stay separate
+  bodies; strict mode pairs alike. The four plates now import as one body each,
+  within 0.01 % of HOOPS's volume, and no other collection or corpus input changes.
+  Evidence: `sibling_representations_pair_and_import_one_body` over
+  `assembly-siblings.step` and `assembly-sibling-breps.step`, and
+  `scripts/check_geometry.py`.
 - **23.4 Tolerant parsing in consumers.** The C++ `Document::parse(bytes, options)`
   overload is strict, like `ts_document_parse`. PreForm calls it and rejects two files
   that HOOPS opens: a literal backslash in `827-9999-904 rev c.stp` and a `$`
