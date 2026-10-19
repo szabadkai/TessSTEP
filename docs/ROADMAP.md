@@ -1068,7 +1068,10 @@ The collection benchmark is repeated on every item.
   failed-root policy. A per-file fallback to HOOPS when TessSTEP loses a body would
   turn every remaining gap into today's behaviour instead of a lost part. Add a
   PreForm regression over the collection. The work lands in PreForm; TessSTEP
-  supplies the package and any API it needs.
+  supplies the package and any API it needs. Since 2026-10-11 the reader also lives on PreForm's iPad-port
+  branches ("Read STEP through TessSTEP without HOOPS Exchange"). There no HOOPS
+  fallback exists, so every gap above is a lost part on iPad. That reader still uses
+  the strict parse and a fixed 12.5 µm chord, and links a checkout by path.
 - **23.8 Releases.** Release 1.1.0 from the prepare-release workflow: ABI 1.1, plus the
   HOOPS parity, `Bad_STEP.stp` and iOS changes of the Unreleased section. Release
   1.2.0 with this milestone.
@@ -1081,9 +1084,13 @@ The collection benchmark is repeated on every item.
   called solids. Sewing their open shells is opt-in. Which shells a consumer turns into
   printable bodies stays its own policy: in PP-31465, a SOLIDWORKS thread surface body
   in the same space as its solid filled a hole when the surface was printed.
-- **23.9 Reviewed corpus baseline.** The baseline has not been saved since 9d7b376: 778
-  → 786 meshed shape roots, 1,130 → 1,133 surface models. Run `corpus.py --check`,
-  review it and save, then again with each item above.
+- **23.9 Reviewed corpus baseline — saved 2026-10-19.** The baseline had not been
+  saved since 9d7b376. The check against it moved exactly seven inputs, all
+  improvements from that commit: OCC8229, both `trj3_s1-ct` variants and a root of
+  `trj9_ap209-mp` mesh, and so do surface-model shells in Gp054, `trj6_k1` and `trj7_k1`.
+  The saved baseline holds 786 meshed shape roots (778 before) and 1,133 meshed surface
+  models (1,130), with 3,227 compatible inputs and no timeouts
+  ([VALIDATION.md](VALIDATION.md)). It is saved again with each item above.
 
 Order, by measured impact (re-evaluated 2026-10-13):
 1. 23.9, 23.4 and 23.8 (1.1.0), since they change no import code.

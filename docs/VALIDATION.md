@@ -1,3 +1,23 @@
+# Corpus baseline saved before Milestone 23 — 2026-10-19
+
+The committed baseline dated from a4df53c. `main` at 844aeb3 has the Bad_STEP work of
+9d7b376 and no import change since. Checked against it with the AP validator rebuilt from
+this commit (`corpus.py --check --repeat 2 --schema-validator target/release/ap-validator
+--schema-map corpus/ap-schema-map.json`): 3,227 compatible inputs, no regression, no
+timeout, 395.6 s. Exactly seven inputs changed, the seven recorded in the next section:
+
+| Input | Stage movement | Accepted roots |
+| --- | --- | --- |
+| OpenCASCADE `OCC8229.stp` | geometry rejected → accepted, tessellation not run → accepted | 0 → 1 |
+| OpenCASCADE `trj3_s1-ct-203.stp`, `trj3_s1-ct-214.stp` | geometry and tessellation partial → accepted | 5 → 8 each |
+| OpenCASCADE `trj9_ap209-mp.stp` | geometry rejected → partial | 0 → 1 |
+| dodgy `Gp054.stp` | surface model rejected → accepted | 0 → 1 |
+| OpenCASCADE `trj6_k1-sd-214.stp`, `trj7_k1-sd-214.stp` | surface model partial → accepted | 1 → 2 each |
+
+The baseline was then saved with `corpus.py --save-baseline` and the same validator
+arguments. It holds 786 meshed shape roots of 1,203 (778 before), 811 past
+geometry and topology, and 1,133 meshed surface-model shells (1,130).
+
 # The 646-root support attachment under PreForm's settings — 2026-10-10
 
 PreForm imports through the C++ wrapper's `import_assembly` with a 12.5 µm chord, a 30°

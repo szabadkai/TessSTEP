@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "run_id": "2026-10-10T08-01-32-413799Z",
-  "source_fingerprint": "64e500f640c798de8358ed48d49729aba4391b7a5dade238010249d1ad4a42ae",
+  "run_id": "2026-10-19T20-21-47-752683Z",
+  "source_fingerprint": "2c940099a42a525bd6b66a29d945166c065abb430d01822a759f9532b615ec14",
   "cases": [
     {
       "sha256": "e486bfb50625f5270d2b239c004c61f30c9f2fd8f230e395a8c10cbb8c45cb09",
@@ -22479,7 +22479,7 @@
         "product": "rejected",
         "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "rejected"
+        "surface_model": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 86,
@@ -22513,7 +22513,7 @@
       "geometry_accepted_roots": 0,
       "geometry_closure_types": {},
       "presentation_accepted": null,
-      "surface_model_accepted_roots": 0,
+      "surface_model_accepted_roots": 1,
       "surface_model_closure_types": {
         "ADVANCED_FACE": 1,
         "AXIS2_PLACEMENT_3D": 1,
@@ -160203,8 +160203,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "rejected",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -160235,7 +160235,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 42,
         "AXIS2_PLACEMENT_3D": 35,
@@ -173306,8 +173306,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "partial",
-        "tessellation": "partial",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -173346,7 +173346,7 @@
           "reversed_transform_items": 14
         }
       },
-      "geometry_accepted_roots": 5,
+      "geometry_accepted_roots": 8,
       "geometry_closure_types": {
         "ADVANCED_FACE": 132,
         "AXIS2_PLACEMENT_3D": 88,
@@ -173383,8 +173383,8 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "partial",
-        "tessellation": "partial",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -173423,7 +173423,7 @@
           "reversed_transform_items": 14
         }
       },
-      "geometry_accepted_roots": 5,
+      "geometry_accepted_roots": 8,
       "geometry_closure_types": {
         "ADVANCED_FACE": 132,
         "AXIS2_PLACEMENT_3D": 88,
@@ -179929,7 +179929,7 @@
         "product": "accepted",
         "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "partial"
+        "surface_model": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 3215,
@@ -179967,7 +179967,7 @@
       "geometry_accepted_roots": 0,
       "geometry_closure_types": {},
       "presentation_accepted": null,
-      "surface_model_accepted_roots": 1,
+      "surface_model_accepted_roots": 2,
       "surface_model_closure_types": {
         "ADVANCED_FACE": 57,
         "AXIS2_PLACEMENT_3D": 72,
@@ -182067,7 +182067,7 @@
         "product": "accepted",
         "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "partial"
+        "surface_model": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 3154,
@@ -182105,7 +182105,7 @@
       "geometry_accepted_roots": 0,
       "geometry_closure_types": {},
       "presentation_accepted": null,
-      "surface_model_accepted_roots": 1,
+      "surface_model_accepted_roots": 2,
       "surface_model_closure_types": {
         "ADVANCED_FACE": 57,
         "AXIS2_PLACEMENT_3D": 72,
@@ -183784,8 +183784,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "rejected",
-        "tessellation": "not_run",
+        "geometry": "partial",
+        "tessellation": "partial",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {
@@ -183800,7 +183800,7 @@
         "declared": "STRUCTURAL_ANALYSIS_DESIGN"
       },
       "product_result": null,
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 24,
         "AXIS2_PLACEMENT_3D": 24,
