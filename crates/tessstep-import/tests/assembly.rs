@@ -498,3 +498,191 @@ fn reversed_item_transformations_are_read_by_membership_and_counted() {
             .any(|r| r.name.as_ref() == "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
     );
 }
+
+const SIBLINGS: &str = include_str!("../../../corpus/geometry/assembly-siblings.step");
+const SIBLING_BREPS: &str = include_str!("../../../corpus/geometry/assembly-sibling-breps.step");
+
+/// Representation choices over a document's solids and tessellations.
+fn choices(
+    text: &str,
+    preference: RepresentationPreference,
+    options: ImportOptions,
+) -> Vec<RepresentationChoice> {
+    let doc = parse(text);
+    let solids = discover_solids(&doc, options).unwrap();
+    let tessellations = discover_tessellations(&doc, options).unwrap();
+    select_representations(&doc, &solids, &tessellations, preference, options).unwrap()
+}
+
+#[test]
+fn sibling_representations_pair_and_import_one_body() {
+    use RootRef::{Solid, Tessellation};
+    let choice = |selected, alternatives: &[RootRef], pairing| RepresentationChoice {
+        selected,
+        alternatives: alternatives.to_vec(),
+        pairing,
+    };
+    // The product's shape representation relates a B-rep representation and a
+    // tessellated one of the same block, each by its own untransformed relationship
+    // in one context, as CATIA V5 writes them: the preferred one is selected, in
+    // strict mode too.
+    let strict = ImportOptions {
+        strict: true,
+        ..ImportOptions::default()
+    };
+    for options in [ImportOptions::default(), strict] {
+        assert_eq!(
+            choices(SIBLINGS, RepresentationPreference::Exact, options),
+            [choice(
+                Solid(0),
+                &[Tessellation(0)],
+                Some(Pairing::Relationship)
+            )]
+        );
+        assert_eq!(
+            choices(SIBLINGS, RepresentationPreference::Tessellated, options),
+            [choice(
+                Tessellation(0),
+                &[Solid(0)],
+                Some(Pairing::Relationship)
+            )]
+        );
+    }
+    let doc = parse(SIBLINGS);
+    let (brep, tessellated) = (EntityId::new(158).unwrap(), EntityId::new(167).unwrap());
+    for (preference, root, other) in [
+        (RepresentationPreference::Exact, brep, tessellated),
+        (RepresentationPreference::Tessellated, tessellated, brep),
+    ] {
+        let options = AssemblyImportOptions {
+            preference,
+            ..AssemblyImportOptions::default()
+        };
+        let imported = import_assembly(&doc, options).unwrap();
+        let outcomes: Vec<_> = imported
+            .roots
+            .iter()
+            .map(|r| (r.root, r.selected, r.result.is_ok()))
+            .collect();
+        assert_eq!(outcomes, [(root, true, true)]);
+        // One body, placed once. The alternative is held by a placed representation
+        // and listed as unimported, as every alternative is.
+        let assembly = &imported.assembly;
+        assert_eq!(boxes(assembly), [[0, 0, 0, 10, 20, 30]]);
+        let leaves: Vec<_> = assembly.nodes().iter().filter_map(|n| n.root).collect();
+        assert_eq!(leaves, [root]);
+        assert_eq!(assembly.unimported(), [other]);
+        let volume = assembly.scene().assets()[0].mesh.statistics().signed_volume;
+        assert!((volume - 6e-6).abs() < 1e-15, "{volume}");
+        // The solid's colour applies to the B-rep only.
+        let styles = import_appearance(&doc, assembly, StyleOptions::default()).unwrap();
+        let counts = styles.counts();
+        assert_eq!(
+            (counts.asset_styles, counts.unimported),
+            if root == brep { (1, 0) } else { (0, 1) }
+        );
+    }
+    // The annotation in the tessellated draughting model is presentation, untouched
+    // by representation selection.
+    let presentations = discover_presentations(&doc, ImportOptions::default()).unwrap();
+    let ids = |v: &[EntityId]| v.iter().map(|e| e.get()).collect::<Vec<_>>();
+    let found: Vec<_> = presentations
+        .iter()
+        .map(|p| (p.entity.get(), ids(&p.containers), ids(&p.representations)))
+        .collect();
+    assert_eq!(found, [(197, vec![198, 204], vec![205])]);
+    let graphics = import_presentation(
+        &doc,
+        presentations[0].entity,
+        presentations[0].units.as_ref().unwrap().length,
+        ImportOptions::default(),
+        PresentationLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(graphics.polyline_count(), 1);
+
+    let exact = |text: &str| {
+        choices(
+            text,
+            RepresentationPreference::Exact,
+            ImportOptions::default(),
+        )
+    };
+    // Two B-rep siblings are two bodies of the part, never alternatives.
+    assert_eq!(
+        exact(SIBLING_BREPS),
+        [choice(Solid(0), &[], None), choice(Solid(1), &[], None)]
+    );
+    let imported =
+        import_assembly(&parse(SIBLING_BREPS), AssemblyImportOptions::default()).unwrap();
+    assert_eq!(
+        boxes(&imported.assembly),
+        [[0, 0, 0, 10, 20, 30], [50, 0, 0, 60, 20, 30]]
+    );
+    // A third sibling holding a root makes the pair ambiguous: every body stays.
+    let third = edit(
+        SIBLINGS,
+        "#205=",
+        "#900=MANIFOLD_SOLID_BREP('copy',#157);\
+         #901=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#900),#8);\
+         #902=SHAPE_REPRESENTATION_RELATIONSHIP('','',#173,#901);#205=",
+    );
+    let separate = [
+        choice(Solid(0), &[], None),
+        choice(Solid(1), &[], None),
+        choice(Tessellation(0), &[], None),
+    ];
+    assert_eq!(exact(&third), separate);
+    let imported = import_assembly(&parse(&third), AssemblyImportOptions::default()).unwrap();
+    assert_eq!(boxes(&imported.assembly).len(), 3);
+    // So does a sibling solid of the tessellation under a second representation.
+    let two_parents = edit(
+        SIBLINGS,
+        "#205=",
+        "#900=SHAPE_REPRESENTATION('',(#172),#8);#901=MANIFOLD_SOLID_BREP('copy',#157);\
+         #902=ADVANCED_BREP_SHAPE_REPRESENTATION('',(#901),#8);\
+         #903=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900,#902);\
+         #904=SHAPE_REPRESENTATION_RELATIONSHIP('','',#900,#168);#205=",
+    );
+    assert_eq!(exact(&two_parents), separate);
+    // So do roots in the common representation itself (with one root there, the
+    // relationship pairs it with the tessellation directly).
+    let holding = edit(
+        SIBLINGS,
+        "#173=SHAPE_REPRESENTATION('',(#172),#8)",
+        "#173=SHAPE_REPRESENTATION('',(#172,#900,#901),#8);\
+         #900=FACETED_BREP('',#157);#901=FACETED_BREP('',#157)",
+    );
+    assert_eq!(
+        exact(&holding),
+        [
+            choice(Solid(0), &[], None),
+            choice(Solid(1), &[], None),
+            choice(Solid(2), &[], None),
+            choice(Tessellation(0), &[], None),
+        ]
+    );
+    // A tessellation in another context, linked to other geometry, or not a solid
+    // pairs with nothing.
+    let other_context = edit(
+        &edit(
+            SIBLINGS,
+            "#9=",
+            "#900=(GEOMETRIC_REPRESENTATION_CONTEXT(3)GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#7))\
+             GLOBAL_UNIT_ASSIGNED_CONTEXT((#4,#5,#6))REPRESENTATION_CONTEXT('',''));#9=",
+        ),
+        "('',(#167),#8)",
+        "('',(#167),#900)",
+    );
+    let linked = edit(SIBLINGS, "#165,#166),$)", "#165,#166),#172)");
+    let shell = edit(SIBLINGS, "TESSELLATED_SOLID(", "TESSELLATED_SHELL(");
+    for text in [other_context, linked, shell] {
+        assert_eq!(
+            exact(&text),
+            [
+                choice(Solid(0), &[], None),
+                choice(Tessellation(0), &[], None)
+            ]
+        );
+    }
+}

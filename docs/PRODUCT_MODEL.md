@@ -242,6 +242,22 @@ and the corpus files `bug33410.step` (HOOPS Exchange 2020.1) and `trj3_s1-ct-203
 (CATIA V4, non-identity placements whose membership reading arranges the CAx-IF S1 model
 as the NX and Pro/ENGINEER exports of the same model do).
 
+## Sibling exact and tessellated representations (Milestone 23.3)
+
+CATIA V5 (seen in V5-6R2022 exports) writes a part's B-rep and a `TESSELLATED_SOLID`
+of it, whose geometric link is `$`, in two representations, each related to the
+product's shape representation by its own untransformed shape representation
+relationship in the same context. The linker associates both with the shape
+representation, so it places every root they hold; before Milestone 23.3 both were
+selected and imported, and such a part was placed twice. Representation selection
+now pairs the two roots as sibling representations of one shape ([rule
+3](EXISTING_TESSELLATIONS.md#discovery-and-representation-selection)), and
+`import_assembly` imports and places the one its `RepresentationPreference` selects.
+The other is an alternative: imported only when the selection fails, and otherwise
+listed by `LinkedAssembly::unimported`. Two B-rep siblings, or any other layout the
+rule does not cover, stay separate bodies. Evidence: `assembly-siblings.step` and
+`assembly-sibling-breps.step` (`sibling_representations_pair_and_import_one_body`).
+
 ## Evidence and references
 
 The authored `corpus/product` schema is a reduced synthetic schema, not an ISO extract.

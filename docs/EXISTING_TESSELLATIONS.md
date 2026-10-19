@@ -176,12 +176,31 @@ requires `*`.
    representation holding exactly one tessellated root with one holding exactly one
    solid root. Ambiguous representations are never paired, and transformed
    relationships place representations; they are not alternatives.
+3. Otherwise sibling representations pair. CATIA V5 writes a part's B-rep and its
+   `TESSELLATED_SOLID` (geometric link `$`) in two representations, and relates each
+   of them to the product's shape representation by its own untransformed
+   relationship. When a representation that holds no root is related this way to
+   exactly two representations that hold roots, one holding only a solid root and the
+   other only a `TESSELLATED_SOLID` without a link, and all three name the same
+   context, the two roots pair. Everything else stays separate bodies: two siblings
+   of one kind, a third root-holding sibling, roots in the common representation, a
+   tessellation in another context, linked to geometry other than a solid root, or a
+   shell or surface set, and a tessellation with sibling solids under several
+   representations. A part with one B-rep body and one separate mesh body written in
+   this layout would be paired; the other body stays in the choice as its
+   alternative.
+
+All three rules read physical records and run alike in strict mode, which governs
+tolerated encodings, not selection. Pairs found by rules 2 and 3 report
+`Pairing::Relationship` (`TS_PAIRING_RELATIONSHIP` in C).
 
 `RepresentationPreference::Exact` selects the B-rep and lists the tessellations as
 alternatives; `Tessellated` selects the first tessellation. Every discovered root
 appears exactly once. Selection imports nothing; callers may fall back to an
-alternative when the selected root fails. Linking roots to product definitions remains
-with the product-graph work.
+alternative when the selected root fails. `import_assembly` imports the selected root
+(an alternative only when it fails), so a shape with sibling representations is
+placed once; an alternative that a placed representation holds and that was not
+imported is listed by `LinkedAssembly::unimported`, like every unimported root.
 
 ## C and C++
 
@@ -256,6 +275,10 @@ Authored fixtures cover:
 - a shell with a cubic Bézier face outside the profile;
 - a representation-selection file (a linked pair, a relationship pair and an
   unpaired surface set);
+- a part in the CATIA V5 sibling layout (`assembly-siblings.step`: a B-rep and an
+  unlinked tessellated solid of one block under the product's shape representation,
+  a colour on the solid and an annotation in a tessellated draughting model), and the
+  same part with two B-rep siblings (`assembly-sibling-breps.step`);
 - an annotation in two draughting models, one characterized: a callout styling a
   repositioned geometric set with curve, fill, point and nested repositioned sets.
 

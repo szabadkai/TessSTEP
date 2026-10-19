@@ -55,12 +55,15 @@ PRESENTATION_EXPECTED = {
 }
 PRESENTATION_KEYS = ("geometric_set", "styles", "repositioned_items", "vertices", "polylines", "polyline_points",
                      "triangles", "skipped_degenerate", "zero_area_triangles", "pnmax_deviations")
-# Representation selection over tessellated-selection.step (exact preferred):
-# root -> (profile, selection, paired roots).
+# Representation selection (exact preferred): root -> (profile, selection, paired roots).
 SELECTION_EXPECTED = {
-    1000: ("brep", "selected", [21000]), 11000: ("faceted", "selected", [31000]),
-    21000: ("tessellated", "alternative", [1000]), 31000: ("tessellated", "alternative", [11000]),
-    40002: ("tessellated", "selected", []),
+    "tessellated-selection.step": {
+        1000: ("brep", "selected", [21000]), 11000: ("faceted", "selected", [31000]),
+        21000: ("tessellated", "alternative", [1000]), 31000: ("tessellated", "alternative", [11000]),
+        40002: ("tessellated", "selected", []),
+    },
+    # CATIA V5 layout: a B-rep and an unlinked tessellated solid as sibling representations.
+    "assembly-siblings.step": {158: ("brep", "selected", [167]), 167: ("tessellated", "alternative", [158])},
 }
 
 def spindle_zone(a, b, h, outer):
@@ -210,10 +213,17 @@ ASSEMBLY_EXPECTED = {
     "assembly-untyped-measure.step": ("accepted", 3, 2, [0, 0, 0, 254, 1524, 762], 12000 * 0.0254 ** 3),
     # HOOPS Exchange layout: placements read by membership give the nested fixture's boxes.
     "assembly-reversed-items.step": ("accepted", 7, 4, [0, 0, 0, 100, 60, 30], 2.4e-5),
+    # CATIA V5 sibling representations: the B-rep is placed once and its tessellation is
+    # an alternative; two B-rep siblings are two bodies.
+    "assembly-siblings.step": ("accepted", 1, 1, [0, 0, 0, 10, 20, 30], 6e-6),
+    "assembly-sibling-breps.step": ("accepted", 1, 2, [0, 0, 0, 60, 20, 30], 1.2e-5),
 }
+# Alternatives held by a placed representation and not imported (unimported_placed).
+ASSEMBLY_UNIMPORTED = {"assembly-siblings.step": 1}
 # Surface styles adapted to the scene appearance: asset and face styles, materials, bindings.
 STYLE_EXPECTED = {"assembly-styled.step": {"asset_styles": 1, "face_styles": 1, "materials": 2, "bindings": 2,
-                                           "no_surface_colour": 1, "layers": 1, "excluded": 0}}
+                                           "no_surface_colour": 1, "layers": 1, "excluded": 0},
+                  "assembly-siblings.step": {"asset_styles": 1, "materials": 1, "bindings": 1, "unimported": 0}}
 
 
 def assemble(binary, path):
@@ -230,14 +240,14 @@ def assemble(binary, path):
             "result": result, "diagnostic": p.stderr, "seconds": round(time.monotonic()-started, 4)}
 
 
-def assembly_matches(r, status, nodes, leaves, bounds_mm, volume, volume_tolerance=1e-9):
+def assembly_matches(r, status, nodes, leaves, bounds_mm, volume, volume_tolerance=1e-9, unimported=0):
     if r["status"] != status:
         return False
     if status != "accepted":
         return True
     measured = [round(x * 1e3, 3) for x in r["world_bounds_m"][0] + r["world_bounds_m"][1]]
     return (r["definition_nodes"] == nodes and r["asset_instances"] == leaves and r["failed_imports"] == 0
-            and r["unimported_placed"] == 0 and measured == [float(x) for x in bounds_mm]
+            and r["unimported_placed"] == unimported and measured == [float(x) for x in bounds_mm]
             and abs(r["volume_m3"] - volume) <= volume_tolerance * volume)
 
 
@@ -297,7 +307,7 @@ def main():
         case = assemble(assembly_binary, ROOT / "corpus/geometry" / name)
         case["expected"] = expected
         styles = STYLE_EXPECTED.get(name, {"materials": 0, "bindings": 0})
-        case["passed"] = assembly_matches(case["result"], *expected) and (
+        case["passed"] = assembly_matches(case["result"], *expected, unimported=ASSEMBLY_UNIMPORTED.get(name, 0)) and (
             expected[0] != "accepted" or all(case["result"]["styles"][k] == v for k, v in styles.items()))
         cases.append(case)
     for name, expected in {**EXPECTED, **PLANAR_EXPECTED}.items():
@@ -344,13 +354,14 @@ def main():
         case["expected"] = expected
         case["passed"] = r["status"] == "accepted" and all(r.get(k) == v for k, v in expected.items())
         cases.append(case)
-    selection = subprocess.run([str(survey_binary), str(ROOT / "corpus/geometry/tessellated-selection.step"), "0.001"],
-                               capture_output=True, text=True, timeout=120, cwd=ROOT, check=True)
-    survey = json.loads(selection.stdout)
-    found = {r["id"]: (r["profile"], r["selection"], r["paired_with"]) for r in survey["roots"]}
-    cases.append({"path": str(ROOT / "corpus/geometry/tessellated-selection.step"), "expected": {str(k): v for k, v in SELECTION_EXPECTED.items()},
-                  "result": {"status": "accepted" if found == SELECTION_EXPECTED else "rejected", "profile": "accepted", "geometry": "accepted", "tessellation": "not_applicable", "roots": survey["roots"]},
-                  "diagnostic": selection.stderr, "passed": found == SELECTION_EXPECTED and all(r["status"] == "accepted" for r in survey["roots"])})
+    for name, expected in SELECTION_EXPECTED.items():
+        selection = subprocess.run([str(survey_binary), str(ROOT / "corpus/geometry" / name), "0.001"],
+                                   capture_output=True, text=True, timeout=120, cwd=ROOT, check=True)
+        survey = json.loads(selection.stdout)
+        found = {r["id"]: (r["profile"], r["selection"], r["paired_with"]) for r in survey["roots"]}
+        cases.append({"path": str(ROOT / "corpus/geometry" / name), "expected": {str(k): v for k, v in expected.items()},
+                      "result": {"status": "accepted" if found == expected else "rejected", "profile": "accepted", "geometry": "accepted", "tessellation": "not_applicable", "roots": survey["roots"]},
+                      "diagnostic": selection.stderr, "passed": found == expected and all(r["status"] == "accepted" for r in survey["roots"])})
     for name, (expected, adaptations, volume) in BREP_EXPECTED.items():
         extra = ["--chord", str(BREP_CHORD)] + (["--degrees"] if name == "brep-cone.step" else [])
         if name in BREP_MODEL_TOLERANCE:

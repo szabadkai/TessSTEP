@@ -488,7 +488,8 @@ independent of the document:
   callouts and annotation planes and representations (zero-copy) and units or error.
 - `ts_discovery_choice_at` returns one shape's selected shape-root index, its
   alternative indices (zero-copy) and the pairing (`TS_PAIRING_NONE`, `_LINK`,
-  `_RELATIONSHIP`); an alternative is meant for a failed selection.
+  `_RELATIONSHIP`, which also covers sibling representations under one shape
+  representation); an alternative is meant for a failed selection.
 
 Surface-model roots (`TS_ROOT_SHELL_BASED_SURFACE_MODEL`) follow every solid and
 tessellation and take no part in selection, so solid and tessellation indices, counts

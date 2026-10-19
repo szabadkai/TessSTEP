@@ -43,6 +43,16 @@ representation holding one identity frame shared by all representations, its sol
 a related B-rep representation and a draughting model mapping it; each occurrence's
 item defined transformation lists the parent's placement first and the shared frame
 second, the reverse of its relationship's representations. World boxes as nested.
+
+assembly-siblings.step: one part in the layout CATIA V5 writes: the product's shape
+representation holds one frame, and two untransformed shape representation
+relationships relate it to an advanced B-rep representation of the block and to a
+tessellated representation of the same block, a TESSELLATED_SOLID without a geometric
+link. The solid is coloured, and a draughting model that is also a tessellated shape
+representation holds an annotation plane with a callout of one tessellated polyline.
+
+assembly-sibling-breps.step: the same layout with two B-rep representations of
+blocks 50 mm apart and no tessellation: two bodies of one part.
 """
 import argparse
 from pathlib import Path
@@ -348,6 +358,93 @@ def reversed_items():
     return w
 
 
+# The block's corners and its faces as corner loops counterclockwise seen from
+# outside, with each plane's normal and reference direction, as `block` writes them.
+CORNERS = [(0, 0, 0), (10, 0, 0), (10, 20, 0), (0, 20, 0), (0, 0, 30), (10, 0, 30), (10, 20, 30), (0, 20, 30)]
+SIDES = [((0, 3, 2, 1), (0, 0, -1), (1, 0, 0)), ((4, 5, 6, 7), (0, 0, 1), (1, 0, 0)),
+         ((0, 1, 5, 4), (0, -1, 0), (1, 0, 0)), ((3, 7, 6, 2), (0, 1, 0), (1, 0, 0)),
+         ((0, 4, 7, 3), (-1, 0, 0), (0, 1, 0)), ((1, 2, 6, 5), (1, 0, 0), (0, 1, 0))]
+
+
+def advanced_block(w, offset=(0, 0, 0)):
+    """The block as a MANIFOLD_SOLID_BREP of planar ADVANCED_FACEs bounded by lines."""
+    corners = [[c[k] + offset[k] for k in range(3)] for c in CORNERS]
+    vertices = [w.add(f"VERTEX_POINT('',#{w.point(c)})") for c in corners]
+    edges = {}
+
+    def edge(a, b):
+        if (b, a) in edges:
+            return edges[(b, a)], ".F."
+        if (a, b) not in edges:
+            vector = w.add(f"VECTOR('',#{w.direction([corners[b][k] - corners[a][k] for k in range(3)])},1.)")
+            line = w.add(f"LINE('',#{w.point(corners[a])},#{vector})")
+            edges[(a, b)] = w.add(f"EDGE_CURVE('',#{vertices[a]},#{vertices[b]},#{line},.T.)")
+        return edges[(a, b)], ".T."
+
+    faces = []
+    for loop, z, x in SIDES:
+        uses = [edge(loop[i], loop[(i + 1) % 4]) for i in range(4)]
+        oriented = [w.add(f"ORIENTED_EDGE('',*,*,#{e},{sense})") for e, sense in uses]
+        edge_loop = w.add("EDGE_LOOP('',(" + ",".join(f"#{o}" for o in oriented) + "))")
+        bound = w.add(f"FACE_OUTER_BOUND('',#{edge_loop},.T.)")
+        plane = w.add(f"PLANE('',#{w.frame(corners[loop[0]], z, x)})")
+        faces.append(w.add(f"ADVANCED_FACE('',(#{bound}),#{plane},.T.)"))
+    shell = w.add("CLOSED_SHELL('',(" + ",".join(f"#{f}" for f in faces) + "))")
+    return w.add(f"MANIFOLD_SOLID_BREP('block',#{shell})")
+
+
+def tessellated_block(w):
+    """The block as a TESSELLATED_SOLID of one triangulated face per side, unlinked."""
+    points = ",".join("(" + ",".join(f"{v:.1f}" for v in c) + ")" for c in CORNERS)
+    coordinates = w.add(f"COORDINATES_LIST('',8,({points}))")
+    faces = []
+    for loop, _, _ in SIDES:
+        corners = ",".join(str(i + 1) for i in loop)
+        faces.append(w.add(f"TRIANGULATED_FACE('',#{coordinates},4,(),$,({corners}),((1,2,3),(1,3,4)))"))
+    return w.add("TESSELLATED_SOLID('',(" + ",".join(f"#{f}" for f in faces) + "),$)")
+
+
+def annotation(w, geometric):
+    """A draughting model that is also a tessellated shape representation, holding an
+    annotation plane with a callout of one tessellated polyline along the top edge."""
+    coordinates = w.add("COORDINATES_LIST('',2,((0.0,0.0,30.0),(10.0,0.0,30.0)))")
+    curves = w.add(f"TESSELLATED_CURVE_SET('note',#{coordinates},((1,2)))")
+    graphics = w.add(f"TESSELLATED_GEOMETRIC_SET('note',(#{curves}))")
+    font = w.add("DRAUGHTING_PRE_DEFINED_CURVE_FONT('continuous')")
+    white = w.add("DRAUGHTING_PRE_DEFINED_COLOUR('white')")
+    curve = w.add(f"CURVE_STYLE('',#{font},POSITIVE_LENGTH_MEASURE(0.13),#{white})")
+    style = w.add(f"PRESENTATION_STYLE_ASSIGNMENT((#{curve}))")
+    occurrence = w.add(f"TESSELLATED_ANNOTATION_OCCURRENCE('note',(#{style}),#{graphics})")
+    callout = w.add(f"DRAUGHTING_CALLOUT('note',(#{occurrence}))")
+    plane = w.add(f"PLANE('',#{w.frame((0, 0, 30))})")
+    annotation_plane = w.add(f"ANNOTATION_PLANE('notes',(#{style}),#{plane},(#{callout}))")
+    w.add(f"(DRAUGHTING_MODEL()REPRESENTATION('',(#{annotation_plane}),#{geometric})"
+          "SHAPE_REPRESENTATION()TESSELLATED_SHAPE_REPRESENTATION())")
+
+
+def siblings(tessellated=True):
+    w = Writer()
+    product_context, definition_context, geometric = context(w)
+    brep = advanced_block(w)
+    representations = [w.add(f"ADVANCED_BREP_SHAPE_REPRESENTATION('NONE',(#{brep}),#{geometric})")]
+    if tessellated:
+        solid = tessellated_block(w)
+        representations.append(w.add(f"TESSELLATED_SHAPE_REPRESENTATION('',(#{solid}),#{geometric})"))
+    else:
+        second = advanced_block(w, offset=(50, 0, 0))
+        representations.append(w.add(f"ADVANCED_BREP_SHAPE_REPRESENTATION('NONE',(#{second}),#{geometric})"))
+    rep = w.add(f"SHAPE_REPRESENTATION('',(#{w.frame((0, 0, 0))}),#{geometric})")
+    for related in representations:
+        w.add(f"SHAPE_REPRESENTATION_RELATIONSHIP('','',#{rep},#{related})")
+    product(w, "plate", product_context, definition_context, rep)
+    if tessellated:
+        grey = w.add("COLOUR_RGB('',0.8,0.8,1.0)")
+        styled_solid = w.add(f"STYLED_ITEM('',(#{surface_style(w, grey)}),#{brep})")
+        w.add(f"MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',(#{styled_solid}),#{geometric})")
+        annotation(w, geometric)
+    return w
+
+
 def encoded(encoding):
     w = Writer()
     product_context, definition_context, geometric = context(w, inch=encoding == "untyped", encoding=encoding)
@@ -368,6 +465,10 @@ FIXTURES = {
     "assembly-untyped-measure.step": ("Original assembly in inches with untyped measure values", lambda: encoded("untyped")),
     "assembly-reversed-items.step": ("Original nested assembly whose item defined transformations list the parent placement first",
                                      reversed_items),
+    "assembly-siblings.step": ("Original part whose B-rep and unlinked tessellated solid are sibling representations",
+                               siblings),
+    "assembly-sibling-breps.step": ("Original part with two B-rep sibling representations",
+                                    lambda: siblings(tessellated=False)),
 }
 
 

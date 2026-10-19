@@ -1,3 +1,62 @@
+# Exact and tessellated sibling representations (Milestone 23.3) — 2026-10-19
+
+CATIA V5-6R2022 writes each of the four NIST UUID plates of the PreForm collection
+(`Plate_w_Hole` revisions 0.0 to 0.3) as a `MANIFOLD_SOLID_BREP` in an advanced B-rep
+representation and a `TESSELLATED_SOLID` with geometric link `$` in a tessellated
+shape representation. Each is related to the product's shape representation by its
+own untransformed `SHAPE_REPRESENTATION_RELATIONSHIP`, all in one context; the PMI sits
+in a draughting model that is also a tessellated shape representation. Neither the
+link rule nor the direct relationship rule paired the two roots, and the linker
+associates both representations with the product's shape, so `import_assembly`
+placed the plate twice. Representation selection now pairs sibling representations
+([rule 3](EXISTING_TESSELLATIONS.md#discovery-and-representation-selection)); the
+assembly places the preferred root, and the other is an alternative, listed by
+`LinkedAssembly::unimported` like every alternative a placed representation holds.
+
+Under PreForm's settings (`ts_survey`: C++ `import_assembly(exact)`, 12.5 µm chord, 30°,
+sewing and orientation repair):
+
+| CATIA V5-6R2022 plate | `main` (844aeb3) | Now | HOOPS Exchange 2026.5 |
+| --- | --- | --- | --- |
+| Revisions 0.0, 0.1, 0.2 | 2 bodies, 45,968.31 mm³ | 1 body, 22,962.47 mm³ | 1 body, 22,960.29 mm³ |
+| Revision 0.3 | 2 bodies, 45,720.25 mm³ | 1 body, 22,838.44 mm³ | 1 body, 22,836.26 mm³ |
+
+The B-rep mesh is 0.0095 % (revision 0.3: 0.0096 %) above HOOPS's volume. The Rust
+survey of revision 0.0 still imports its five tessellated annotation occurrences (28
+polylines, 451 triangles); presentation discovery does not read the selection.
+
+**Fixtures.** `assembly-siblings.step` reproduces the layout with the 10 × 20 × 30 mm
+block: a B-rep, an unlinked tessellated solid, a colour on the solid and a callout in
+a tessellated draughting model. The `main` build places it twice (12,000 mm³); now
+once (6,000 mm³) with either preference, the colour applying to the B-rep only.
+`assembly-sibling-breps.step` has two B-rep siblings 50 mm apart and keeps both.
+`sibling_representations_pair_and_import_one_body` covers both preferences, strict
+mode and the cases that stay separate: two B-rep siblings, a third root-holding
+sibling, roots in the common representation, a tessellation in another context,
+linked to other geometry or written as a shell, and sibling solids under two
+representations.
+
+**Benchmarks.** Against the reference runs of `main` and HOOPS (`--jobs 4` and 6,
+beside other work, so times are not comparable), `compare.py` on the 54 collection
+files: exactly the four plates change, from 2 roots, 2 imported, 2 closed assets and
+1 duplicated definition to 1, 1, 1 and 0; duplicated definitions fall from 4 to 0.
+The losses where HOOPS meshes are unchanged (three 23.2 per-face
+budgets, a horn torus and a deviation for 23.5, one 23.1 refinement failure, a
+non-manifold vertex and two other tessellation failures in one file). On the 2,072
+corpus inputs against `ref_ts_corpus.jsonl` no file changes, and no corpus file has
+duplicated definitions before or after.
+
+**Checks.** `cargo fmt --all --check`, clippy with `-D warnings`, `cargo test
+--workspace --locked`, `check_geometry.py --require-external` (137 outcomes, three of
+them new), `check_product.py`, `check_corpus.py`, `check_architecture.py`,
+`conformance.py --check` and `check_capi.py --library-dir target/release` (without
+sanitizers) pass. The corpus check (`--repeat 2`, schema validator) reports 3,227
+compatible inputs and the same seven changes as `main` against the saved baseline
+(`Gp054`, `OCC8229`, both `trj3_s1` variants, `trj6_k1`, `trj7_k1` and
+`trj9_ap209-mp`); 786 meshed shape roots and 1,133 meshed surface models. Two corpus
+inputs have an alternative representation, both linked pairs from before. The
+baseline was not refreshed.
+
 # Corpus baseline saved before Milestone 23 — 2026-10-19
 
 The committed baseline dated from a4df53c. `main` at 844aeb3 has the Bad_STEP work of
