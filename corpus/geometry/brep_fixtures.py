@@ -305,6 +305,92 @@ def fixtures():
         ]
         s.write(f"brep-spindle-{name}.step", faces)
 
+        # The same zone on a TOROIDAL_SURFACE with a = 5 < b = 12, as OpenCASCADE writes
+        # spindle tori: the part is the one the face's boundary lies on.
+        s = Step(f"Original spindle torus {name} zone a=5 b=12 mm between z=-6 and z=6 on a TOROIDAL_SURFACE")
+        v0 = s.vertex((radius, 0, -6))
+        v1 = s.vertex((radius, 0, 6))
+        bottom = s.edge(v0, v0, s.circle((0, 0, -6), (0, 0, 1), (1, 0, 0), radius))
+        top = s.edge(v1, v1, s.circle((0, 0, 6), (0, 0, 1), (1, 0, 0), radius))
+        torus = s.add(f"TOROIDAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},5.,12.)")
+        faces = [
+            s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], torus, same=outer),
+            s.face([s.bound([(bottom, False)])], s.plane((0, 0, -6), (0, 0, 1)), same=False),
+            s.face([s.bound([(top, True)])], s.plane((0, 0, 6), (0, 0, 1))),
+        ]
+        s.write(f"brep-toroidal-{name}.step", faces)
+
+    # Horn torus a = b = 10 (TOROIDAL_SURFACE with equal radii): the tube touches the
+    # axis at the origin, the apex, where both ends of the apple's v domain meet. The
+    # zone between z=-6 and z=6 stays away from the apex (exporters write such fillets
+    # around a corner); its parallels have radius 10 + 8.
+    s = Step("Original horn torus a=b=10 mm zone between z=-6 and z=6 with planar caps")
+    v0 = s.vertex((18, 0, -6))
+    v1 = s.vertex((18, 0, 6))
+    bottom = s.edge(v0, v0, s.circle((0, 0, -6), (0, 0, 1), (1, 0, 0), 18))
+    top = s.edge(v1, v1, s.circle((0, 0, 6), (0, 0, 1), (1, 0, 0), 18))
+    horn = s.add(f"TOROIDAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.,10.)")
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], horn),
+        s.face([s.bound([(bottom, False)])], s.plane((0, 0, -6), (0, 0, 1)), same=False),
+        s.face([s.bound([(top, True)])], s.plane((0, 0, 6), (0, 0, 1))),
+    ]
+    s.write("brep-horn-zone.step", faces)
+
+    # The upper half of the horn apple on the z=0 disc of radius 20: the equator loop
+    # encloses the apex, which the disc touches at its centre.
+    s = Step("Original upper half of a horn torus apple a=b=10 mm on a planar disc")
+    v = s.vertex((20, 0, 0))
+    equator = s.edge(v, v, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 20))
+    horn = s.add(f"TOROIDAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.,10.)")
+    faces = [
+        s.face([s.bound([(equator, True)])], horn),
+        s.face([s.bound([(equator, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-horn-half.step", faces)
+
+    # The same half apple whose loop runs up a meridian seam edge to the apex vertex
+    # and back: the seam's pcurve ends on the singular line it approaches (v = pi,
+    # not v = -pi, which maps to the same apex), where a collapsed edge joins the uses.
+    s = Step("Original upper half of a horn torus apple a=b=10 mm whose loop runs up a meridian seam to the apex")
+    v = s.vertex((20, 0, 0))
+    apex = s.vertex((0, 0, 0))
+    equator = s.edge(v, v, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), 20))
+    meridian = s.edge(v, apex, s.circle((10, 0, 0), (0, -1, 0), (1, 0, 0), 10))
+    horn = s.add(f"TOROIDAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.,10.)")
+    faces = [
+        s.face([s.bound([(equator, True), (meridian, True), (meridian, False)], outer=True)], horn),
+        s.face([s.bound([(equator, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+    ]
+    s.write("brep-horn-seam.step", faces)
+
+    # The full horn apple bounded by a VERTEX_LOOP at its apex: the face spans both
+    # singular lines, which meet there.
+    s = Step("Original horn torus apple a=b=10 mm bounded by a vertex loop at its apex")
+    apex = s.vertex((0, 0, 0))
+    horn = s.add(f"TOROIDAL_SURFACE('',#{s.placement((0, 0, 0), (0, 0, 1), (1, 0, 0))},10.,10.)")
+    vertex_loop = s.add(f"VERTEX_LOOP('',#{apex})")
+    s.write("brep-horn-apple.step", [s.face([s.add(f"FACE_BOUND('',#{vertex_loop},.T.)")], horn)])
+
+    # The brep-cone frustum (r0=10 at z=0, widening at 30 degrees to z=10) on the far
+    # nappe of its CONICAL_SURFACE, as OpenCASCADE writes cones: the placement lies
+    # below the apex (z = -10 sqrt 3) with its axis pointing down and radius 5.
+    s = Step("Original cone frustum r0=10 h=10 mm, semi-angle 30 degrees, on the far nappe of its conical surface")
+    h, r0, alpha = 10.0, 10.0, math.radians(30)
+    r1 = r0 + h * math.tan(alpha)
+    apex = -r0 / math.tan(alpha)
+    v0 = s.vertex((r0, 0, 0))
+    v1 = s.vertex((r1, 0, h))
+    bottom = s.edge(v0, v0, s.circle((0, 0, 0), (0, 0, 1), (1, 0, 0), r0))
+    top = s.edge(v1, v1, s.circle((0, 0, h), (0, 0, 1), (1, 0, 0), r1))
+    cone = s.add(f"CONICAL_SURFACE('',#{s.placement((0, 0, apex - 5 / math.tan(alpha)), (0, 0, -1), (1, 0, 0))},5.,{num(alpha)})")
+    faces = [
+        s.face([s.bound([(bottom, True)]), s.bound([(top, False)])], cone),
+        s.face([s.bound([(bottom, False)])], s.plane((0, 0, 0), (0, 0, 1)), same=False),
+        s.face([s.bound([(top, True)])], s.plane((0, 0, h), (0, 0, 1))),
+    ]
+    s.write("brep-far-nappe-cone.step", faces)
+
     # Washer: outer r=20, inner r=10, thickness 5; planar faces carry two plain bounds.
     s = Step("Original washer R=20 r=10 t=5 mm; planar faces without FACE_OUTER_BOUND")
     vo0, vo1 = s.vertex((20, 0, 0)), s.vertex((20, 0, 5))

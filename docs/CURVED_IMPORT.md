@@ -22,7 +22,7 @@ C and C++ expose single-root import as `ts_document_import_solid` /
 | Contract | Supported |
 | --- | --- |
 | Root | `MANIFOLD_SOLID_BREP` with one `CLOSED_SHELL` of `ADVANCED_FACE`/`FACE_SURFACE`, or `BREP_WITH_VOIDS` adding cavity shells; `ORIENTED_CLOSED_SHELL` orientation is applied to its faces |
-| Surfaces | `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE`, `SPHERICAL_SURFACE`, ring `TOROIDAL_SURFACE`, `DEGENERATE_TOROIDAL_SURFACE`, `B_SPLINE_SURFACE_WITH_KNOTS`, `QUASI_UNIFORM_SURFACE`, `UNIFORM_SURFACE`, `BEZIER_SURFACE`, rational forms; `SURFACE_OF_LINEAR_EXTRUSION` and `SURFACE_OF_REVOLUTION` of any supported curve (see [swept surfaces](#swept-surfaces)) |
+| Surfaces | `PLANE`, `CYLINDRICAL_SURFACE`, `CONICAL_SURFACE` (either nappe), `SPHERICAL_SURFACE`, `TOROIDAL_SURFACE` (ring, spindle and horn tori), `DEGENERATE_TOROIDAL_SURFACE`, `B_SPLINE_SURFACE_WITH_KNOTS`, `QUASI_UNIFORM_SURFACE`, `UNIFORM_SURFACE`, `BEZIER_SURFACE`, rational forms; `SURFACE_OF_LINEAR_EXTRUSION` and `SURFACE_OF_REVOLUTION` of any supported curve (see [swept surfaces](#swept-surfaces)) |
 | Edge curves | `LINE`, `CIRCLE`, `ELLIPSE`, `PARABOLA`, `HYPERBOLA`, `B_SPLINE_CURVE_WITH_KNOTS`, `QUASI_UNIFORM_CURVE`, `UNIFORM_CURVE`, `BEZIER_CURVE`, rational forms; any of these as the 3D curve of `SURFACE_CURVE`, `SEAM_CURVE` or `INTERSECTION_CURVE` (with their supplied `PCURVE`s, see below), or as the basis of a `TRIMMED_CURVE` |
 | Encodings | Simple and complex instances; the curve and surface supertype chains mirror the physical component names of complex B-spline records |
 | Loops | `EDGE_LOOP` of `ORIENTED_EDGE`; `FACE_OUTER_BOUND` optional (see below) |
@@ -48,11 +48,35 @@ parameter direction. Closed edges on conics span one period; closed B-spline edg
 must start and end at the curve's domain ends, within the same policy.
 
 `CONICAL_SURFACE` is moved to its apex, which the kernel cone requires; a semi-angle
-outside (0°, 90°) in the supplied angle unit is rejected. `DEGENERATE_TOROIDAL_SURFACE`
+outside (0°, 90°) in the supplied angle unit is rejected. STEP's cone is a double
+cone, and OpenCASCADE writes faces beyond the apex from the placement (where the
+radius formula turns negative). A face whose boundary lies only beyond the apex is on
+the far nappe and receives a kernel cone opening the other way, whose normal agrees
+with STEP's `du × dv` there; a face with boundary points on both sides stays on the
+near nappe, where its far points are deviations. `DEGENERATE_TOROIDAL_SURFACE`
 (major radius below the minor radius) becomes a spindle torus whose `select_outer`
 part is the chart's closed v domain, with the two axis points as singular points
-handled like sphere poles; a `TOROIDAL_SURFACE` with major radius at or below the
-minor radius (a horn torus, or a spindle without the degenerate entity) is rejected.
+handled like sphere poles.
+
+A `TOROIDAL_SURFACE` whose major radius is below its minor radius (OpenCASCADE writes
+spindles so) is the spindle part its face's boundary lies on: the apple when the
+sampled boundary fits the tube circle on each point's own side of the axis at least as
+closely as the circle on the far side, otherwise the lemon. Equal radii are a **horn
+torus**, the limiting spindle: its apple's v domain is [−π, π], and both singular
+lines map to one point, the apex at the frame origin, where the tube touches the
+axis. A curve end at the apex takes the singular line it approaches, a loop join there
+the line both chart ends lie on, and a `VERTEX_LOOP` at the apex may name either line.
+A face spanning both lines (the whole apple bounded by a `VERTEX_LOOP` at its apex)
+receives an inserted vertex at the apex for the second line: the two sheets meet only
+there, so one vertex would pinch the shell. Faces away from the apex mesh like ring
+torus faces. At the apex the tube is a cusp, within the model tolerance t of the axis
+over a height of √(2at) for minor radius a, where facets have no resolved plane:
+refinement there converges at a 10 µm uncertainty and can exhaust its budgets at finer
+ones (named budget errors). Exporters write horn tori as quarter-tube fillets around a
+corner, away from the apex: every horn face of the corpus and of `Bad_STEP.stp` is
+one. A `DEGENERATE_TOROIDAL_SURFACE` with equal radii stays rejected
+(`DEGENERATE_TOROIDAL_SURFACE needs 0 < major radius < minor radius`), and so does a
+negative major radius (`MAJOR_RADIUS must be a positive length`).
 A B-spline axis flagged closed (`.T.`) or of unknown closure (`.U.`) in STEP receives
 a **periodic chart** when its two boundary curves agree within the model tolerance;
 the flag alone is advisory. A closed surface in a non-periodic chart would give every
@@ -103,7 +127,12 @@ supplied pcurve is used for a coedge only when:
   it (conics), so the image keeps the edge parameterization. A 2D conic is mapped
   only under a similarity and a matching angle parameter;
 * it agrees with the 3D curve at nine parameters across the edge within the model
-  tolerance.
+  tolerance. B-spline control points are first clamped to the closed parts of the
+  surface domain, as fitted images are, so that the image stays inside it: an
+  exporter wrote a degree-8 pcurve tangent to its patch edge whose second control
+  point lies 8e-5 beyond it, so the curve left the patch by 8e-7 between the probes
+  and the trimmer could not evaluate the surface there. The probes check the clamped
+  curve.
 
 The `master_representation` pcurve is tried first. An exact computed image of the 3D
 curve (below) takes precedence: it is the same curve without the written rounding
@@ -254,7 +283,12 @@ Each loop is classified by its winding in the periodic surface axes.
   keep). Spurs are measured
   at the working tolerance after planning (off-surface edges widen it), and the
   faces are planned again after healing. The count is `collapsed_spurs`; strict
-  import keeps the loop.
+  import keeps the loop. A lobe wider than the working tolerance is face area, not a
+  spur: an exporter's 3 mm fillet arc bulges 54 µm past the 1.1 mm line that runs back
+  from its vertex, and the face continues past the lobe through a 7 µm neck, which
+  trimming rejects as a pinch at the 17.8 µm working tolerance that 8.4 µm deviations
+  elsewhere in the solid imply. It stays a named rejection (decided in Milestone
+  23.5): the working tolerance is the solid's, and a per-face one would accept it.
 * **Edge splits.** When no aligned vertex pair exists (for example two closed circles
   whose vertices sit at different angles), the loop edge that the isoparametric line
   through a vertex of the other loop crosses is split there. Both halves keep the
@@ -322,8 +356,9 @@ their edge curves, beyond the length uncertainty they declare. One policy (Miles
 22.3, `crates/tessstep-import/src/brep/tolerance.rs`) covers both distances:
 
 * **Within the model tolerance** the geometry is consistent; nothing is counted.
-* **Above it and up to `deviation_factor` times it, or up to `deviation_floor`,
-  whichever is larger,** the deviation is accepted and counted. An edge use whose 3D curve lies off its face surface receives the pcurve
+* **Above it and up to `deviation_factor` times it, up to `deviation_floor`, or,
+  when the [opt-in repair](#opt-in-topology-repair) sews, up to its
+  `sewing_distance`, whichever is largest,** the deviation is accepted and counted. An edge use whose 3D curve lies off its face surface receives the pcurve
   of the curve's surface projection (still fitted to a quarter of the model
   tolerance) and counts in `Adaptations::off_surface_edges`; the mesh boundary follows
   the 3D curve, so neighbouring faces stay watertight. An edge end whose vertex lies
@@ -368,6 +403,22 @@ floor and `TS_IMPORT_STRICT`:
 | `deviation_factor` | `f64` | Accepted multiple of the model tolerance. Finite and at least 1, otherwise `ErrorKind::InvalidOptions` at `Stage::Profile` before decoding; 1 accepts no deviation. Default `ImportOptions::DEVIATION_FACTOR` = 16; `for_document` keeps it. |
 | `deviation_floor` | `f64` | Distance in metres the accepted deviation never falls below, whatever the factor makes of the model tolerance; a consumer passes the chord it will mesh with. Finite and at least 0, otherwise `InvalidOptions`; the default 0 leaves the factor alone. A factor of 1, or `strict`, still accepts no deviation. The bound in a rejection names whichever applied. |
 | `strict` | `bool` | Existing field; additionally forces a factor of 1, so strict import rejects every deviation as before the policy. |
+| `repair.sewing_distance` | `f64` | With `repair.sew`, a further distance in metres the accepted deviation never falls below (Milestone 23.5; see below). Finite and at least 0, otherwise `InvalidOptions` at `Stage::Profile`; the default 0 changes nothing. A factor of 1, or `strict`, still accepts no deviation; without `sew` it does not widen the policy. The bound in a rejection names it (`the sewing distance, above 16 × the model tolerance ...`). |
+
+**Deviations up to the sewing distance.** PreForm imports through HOOPS Exchange,
+which sews at 0.1 mm, while TessSTEP accepted at most the larger of 16 times the model
+tolerance (1.6 µm at PreForm's 0.1 µm floor) and the chord (12.5 µm). An edge off its
+face surface is a gap between the face and its boundary that sewing would close, so a
+consumer that sews at a fixed distance asks for deviations up to it too:
+`RepairOptions::sewing_distance` is that distance, the sewing tolerance never falls
+below it, and with `sew` the policy accepts deviations up to it. They are counted,
+widen the working tolerance and mesh exactly as the deviations within the factor do.
+Only this absolute distance widens the policy, not `sewing_factor`: the factor's
+sewing tolerance (ten times the model tolerance by default) stays below the default
+policy, and the C contract states the accepted deviation without it. Every default
+and every import without the distance is unchanged. The C ABI 1.1 records cannot set
+it yet (`ts_import_options` has no field for it; the ABI 1.2 revision adds one), so C
+and C++ imports, PreForm's among them, keep the factor and chord bound until then.
 
 Reported per solid (all zero for the planar and faceted profiles):
 
@@ -441,6 +492,7 @@ this importer and in the planar and faceted profiles ([topology](TOPOLOGY.md#opt
 | `sew` | `false` | merge coincident boundary vertices (of free edges and wire breaks) and free edges of different faces |
 | `orient` | `false` | flip faces into a consistent orientation per shell, reverse the loops of faces whose loops run against their surface, then reverse closed solid shells whose algebraic volume has the wrong sign |
 | `sewing_factor` | `10.0` (`DEFAULT_SEWING_FACTOR`) | sewing tolerance as a multiple of the model distance tolerance |
+| `sewing_distance` | `0.0` | distance in metres the sewing tolerance never falls below (`RepairOptions::sewing_tolerance` is the larger of the two); with `sew`, curved-profile deviations up to it are accepted ([tolerance policy](#tolerance-policy)); finite and at least 0, otherwise `InvalidOptions` |
 
 `RepairOptions::enabled()` turns both repairs on at the default factor. This importer
 sews its edge and face records before planning, so every pcurve, seam and chart is
@@ -492,17 +544,19 @@ circle runs the other way), `repair_reorients_flipped_faces_and_inside_out_shell
 (one inward face, a loop written clockwise about its face normal, a wrong `SAME_SENSE`,
 an inside-out box, an outward cavity),
 `repair_rejects_gaps_beyond_the_sewing_tolerance_with_the_distance` (a 0.05 mm corner
-gap and an unsewn box with faces 0.01 mm apart, which stays an `UnsewnShell`),
+gap and an unsewn box with faces 0.01 mm apart, which stays an `UnsewnShell`; at a
+0.1 mm `sewing_distance` the gap sews in the curved and planar profiles),
 `repair_applies_to_the_planar_and_faceted_profiles`,
 `repair_leaves_valid_solids_unchanged` and
 `repair_budgets_determinism_and_mutation_smoke` (record order and 240 byte mutations).
 In the corpus survey every merge distance was zero (each sewn duplicate was exact).
 
-For a C/C++ binding (pending, after the 22.10 import options): the option is the three
-`RepairOptions` fields above (two flags and a positive finite factor; `sewing_factor`
-that does not give a finite positive tolerance is an `InvalidOptions` error when `sew`
-is set), and the report is the nine `RepairReport` fields (seven counts, two distances in
-metres). Repair costs one trimmer pass over every face and a coarse tessellation of every
+For a C/C++ binding (ABI 1.0 maps the flags and `sewing_factor`; `sewing_distance`
+waits for the ABI 1.2 revision of `ts_import_options`): the option is the four
+`RepairOptions` fields above (two flags, a positive finite factor and a distance;
+`sewing_factor` that does not give a finite positive tolerance, or a negative or
+non-finite `sewing_distance`, is an `InvalidOptions` error when `sew` is set), and the
+report is the nine `RepairReport` fields (seven counts, two distances in metres). Repair costs one trimmer pass over every face and a coarse tessellation of every
 closed shell of each repaired-on root (the repair-on corpus survey took 758 s against
 539 s strict).
 
@@ -612,7 +666,16 @@ supplied pcurves on its B-spline face, one of them rational (four used; with one
 shifted 0.1 mm, one rejected and none used), a cylinder whose side is a closed rational
 B-spline flagged `U_CLOSED .U.` (periodic chart, one inserted seam) and a sphere with a
 cap cut away whose STEP axis misses the cap (re-charted through the rim: a pole seam
-and a collapsed edge). Negative fixtures cover an off-surface edge, a
+and a collapsed edge). Milestone 23.5 adds the spindle zones on `TOROIDAL_SURFACE`s
+(the part inferred from the boundary; the same meshes as the degenerate entity's), a
+horn torus zone away from its apex, a half horn apple whose loop runs up a meridian
+seam to the apex and back (one join on the line the seam approaches), one whose
+equator encloses the apex (a pole seam; checked at a 10 µm uncertainty), the whole
+horn apple bounded by a `VERTEX_LOOP` at its apex (a seam, two collapsed edges and an
+inserted second apex vertex; it meshes at a coarse tolerance in `tests/brep.rs` and
+exhausts the planar vertex budget at the fixture check's chord) and the cone frustum
+written on the far nappe of its conical surface (the near frustum's mesh vertices).
+Negative fixtures cover an off-surface edge, a
 `VERTEX_LOOP` away from the apex, an ambiguous outer bound and a box whose pocket
 opening touches the top face's boundary at a vertex (a self-touching loop, rejected
 at tessellation). Loop-healing fixtures (`tests/loop_healing.rs`) are a washer whose
@@ -629,7 +692,10 @@ quarter arcs peaking 2.7253 µm off its side between the fit's samples (at most
 2.668 µm) under a 2.7 µm uncertainty is counted at its peak (`tests/loop_healing.rs`);
 a tetrahedron whose B-spline base has a 20 µm side along an edge under a 50 µm
 uncertainty is charted with a regular side (`tests/tolerance.rs`, which also covers
-strict import, narrower factors, invalid factors, the chord check and an exactly collapsed side's typed rejection). Cavity fixtures cover a cube
+strict import, narrower factors, invalid factors, the deviation floor, the sewing
+distance (the 50 µm edge accepted within 60 µm with sewing, rejected without it, by a
+sewing factor alone and beyond 40 µm), the chord check and an exactly collapsed side's
+typed rejection). Cavity fixtures cover a cube
 with a cubical void and a cylinder with a spherical void bounded by a `VERTEX_LOOP`
 (each void an outward shell reversed by `ORIENTED_CLOSED_SHELL(.F.)`), and a cube whose
 void faces out of its cavity (rejected at tessellation). `tests/brep.rs` checks volumes against the

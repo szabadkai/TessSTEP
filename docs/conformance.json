@@ -369,10 +369,10 @@
       "limitations": "plane/cylinder/cone/sphere/ring torus; explicit frame/domain conventions; no STEP surface adapter"
     },
     {
-      "feature": "Spindle (degenerate) torus parts",
+      "feature": "Spindle (degenerate) and horn torus parts",
       "status": "implemented",
       "test": "analytic_spindle_torus_parts_end_at_the_axis_points",
-      "limitations": "apple or lemon part as a closed v domain ending at the two axis points; horn tori unsupported; imported from DEGENERATE_TOROIDAL_SURFACE (brep-spindle-apple/lemon fixtures)"
+      "limitations": "apple or lemon part as a closed v domain ending at the two axis points; equal radii give the horn torus apple, both ends at its apex (analytic_horn_torus_apple_ends_at_its_apex); imported from DEGENERATE_TOROIDAL_SURFACE and from TOROIDAL_SURFACE with the minor radius at or above the major one, as the part its face boundary lies on (brep-spindle-apple/lemon, brep-toroidal-apple/lemon and brep-horn-* fixtures, brep_spindle_and_horn_toroidal_surfaces_are_spindle_parts); faces reaching a horn apex mesh only where the model tolerance resolves its cusp"
     },
     {
       "feature": "Seam placement around holes and tangent edges, sliver-face collapse",
@@ -540,7 +540,7 @@
       "feature": "Opt-in topology repair (sewing, face, loop and shell orientation)",
       "status": "implemented",
       "test": "repair_sews_duplicated_and_unsewn_boundaries",
-      "limitations": "off by default (ImportOptions::repair); sewing tolerance ten times the model tolerance by default; every merge, flip, loop reversal and shell reorientation counted per root; positions, curves and surfaces never moved; T-junctions, partial overlaps, missing faces and single reversed edges in consistent loops not repaired; Rust only"
+      "limitations": "off by default (ImportOptions::repair); sewing tolerance ten times the model tolerance by default, never below an absolute sewing_distance, up to which sewing also accepts curved edge and vertex deviations (sewing_accepts_deviations_up_to_the_sewing_distance; no ABI 1.1 field); every merge, flip, loop reversal and shell reorientation counted per root; positions, curves and surfaces never moved; T-junctions, partial overlaps, missing faces and single reversed edges in consistent loops not repaired; Rust only"
     },
     {
       "feature": "Shared mesh assets and nested occurrence scenes",
@@ -720,7 +720,7 @@
       "feature": "Curved B-rep STEP solid import",
       "status": "implemented",
       "test": "brep_elementary_surfaces_close_with_expected_volumes",
-      "limitations": "MANIFOLD_SOLID_BREP on plane/cylinder/cone/sphere/ring torus/B-spline surfaces with line/conic/B-spline edges (also as SURFACE_CURVE 3D curves); explicit length and angle units; Rust, C and C++"
+      "limitations": "MANIFOLD_SOLID_BREP on plane/cylinder/cone (either nappe)/sphere/ring, spindle and horn torus/B-spline surfaces with line/conic/B-spline edges (also as SURFACE_CURVE 3D curves); explicit length and angle units; Rust, C and C++"
     },
     {
       "feature": "Computed pcurves",
@@ -768,7 +768,7 @@
       "feature": "Curved import rejections and budgets",
       "status": "implemented",
       "test": "brep_rejections_are_typed_and_located",
-      "limitations": "Off-surface curves, vertex loops away from poles, loops enclosing no pole, ambiguous outer bounds, horn tori, invalid cone angles, shared cavity shells and out-of-profile types are typed failures"
+      "limitations": "Off-surface curves, vertex loops away from poles, loops enclosing no pole, ambiguous outer bounds, degenerate tori with equal radii, negative torus radii, invalid cone angles, shared cavity shells and out-of-profile types are typed failures"
     },
     {
       "feature": "Root and representation-context unit discovery",

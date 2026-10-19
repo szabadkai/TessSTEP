@@ -234,5 +234,40 @@ fn analytic_spindle_torus_parts_end_at_the_axis_points() {
         assert!(surface.evaluate(0., ends[1] + 1e-3).is_err());
     }
     assert!(Surface::degenerate_torus(frame(), l(5.), l(3.), true).is_err());
-    assert!(Surface::degenerate_torus(frame(), l(5.), l(5.), true).is_err());
+}
+#[test]
+fn analytic_horn_torus_apple_ends_at_its_apex() {
+    use std::f64::consts::PI;
+    // Equal radii: the limiting spindle, whose two axis points meet at the origin.
+    let horn = Surface::degenerate_torus(frame(), l(5.), l(5.), true).unwrap();
+    assert_eq!(horn.kind(), SurfaceKind::SpindleTorus);
+    assert_eq!(horn.domain()[1], AxisDomain::Closed { min: -PI, max: PI });
+    near(
+        horn.evaluate(0.7, 0.).unwrap().position.coordinates(),
+        [10. * 0.7f64.cos(), 10. * 0.7f64.sin(), 0.],
+        1e-14,
+    );
+    near(
+        horn.evaluate(0., 0.5 * PI).unwrap().position.coordinates(),
+        [5., 0., 5.],
+        1e-14,
+    );
+    // Both ends of the v domain are the apex, where du vanishes exactly.
+    for v in [-PI, PI] {
+        let e = horn.evaluate(1., v).unwrap();
+        near(e.position.coordinates(), [0., 0., 0.], 1e-14);
+        assert_eq!(e.du.components(), [0., 0., 0.]);
+        assert!(e.normal(Default::default()).is_err());
+    }
+    // Near the apex the tube is tangent to the axis: the radius grows quadratically
+    // with the height, and du x dv, which points away from the tube's centre circle,
+    // points towards the axis.
+    let e = horn.evaluate(0.3, PI - 1e-3).unwrap();
+    let p = e.position.coordinates();
+    assert!((p[0].hypot(p[1]) - 2.5e-6).abs() < 1e-9 && (p[2] - 5e-3).abs() < 1e-8);
+    let n = e.normal(Default::default()).unwrap().vector().components();
+    assert!(n[0] * p[0] + n[1] * p[1] < 0., "{n:?} at {p:?}");
+    assert!(horn.evaluate(0., PI + 1e-3).is_err());
+    // A horn torus has no lemon.
+    assert!(Surface::degenerate_torus(frame(), l(5.), l(5.), false).is_err());
 }

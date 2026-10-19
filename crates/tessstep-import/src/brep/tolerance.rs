@@ -2,8 +2,9 @@
 //! curves (see docs/CURVED_IMPORT.md#tolerance-policy).
 //!
 //! A distance within the model tolerance is consistent geometry. A larger one, up to
-//! `ImportOptions::deviation_factor` times the model tolerance or the
-//! `ImportOptions::deviation_floor`, whichever is larger, is accepted and counted;
+//! `ImportOptions::deviation_factor` times the model tolerance, the
+//! `ImportOptions::deviation_floor` or, when the opt-in repair sews, its absolute
+//! `RepairOptions::sewing_distance`, whichever is largest, is accepted and counted;
 //! anything farther is rejected with the measured distance and the bound.
 //! No coordinate is moved: an edge keeps its 3D curve (the mesh boundary follows it)
 //! and receives the pcurve of its surface projection, and a vertex keeps its position
@@ -21,10 +22,15 @@ pub(super) struct Policy {
     pub factor: f64,
     /// The accepted distance in metres is never below this, unless the factor is 1.
     pub floor: f64,
+    /// The absolute sewing distance in metres when the opt-in repair sews, otherwise
+    /// 0; the accepted distance is never below it either, unless the factor is 1.
+    pub sewing: f64,
 }
 impl Policy {
     /// The policy of `options`: strict import accepts no deviation. A factor below 1,
-    /// a negative floor, or either not finite, is invalid.
+    /// a negative floor or sewing distance, or any of them not finite, is invalid.
+    /// Only the absolute sewing distance widens the policy: the factor's sewing
+    /// tolerance (ten times the model tolerance by default) stays below it.
     pub(super) fn new(tolerance: f64, options: ImportOptions) -> Result<Self, String> {
         let (factor, floor) = (options.deviation_factor, options.deviation_floor);
         if !(factor.is_finite() && factor >= 1.) {
@@ -37,24 +43,40 @@ impl Policy {
                 "deviation_floor must be a finite distance of at least 0 m (got {floor})"
             ));
         }
+        let sewing = if options.repair.sew {
+            options.repair.checked_sewing_distance()?
+        } else {
+            0.
+        };
         Ok(Self {
             tolerance,
             factor: if options.strict { 1. } else { factor },
             floor,
+            sewing,
         })
     }
     /// The largest accepted distance in metres: the model tolerance times the factor,
-    /// raised to the floor; a factor of 1 accepts no deviation, whatever the floor.
+    /// raised to the floor and to the sewing distance; a factor of 1 accepts no
+    /// deviation, whatever the floor or the sewing distance.
     pub(super) fn allowance(&self) -> f64 {
         if self.factor == 1. {
             self.tolerance
         } else {
-            (self.tolerance * self.factor).max(self.floor)
+            (self.tolerance * self.factor)
+                .max(self.floor)
+                .max(self.sewing)
         }
     }
-    /// Whether the floor, not the factor, sets the allowance.
-    fn floored(&self) -> bool {
-        self.factor != 1. && self.floor > self.tolerance * self.factor
+    /// What sets the allowance when the factor does not: the sewing distance or the
+    /// deviation floor, whichever is larger.
+    fn raised(&self) -> Option<&'static str> {
+        if self.factor == 1. || self.floor.max(self.sewing) <= self.tolerance * self.factor {
+            None
+        } else if self.sewing >= self.floor {
+            Some("the sewing distance")
+        } else {
+            Some("the deviation floor")
+        }
     }
     /// Whether `distance` is accepted.
     pub(super) fn accepts(&self, distance: f64) -> bool {
@@ -75,9 +97,9 @@ impl Policy {
     pub(super) fn bound(&self) -> String {
         if self.factor == 1. {
             format!("the model tolerance {:.3e} m", self.tolerance)
-        } else if self.floored() {
+        } else if let Some(raised) = self.raised() {
             format!(
-                "the accepted deviation {:.3e} m (the deviation floor, above {} × the model tolerance {:.3e} m)",
+                "the accepted deviation {:.3e} m ({raised}, above {} × the model tolerance {:.3e} m)",
                 self.allowance(),
                 self.factor,
                 self.tolerance

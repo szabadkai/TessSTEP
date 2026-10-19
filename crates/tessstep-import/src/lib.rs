@@ -143,7 +143,9 @@ pub struct ImportOptions {
     /// tolerance and `deviation_factor` make of it: a consumer passes the chord
     /// tolerance it will mesh with, since its mesh cannot show a smaller
     /// inconsistency (the C API does). Finite and at least 0; the default 0 leaves the
-    /// factor alone. A factor of 1, or `strict`, still accepts no deviation.
+    /// factor alone. When `repair.sew` is set the accepted distance is also never
+    /// below [`RepairOptions::sewing_distance`]: sewing treats boundaries that far
+    /// apart as one. A factor of 1, or `strict`, still accepts no deviation.
     pub deviation_floor: f64,
 }
 impl Default for ImportOptions {

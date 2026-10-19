@@ -1,13 +1,15 @@
 //! Usage: cargo run -p tessstep-import --example brep -- FILE ROOT_ID METRES_PER_UNIT
 //!     [--degrees] [--model-tolerance METRES] [--chord METRES] [--angle RADIANS] [--strict] [--repair]
-//!     [--deviation-factor F]
+//!     [--deviation-factor F] [--deviation-floor METRES] [--sewing-distance METRES]
 //! Imports one MANIFOLD_SOLID_BREP with the curved B-rep profile and reports
 //! profile/geometry/tessellation stages independently as JSON. Plane angles are
-//! radians unless --degrees is given; the model tolerance defaults to 1e-8 m and the
-//! tolerance policy multiple to `ImportOptions::DEVIATION_FACTOR`. Import budgets are
-//! sized by the document's entity count (`ImportOptions::for_document`).
+//! radians unless --degrees is given; the model tolerance defaults to 1e-8 m, the
+//! tolerance policy multiple to `ImportOptions::DEVIATION_FACTOR` and its floor to 0
+//! (the C API floors it at the chord). Import budgets are sized by the document's
+//! entity count (`ImportOptions::for_document`).
 //! --repair enables the opt-in sewing and orientation repair at the default sewing
-//! tolerance; the repair counts are reported either way.
+//! tolerance, raised to --sewing-distance when given; with sewing, deviations up to
+//! the sewing tolerance are accepted. The repair counts are reported either way.
 #![forbid(unsafe_code)]
 use std::{fs::File, io::BufReader};
 use tessstep_import::*;
@@ -45,8 +47,10 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
     let chord = value("--chord", 1e-6)?;
     let normal_angle = value("--angle", 0.1)?;
     let deviation_factor = value("--deviation-factor", ImportOptions::DEVIATION_FACTOR)?;
+    let deviation_floor = value("--deviation-floor", 0.)?;
+    let sewing_distance = value("--sewing-distance", 0.)?;
     if args.len() != 3 {
-        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--angle RADIANS] [--strict] [--repair] [--deviation-factor F]".into());
+        return Err("usage: brep FILE ROOT_ID METRES_PER_UNIT [--degrees] [--model-tolerance METRES] [--chord METRES] [--angle RADIANS] [--strict] [--repair] [--deviation-factor F] [--deviation-floor METRES] [--sewing-distance METRES]".into());
     }
     let root = EntityId::new(args[1].parse()?).ok_or("root must be nonzero")?;
     let unit = LengthUnit::metres_per_unit(args[2].parse()?)?;
@@ -64,12 +68,16 @@ fn run() -> Result<bool, Box<dyn std::error::Error>> {
         TessellationTolerance::new(Length::metres(chord)?, Angle::radians(normal_angle)?)?;
     let options = ImportOptions {
         strict,
-        repair: if repair {
-            RepairOptions::enabled()
-        } else {
-            RepairOptions::default()
+        repair: RepairOptions {
+            sewing_distance,
+            ..if repair {
+                RepairOptions::enabled()
+            } else {
+                RepairOptions::default()
+            }
         },
         deviation_factor,
+        deviation_floor,
         ..ImportOptions::for_document(&doc)
     };
     let imported = import_brep_solid(&doc, root, unit, angle, model, options);

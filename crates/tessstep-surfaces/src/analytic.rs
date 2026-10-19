@@ -42,7 +42,8 @@ pub enum SurfaceKind {
     Cone,
     Sphere,
     Torus,
-    /// One part of a self-intersecting torus whose minor radius exceeds its major radius.
+    /// One part of a self-intersecting torus whose minor radius exceeds its major
+    /// radius, or the apple of a horn torus, whose radii are equal.
     SpindleTorus,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -52,7 +53,8 @@ enum Shape {
     Cone(f64),
     Sphere(f64),
     Torus(f64, f64),
-    /// Major radius, minor radius and whether the outer (apple) part is selected.
+    /// Major radius, minor radius (at least the major one) and whether the outer
+    /// (apple) part is selected.
     Spindle(f64, f64, bool),
 }
 /// Oriented elementary surfaces. Periodic parameters are unwrapped radians.
@@ -106,7 +108,9 @@ impl<S: Space> Surface<S> {
     /// Spindle torus: the positive minor radius exceeds the major radius, so the
     /// tube crosses the axis. `outer` selects the apple (v around 0) rather than the
     /// lemon (v around pi); either part's v domain is closed and ends at the two axis
-    /// points, where the surface is singular like a sphere pole.
+    /// points, where the surface is singular like a sphere pole. Equal radii give the
+    /// limiting horn torus: its tube touches the axis at the frame origin, the apex,
+    /// where both ends of the apple's v domain [-pi, pi] meet; its lemon is empty.
     pub fn degenerate_torus(
         frame: PlaneFrame<S, 3>,
         major: Length,
@@ -114,7 +118,7 @@ impl<S: Space> Surface<S> {
         outer: bool,
     ) -> Result<Self, Error> {
         let (a, b) = (positive(major)?, positive(minor)?);
-        if a >= b {
+        if a > b || (a == b && !outer) {
             return Err(Error::InvalidShape);
         }
         Ok(Self {

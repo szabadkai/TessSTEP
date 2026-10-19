@@ -9,11 +9,36 @@ corpus compatibility record is `corpus/baseline.json` at its tag; see
 
 Parity work against HOOPS Exchange on the PreForm CAD collection. The 646-root
 support attachment of that collection, imported as PreForm does (12.5 µm chord, 30°,
-sewing and orientation repair), lost 26 bodies before the changes below and loses 5
-(a pinched face, a pinched vertex, a vertex 28 µm off its curve, a plane cutting a
-fillet along generators that are no edges, and a horn torus); the survey's default
-import meshes 617 of its roots instead of 545.
+sewing and orientation repair), lost 26 bodies before the changes below and loses 4
+(a pinched face, a pinched vertex, a vertex 28 µm off its curve, and a plane cutting
+a fillet along generators that are no edges), 3 once the C options can set a 0.1 mm
+sewing distance; the survey's default import meshes 617 of its roots instead of 545.
 
+- Horn tori, spindle tori written as `TOROIDAL_SURFACE` and far-nappe cones import
+  (Milestone 23.5). A `TOROIDAL_SURFACE` whose minor radius exceeds its major radius
+  (as OpenCASCADE writes spindles) is the spindle part its face's boundary lies on, and
+  equal radii are a horn torus, the limiting spindle whose two axis points meet at one
+  apex: `Surface::degenerate_torus` accepts equal radii for the apple, curve ends and
+  loop joins at the apex take the singular line they approach, and a face spanning
+  both lines gets a second apex vertex. A `CONICAL_SURFACE` face lying only beyond the
+  apex (OpenCASCADE writes them) is on the far nappe and gets a kernel cone opening
+  the other way. Supplied B-spline pcurves have their control points clamped to the
+  surface domain, as fitted images do, so a pcurve written beyond its patch edge no
+  longer fails trimming. Under PreForm's settings nine corpus roots in eight
+  OpenCASCADE files and one attachment body now mesh; where HOOPS's meshes are closed
+  the volumes agree within 0.06 %. Faces that reach a horn apex mesh where the model
+  tolerance resolves its cusp. Fixtures:
+  `brep-toroidal-apple/lemon`, `brep-horn-zone/seam/half/apple`,
+  `brep-far-nappe-cone`.
+- `RepairOptions::sewing_distance` sets an absolute sewing tolerance in metres, as
+  PreForm asks HOOPS Exchange to sew at 0.1 mm: the sewing tolerance is the larger of
+  `sewing_factor` times the model tolerance and the distance, and with sewing the
+  curved import accepts edge and vertex deviations up to it, counted like every
+  accepted deviation (the bound in a rejection names `the sewing distance`). The
+  default 0 changes nothing; `ts_import_options` gains the field in ABI 1.2. At
+  0.1 mm, two more corpus roots and one more attachment body mesh, within 0.02 % of
+  HOOPS's volumes, and deviations beyond 0.1 mm stay rejected. The `brep` example
+  takes `--deviation-floor` and `--sewing-distance`.
 - Curved import takes `ImportOptions::deviation_floor`, a distance the accepted edge
   and vertex deviation never falls below whatever the factor makes of the model
   tolerance; a factor of 1 and strict import still accept none. The C API sets it

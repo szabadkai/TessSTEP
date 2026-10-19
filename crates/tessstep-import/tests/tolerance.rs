@@ -251,6 +251,95 @@ fn the_deviation_floor_accepts_what_the_factor_rejects_unless_the_factor_is_1() 
 }
 
 #[test]
+fn sewing_accepts_deviations_up_to_the_sewing_distance() {
+    let sew = |sewing_distance, sewing_factor| ImportOptions {
+        repair: RepairOptions {
+            sewing_distance,
+            sewing_factor,
+            ..RepairOptions::enabled()
+        },
+        ..ImportOptions::default()
+    };
+    assert_eq!(RepairOptions::default().sewing_distance, 0.);
+    // Repair at the default sewing tolerance changes nothing: 50 um off stays rejected.
+    // So does a sewing factor alone, whatever tolerance it gives sewing.
+    for factor in [10., 100.] {
+        let error = import(FAR, 1e-6, sew(0., factor)).unwrap_err();
+        assert!(
+            error.message.contains(
+                "beyond the accepted deviation 1.600e-5 m (16 × the model tolerance 1.000e-6 m)"
+            ),
+            "{error}"
+        );
+    }
+    // An absolute sewing distance of 60 um accepts the edge 50 um off its cylinder,
+    // counted like any accepted deviation and widening the working tolerance; it is
+    // the sewing tolerance too.
+    let far = import(FAR, 1e-6, sew(6e-5, 10.)).unwrap();
+    assert_eq!(far.adaptations().off_surface_edges, 1);
+    assert!((far.largest_deviation() - 5e-5).abs() < 1e-12);
+    assert_eq!(
+        far.brep().model_tolerance(),
+        1e-6 + 2. * far.largest_deviation()
+    );
+    assert_eq!(far.repairs().sewing_tolerance, 6e-5);
+    mesh(&far, 1e-4).require_solid().unwrap();
+    // Beyond the sewing distance the bound names it.
+    let error = import(FAR, 1e-6, sew(4e-5, 10.)).unwrap_err();
+    assert_eq!(
+        (error.kind, error.stage),
+        (ErrorKind::InvalidGeometry, Stage::Geometry)
+    );
+    assert!(
+        error.message.contains(
+            "beyond the accepted deviation 4.000e-5 m (the sewing distance, above 16 × the model tolerance 1.000e-6 m)"
+        ),
+        "{error}"
+    );
+    // Only sewing widens the policy: orientation repair alone does not, and a factor
+    // of 1 or strict import still accepts no deviation.
+    let orient = ImportOptions {
+        repair: RepairOptions {
+            sew: false,
+            sewing_distance: 6e-5,
+            ..RepairOptions::enabled()
+        },
+        ..ImportOptions::default()
+    };
+    assert_eq!(
+        import(FAR, 1e-6, orient).unwrap_err().stage,
+        Stage::Geometry
+    );
+    for options in [
+        ImportOptions {
+            deviation_factor: 1.,
+            ..sew(6e-5, 10.)
+        },
+        ImportOptions {
+            strict: true,
+            ..sew(6e-5, 10.)
+        },
+    ] {
+        let error = import(NEAR, 1e-6, options).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("beyond the model tolerance 1.000e-6 m"),
+            "{error}"
+        );
+    }
+    // A negative or non-finite sewing distance is an option error before decoding.
+    for invalid in [-1e-6, f64::NAN, f64::INFINITY] {
+        let error = import(NEAR, 1e-6, sew(invalid, 10.)).unwrap_err();
+        assert_eq!(
+            (error.kind, error.stage),
+            (ErrorKind::InvalidOptions, Stage::Profile),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn bspline_sides_collapsed_only_within_tolerance_are_regular_and_poles_are_rejected() {
     // A 20 um side under a 50 um uncertainty collapses within the model tolerance;
     // the edge along it makes it a regular side of the face chart.

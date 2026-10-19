@@ -282,12 +282,14 @@ fn read<'a>(decoded: &DecodedDocument<'a>, root: EntityId) -> Option<Supplied> {
 /// Map a supplied curve into chart coordinates `scale * step + offset` per axis, with
 /// the edge parameter `t = parameter_scale * t_step`; `angle` is radians per
 /// plane-angle unit. None when the image is not representable exactly (a conic
-/// under a nonuniform map or a reparameterization).
+/// under a nonuniform map or a reparameterization). B-spline control points are
+/// clamped to the closed parts of the chart `domain`.
 pub(crate) fn to_chart(
     curve: &Curve2,
     [scale, offset]: [[f64; 2]; 2],
     parameter_scale: f64,
     angle: f64,
+    domain: [tessstep_surfaces::AxisDomain; 2],
 ) -> Option<CurveGeometry<ParameterSpace, 2>> {
     let map = |p: [f64; 2]| [scale[0] * p[0] + offset[0], scale[1] * p[1] + offset[1]];
     let point = |p: [f64; 2]| Point::<ParameterSpace, 2>::new(map(p)).ok();
@@ -331,7 +333,23 @@ pub(crate) fn to_chart(
             controls,
             weights,
         } => {
-            let controls: Vec<_> = controls.iter().map(|&p| point(p)).collect::<Option<_>>()?;
+            // Control points are clamped to the closed parts of the surface domain, as
+            // fitted images are, so that (by the convex hull property) the image stays
+            // inside it: an exporter wrote a pcurve tangent to its patch edge whose
+            // second control point lies beyond that edge, so the curve leaves the patch
+            // between the agreement probes. The probes then check the clamped curve.
+            let clamp = |p: [f64; 2]| {
+                let mut p = map(p);
+                for (k, d) in domain.iter().enumerate() {
+                    p[k] = match *d {
+                        tessstep_surfaces::AxisDomain::Closed { min, max } => p[k].clamp(min, max),
+                        tessstep_surfaces::AxisDomain::LowerBounded { min } => p[k].max(min),
+                        _ => p[k],
+                    };
+                }
+                Point::<ParameterSpace, 2>::new(p).ok()
+            };
+            let controls: Vec<_> = controls.iter().map(|&p| clamp(p)).collect::<Option<_>>()?;
             let knots: Vec<f64> = knots.iter().map(|k| k * parameter_scale).collect();
             Some(CurveGeometry::Nurbs(
                 NurbsCurve::new(*degree, &knots, &controls, weights, SplineLimits::default())

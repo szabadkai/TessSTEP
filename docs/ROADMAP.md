@@ -1048,6 +1048,39 @@ The collection benchmark is repeated on every item.
 
   Each either imports with a counted adaptation or opt-in repair, or stays a decided,
   named rejection.
+
+  **Delivered 2026-10-19.** Under PreForm's settings `Bad_STEP.stp` imports 642 of
+  646 roots through the C API (643 once ABI 1.2 can pass a 0.1 mm sewing distance).
+  - *Deviations:* `RepairOptions::sewing_distance` is an absolute sewing tolerance,
+    and with sewing the curved import accepts deviations up to it, counted like every
+    accepted deviation. Only this distance widens the policy, not `sewing_factor`,
+    so defaults and the C contract are unchanged; `ts_import_options` gains the field
+    in ABI 1.2. At 0.1 mm the 27.8 µm vertex, `trj3_s1-ac-214` #3845 (16.7 µm) and
+    `ec_exhaust-A` #12 (29.5 µm, after supplied pcurves written beyond their patch
+    are clamped into it) mesh within 0.02 % of HOOPS's volumes. `OCC8228` moves on to a
+    self-intersecting edge image at its 40 µm working tolerance, `bug25013` to an
+    open shell needing 0.45 mm, `bug31251` to another edge 0.15 mm off; the five files
+    beyond 0.1 mm stay rejected.
+  - *Horn tori:* most of the 8 corpus roots were spindles written as
+    `TOROIDAL_SURFACE`, the part now inferred from the face boundary; equal radii are
+    the limiting spindle, apex on the axis. Seven of the eight mesh, `screw` and
+    `bug30053` once their faces on the far nappe of a cone (also new) import, which
+    also brings one root each of `trj4_pm2-ec-214` and `trj6_pm4-ec-203` (0.02 % from
+    HOOPS). `trj10_b2-oc-214` moves on to a planar
+    face whose two arcs touch at a vertex. Every horn face found is a fillet away from
+    the apex; faces reaching it mesh where the model tolerance resolves its cusp.
+  - *The rest, decided:* the pinched face stays a named trimming rejection (its 7 µm
+    neck lies within the 17.8 µm working tolerance that 8.4 µm deviations elsewhere
+    imply; a per-face working tolerance would accept it), the pinched vertex stays
+    `NonManifoldVertex` by design, and the plane overlapping a fillet along
+    generators that are no edges stays a `DuplicateTriangle` located at its face.
+
+  The corpus check has no regression (3,227 compatible; the survey meshes 795 shape
+  roots against `main`'s 786 and 1,134 surface-model shells against 1,133), and the
+  collection benchmark changes only `Bad_STEP.stp`. Evidence:
+  [VALIDATION.md](VALIDATION.md), `tests/tolerance.rs`, `tests/repair.rs`,
+  `brep_spindle_and_horn_toroidal_surfaces_are_spindle_parts`,
+  `analytic_horn_torus_apple_ends_at_its_apex` and seven authored fixtures.
 - **23.6 Parallel import in C and C++.** On `Bad_STEP.stp`, 12 of TessSTEP's 13.0 s
   go to importing 646 independent roots one after another on a single thread.
   - Append a thread count to `ts_import_options` (ABI 1.2) for
