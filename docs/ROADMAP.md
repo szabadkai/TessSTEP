@@ -1168,7 +1168,9 @@ The collection benchmark is repeated on every item.
   `trj9_ap209-mp` mesh, and so do surface-model shells in Gp054, `trj6_k1` and `trj7_k1`.
   The saved baseline holds 786 meshed shape roots (778 before) and 1,133 meshed surface
   models (1,130), with 3,227 compatible inputs and no timeouts
-  ([VALIDATION.md](VALIDATION.md)). It is saved again with each item above.
+  ([VALIDATION.md](VALIDATION.md)). It is saved again with each item above: after 23.3,
+  23.5 and 23.10 (2026-10-20), 795 meshed shape roots and 1,134 meshed surface models,
+  the fourteen movements of 23.5 and none from 23.3 or 23.10.
 
 Order, by measured impact (re-evaluated 2026-10-13):
 1. 23.9, 23.4 and 23.8 (1.1.0), since they change no import code.

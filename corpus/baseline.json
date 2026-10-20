@@ -1,7 +1,7 @@
 {
   "format_version": 1,
-  "run_id": "2026-10-19T20-21-47-752683Z",
-  "source_fingerprint": "2c940099a42a525bd6b66a29d945166c065abb430d01822a759f9532b615ec14",
+  "run_id": "2026-10-20T05-06-38-007827Z",
+  "source_fingerprint": "ed425aea15a826c368cad5b2c013b201dac96dc1c543b0aa74d964b8af122323",
   "cases": [
     {
       "sha256": "e486bfb50625f5270d2b239c004c61f30c9f2fd8f230e395a8c10cbb8c45cb09",
@@ -47361,7 +47361,7 @@
         "product": "rejected",
         "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "unsupported"
+        "surface_model": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 85,
@@ -91180,7 +91180,7 @@
         "product": "rejected",
         "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "unsupported"
+        "surface_model": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 53,
@@ -106795,7 +106795,7 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "rejected",
-        "geometry": "unsupported",
+        "geometry": "rejected",
         "tessellation": "not_run",
         "surface_model": "no_surface_models"
       },
@@ -109188,7 +109188,7 @@
         "product": "rejected",
         "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "rejected"
+        "surface_model": "accepted"
       },
       "diagnostic_counts": {},
       "entity_count": 32,
@@ -109222,7 +109222,7 @@
       "geometry_accepted_roots": 0,
       "geometry_closure_types": {},
       "presentation_accepted": null,
-      "surface_model_accepted_roots": 0,
+      "surface_model_accepted_roots": 1,
       "surface_model_closure_types": {
         "ADVANCED_FACE": 1,
         "AXIS2_PLACEMENT_3D": 2,
@@ -162759,7 +162759,7 @@
         "product": "accepted",
         "geometry": "no_shape_roots",
         "tessellation": "not_run",
-        "surface_model": "unsupported"
+        "surface_model": "rejected"
       },
       "diagnostic_counts": {},
       "entity_count": 13958,
@@ -164516,8 +164516,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -164530,7 +164530,7 @@
         "declared": "AUTOMOTIVE_DESIGN_CC1"
       },
       "product_result": null,
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 10,
         "AXIS2_PLACEMENT_3D": 20,
@@ -165665,7 +165665,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 10,
+      "geometry_accepted_roots": 12,
       "geometry_closure_types": {
         "ADVANCED_FACE": 1852,
         "AXIS2_PLACEMENT_3D": 2243,
@@ -167987,8 +167987,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -168001,7 +168001,7 @@
         "declared": "AUTOMOTIVE_DESIGN_CC1"
       },
       "product_result": null,
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 438,
         "AXIS2_PLACEMENT_3D": 871,
@@ -168058,8 +168058,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -168072,7 +168072,7 @@
         "declared": "AUTOMOTIVE_DESIGN_CC1"
       },
       "product_result": null,
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 146,
         "AXIS2_PLACEMENT_3D": 314,
@@ -168123,8 +168123,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -168137,7 +168137,7 @@
         "declared": "AUTOMOTIVE_DESIGN_CC1"
       },
       "product_result": null,
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 10,
         "AXIS2_PLACEMENT_3D": 20,
@@ -169653,8 +169653,8 @@
         "references": "resolved",
         "schema": "not_configured",
         "product": "not_configured",
-        "geometry": "unsupported",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "accepted",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -169667,7 +169667,7 @@
         "declared": "AUTOMOTIVE_DESIGN_CC2"
       },
       "product_result": null,
-      "geometry_accepted_roots": 0,
+      "geometry_accepted_roots": 1,
       "geometry_closure_types": {
         "ADVANCED_FACE": 918,
         "AXIS2_PLACEMENT_3D": 1576,
@@ -169831,8 +169831,8 @@
         "references": "resolved",
         "schema": "accepted",
         "product": "accepted",
-        "geometry": "unsupported",
-        "tessellation": "not_run",
+        "geometry": "accepted",
+        "tessellation": "rejected",
         "surface_model": "no_surface_models"
       },
       "diagnostic_counts": {},
@@ -175405,7 +175405,7 @@
         "references": "resolved",
         "schema": "accepted",
         "product": "accepted",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial",
         "surface_model": "no_surface_models"
       },
@@ -175442,7 +175442,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 11,
+      "geometry_accepted_roots": 12,
       "geometry_closure_types": {
         "ADVANCED_FACE": 801,
         "AXIS1_PLACEMENT": 5,
@@ -180144,7 +180144,7 @@
         "references": "resolved",
         "schema": "rejected",
         "product": "accepted",
-        "geometry": "partial",
+        "geometry": "accepted",
         "tessellation": "partial",
         "surface_model": "no_surface_models"
       },
@@ -180176,7 +180176,7 @@
         "unplaced_roots": 0,
         "excluded": 0
       },
-      "geometry_accepted_roots": 11,
+      "geometry_accepted_roots": 12,
       "geometry_closure_types": {
         "ADVANCED_FACE": 801,
         "AXIS1_PLACEMENT": 5,

@@ -1,3 +1,24 @@
+# Corpus baseline after Milestones 23.3, 23.5 and 23.10 — 2026-10-20
+
+`main` at 1cf101d merges 23.3, 23.5 and 23.10. The checks run there:
+
+| Check | Result |
+| --- | --- |
+| fmt, Clippy (`-D warnings`, all targets and features), rustdoc (`-D warnings`) | passed |
+| `cargo test --workspace --locked` | 387 passed |
+| check_geometry (158 outcomes), check_product (11), check_corpus (160 fixtures), check_architecture, check_cli, check_express, check_schema, check_metamorphic, `conformance.py --check`, script unit tests (85) | passed |
+| `check_capi.py --library-dir target/release` (no sanitizers) | passed |
+| `corpus.py --check --repeat 2` with the AP validator and schema map | 3,227 compatible, no regression, no timeout, 331 s |
+
+Against the baseline of dd1e895, the corpus check moves exactly the fourteen inputs that
+the 23.5 record below reviews, and none from 23.3 or 23.10:
+- **Real exporter files:** bug30053, screw, r0901_ec, r103ec, tr9_r1001-ec, bug32239,
+  trj4_pm2, trj6_pm4, trj10_b2 and bug25287.
+- **Synthetic dodgy-step-files:** Tfa260, Tfa221, Gs050 and Twi296.
+
+The baseline was saved with the same validator arguments. It holds 795 meshed shape
+roots (786 before) and 1,134 meshed surface-model shells (1,133).
+
 # Milestone 23.10: surface models in sessions and assemblies — 2026-10-19
 
 Delivered in Rust (C and C++ follow in ABI 1.2): `ImportSession::surface_models`,
