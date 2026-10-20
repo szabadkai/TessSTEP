@@ -276,7 +276,7 @@ STYLE_EXPECTED = {"assembly-styled.step": {"asset_styles": 1, "face_styles": 1, 
 def assemble(binary, path, extra=()):
     started = time.monotonic()
     p = subprocess.run([str(binary), "--meshes", *extra, "AUTOMOTIVE_DESIGN", str(path)],
-                       capture_output=True, text=True, timeout=300, cwd=ROOT)
+                       capture_output=True, encoding="utf-8", timeout=300, cwd=ROOT)
     assert p.returncode in (0, 1), (path, p.returncode, p.stderr)
     result = json.loads(p.stdout)
     assert result["format_version"] == 1 and result["scope"] == "product-structure"
@@ -324,7 +324,7 @@ def expected_adaptations(values):
 def inspect(binary, path, root_id=1000, unit=0.001, scope="faceted-solid", strict=False, extra=()):
     started = time.monotonic()
     p = subprocess.run([str(binary), str(path), str(root_id), str(unit), *(["--strict"] if strict else []), *extra],
-                       capture_output=True, text=True, timeout=120, cwd=ROOT)
+                       capture_output=True, encoding="utf-8", timeout=120, cwd=ROOT)
     assert p.returncode in (0, 1), (path, p.returncode, p.stderr)
     result = json.loads(p.stdout)
     assert result["format_version"] == 1 and result["scope"] == scope
@@ -427,7 +427,7 @@ def main():
         cases.append(case)
     for name, expected in SELECTION_EXPECTED.items():
         selection = subprocess.run([str(survey_binary), str(ROOT / "corpus/geometry" / name), "0.001"],
-                                   capture_output=True, text=True, timeout=120, cwd=ROOT, check=True)
+                                   capture_output=True, encoding="utf-8", timeout=120, cwd=ROOT, check=True)
         survey = json.loads(selection.stdout)
         found = {r["id"]: (r["profile"], r["selection"], r["paired_with"]) for r in survey["roots"]}
         cases.append({"path": str(ROOT / "corpus/geometry" / name), "expected": {str(k): v for k, v in expected.items()},
