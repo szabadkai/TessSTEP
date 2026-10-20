@@ -1117,9 +1117,14 @@ The collection benchmark is repeated on every item.
   branches ("Read STEP through TessSTEP without HOOPS Exchange"). There no HOOPS
   fallback exists, so every gap above is a lost part on iPad. That reader still uses
   the strict parse and a fixed 12.5 µm chord, and links a checkout by path.
-- **23.8 Releases.** Release 1.1.0 from the prepare-release workflow: ABI 1.1, plus the
-  HOOPS parity, `Bad_STEP.stp` and iOS changes of the Unreleased section. Release
-  1.2.0 with this milestone.
+- **23.8 Releases — 1.1.0 released 2026-10-20.** 1.1.0 holds ABI 1.1, the HOOPS
+  parity, `Bad_STEP.stp` and iOS changes, and Milestones 23.3, 23.5, 23.9 and 23.10.
+  CI was green on 9e9e39c (run 39375587956). Prepare release (run 39376810732) tagged
+  `v1.1.0`. The Release workflow (run 39376837489) passed: it reran CI with the external
+  corpus and the iOS gate, then built and consumer-tested packages for Linux, Windows
+  and both macOS targets, plus the iOS XCFramework. The release was published from
+  its draft with notes from the CHANGELOG. 1.2.0 follows with the rest of this
+  milestone and the ABI 1.2 revision.
 - **23.10 Surface models in sessions and assemblies — delivered 2026-10-19 (Rust; C
   and C++ follow in ABI 1.2).** 81 of the 402 real corpus files
   hold only `SHELL_BASED_SURFACE_MODEL` roots. They come from I-DEAS, OpenCASCADE,
