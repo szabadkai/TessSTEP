@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "expressc"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-codegen",
  "tessstep-express",
@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "stepdump"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-model",
  "tessstep-part21",
@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-ap242",
  "tessstep-codegen",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-ap242"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-math",
  "tessstep-model",
@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-capi"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-import",
  "tessstep-math",
@@ -63,25 +63,25 @@ dependencies = [
 
 [[package]]
 name = "tessstep-codegen"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-express",
 ]
 
 [[package]]
 name = "tessstep-curves"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-math",
 ]
 
 [[package]]
 name = "tessstep-express"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "tessstep-import"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-ap242",
  "tessstep-curves",
@@ -99,18 +99,18 @@ dependencies = [
 
 [[package]]
 name = "tessstep-math"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "tessstep-mesh"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-math",
 ]
 
 [[package]]
 name = "tessstep-model"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-part21",
  "tessstep-schema",
@@ -118,22 +118,22 @@ dependencies = [
 
 [[package]]
 name = "tessstep-part21"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "tessstep-product"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-math",
 ]
 
 [[package]]
 name = "tessstep-schema"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "tessstep-surfaces"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-tessellate"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
@@ -153,7 +153,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-topology"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",
@@ -162,7 +162,7 @@ dependencies = [
 
 [[package]]
 name = "tessstep-trim"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "tessstep-curves",
  "tessstep-math",

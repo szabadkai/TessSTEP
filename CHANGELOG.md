@@ -5,7 +5,7 @@ independent of the package version; see [docs/C_API.md](docs/C_API.md). Each rel
 corpus compatibility record is `corpus/baseline.json` at its tag; see
 [docs/VALIDATION.md](docs/VALIDATION.md) for the reviewed totals.
 
-## Unreleased
+## 1.1.0 — 2026-10-20
 
 Parity work against HOOPS Exchange on the PreForm CAD collection. The 646-root
 support attachment of that collection, imported as PreForm does (12.5 µm chord, 30°,
