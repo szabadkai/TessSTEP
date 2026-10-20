@@ -56,7 +56,7 @@ jobs:
           for target in $(python scripts/fuzz_seeds.py --list); do
             cp "fuzz/target/$host/release/$target" fuzz-bin/
           done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-binaries
           path: fuzz-bin/
@@ -90,7 +90,7 @@ jobs:
           chmod +x "fuzz-bin/$TARGET"
           python scripts/fuzz_report.py run --target "$TARGET" --binary "fuzz-bin/$TARGET" --seconds "$BUDGET" \
             --require-instrumented --build "cargo +nightly fuzz build --sanitizer address --debug-assertions"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: fuzz-report-${{ matrix.target }}
@@ -112,7 +112,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python scripts/fuzz_report.py smoke
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: fuzz-report-smoke
@@ -143,7 +143,7 @@ jobs:
           EXPECTED: ${{ needs.fuzz-build.outputs.targets }}
           BUILD: ${{ needs.fuzz-build.result }}
         run: python scripts/fuzz_report.py summary --expected "$EXPECTED" --build-result "$BUILD"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: fuzz-summary
@@ -174,7 +174,7 @@ jobs:
         env:
           TESSSTEP_CORPUS: ${{ github.workspace }}/target/step-corpus
         run: cargo bench --workspace --locked 2>&1 | tee benchmarks.txt
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: benchmark-results
